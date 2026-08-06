@@ -1,0 +1,15 @@
+[package]
+name = "reveal-decode"
+description = "RAW decoding: RawDecoder trait, libraw + rawler backends, EXIF"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rawler.workspace = true
+rayon.workspace = true
+thiserror.workspace = true
+
+[build-dependencies]
+bindgen = "0.71"
+pkg-config = "0.3"

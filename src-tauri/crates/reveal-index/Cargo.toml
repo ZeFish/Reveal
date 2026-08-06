@@ -1,0 +1,13 @@
+[package]
+name = "reveal-index"
+description = "Library index: SQLite (rusqlite), walker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rusqlite.workspace = true
+reveal-decode = { path = "../reveal-decode" }
+reveal-meta = { path = "../reveal-meta" }
+serde = { version = "1", features = ["derive"] }
+thiserror.workspace = true

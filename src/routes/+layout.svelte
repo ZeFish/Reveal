@@ -1,0 +1,71 @@
+<script>
+  import { onMount } from "svelte";
+  // The Standard visual identity — framework-agnostic pieces of the monorepo.
+  import "@stnd/styles/standard.scss";
+  // Fonts and theme are not reachable through their packages' exports maps
+  // (fonts' "./*/*" double-star pattern isn't valid Node resolution), so both
+  // are imported by monorepo path.
+  import "../../../../packages/fonts/inter/inter.css";
+  import "../../../../packages/fonts/din-condensed/din-condensed.css";
+  import "../../../../packages/fonts/ibm-plex/ibm-plex.css";
+  import "../../../../packages/fonts/newsreader/newsreader.css";
+  import "../../../../packages/themes/reveal/reveal.scss";
+  // App adapter — re-grounds the note framework's tokens for an app window
+  // (fixed UI scale, no mobile bump, no reading measure). Must come last.
+  import "../app.scss";
+
+  let { children } = $props();
+
+  onMount(() => {
+    document.documentElement.classList.add("js-image-zoom-enabled");
+  });
+</script>
+
+{@render children()}
+
+<style>
+  :global(:root) {
+    --window-controls-offset-sidebar: 78px;
+    --window-controls-offset-content: 86px;
+  }
+  /* The recessed canvas: a quiet depth layer as body background
+     (a fixed ::before overlay mis-sizes and mis-stacks in WKWebView).
+     The app-vs-website resets (measure, margins, user-select) live in
+     app.scss — this block is only reveal's visual canvas. */
+  :global(body:not(.is-transparent-window)) {
+    background-color: var(--color-background);
+    background-image: linear-gradient(var(--color-surface-low), var(--color-surface-low));
+    color: var(--color-foreground);
+    font-family: var(--font-text, system-ui, sans-serif);
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Quiet capsule buttons, app-wide (the Swift control language). */
+  :global(button) {
+    font-family: var(--font-monospace, monospace);
+    font-size: 12px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-foreground);
+    background: var(--color-surface-high);
+    border: var(--border);
+    border-radius: 999px;
+    padding: 0.32rem 0.8rem;
+    cursor: pointer;
+  }
+  :global(button:hover:not(:disabled)) {
+    border-color: var(--color-accent);
+  }
+  :global(button:disabled) {
+    opacity: 0.45;
+    cursor: default;
+  }
+  :global(select) {
+    font-family: var(--font-monospace, monospace);
+    font-size: 12px;
+    color: var(--color-foreground);
+    background: var(--color-surface-high);
+    border: var(--border);
+    border-radius: var(--radius);
+    padding: 0.2rem 0.35rem;
+  }
+</style>

@@ -1,0 +1,70 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Reveal",
+  "version": "2.0.0-alpha.0",
+  "identifier": "co.utopie.reveal",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../build"
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["reveal"]
+      }
+    }
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Reveal",
+        "width": 1280,
+        "height": 840,
+        "minWidth": 800,
+        "minHeight": 600,
+        "visible": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "dragDropEnabled": false
+      },
+      {
+        "label": "import-panel",
+        "title": "Import",
+        "url": "/import-panel",
+        "width": 320,
+        "height": 136,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "visible": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app"],
+    "resources": ["data"],
+    "fileAssociations": [
+      {
+        "ext": ["jpg", "jpeg"],
+        "mimeType": "image/jpeg",
+        "role": "Viewer"
+      }
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

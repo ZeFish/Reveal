@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="fr" data-theme="reveal">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="%sveltekit.assets%/favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    %sveltekit.head%
+  </head>
+  <body data-sveltekit-preload-data="hover">
+    <script>
+      // Dev aid: ship webview errors + console.error/warn to Rust's stderr
+      // through reveal://log (WKWebView has no visible console in release).
+      window.__log = (m) => {
+        try {
+          fetch("reveal://log?m=" + encodeURIComponent(String(m))).catch(() => {});
+        } catch (_) {}
+      };
+      window.addEventListener("error", (e) =>
+        __log("error: " + e.message + " @" + e.filename + ":" + e.lineno),
+      );
+      window.addEventListener("unhandledrejection", (e) => {
+        const msg = String((e.reason && e.reason.stack) || e.reason || "");
+        // never re-log the log channel's own failures (feedback loop)
+        if (!msg.includes("Load failed")) __log("rejet: " + msg);
+      });
+      for (const level of ["error", "warn"]) {
+        const orig = console[level].bind(console);
+        console[level] = (...args) => {
+          __log(level + ": " + args.map(String).join(" "));
+          orig(...args);
+        };
+      }
+    </script>
+    <div style="display: contents">%sveltekit.body%</div>
+  </body>
+</html>

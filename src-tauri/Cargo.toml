@@ -1,0 +1,72 @@
+[workspace]
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+
+[workspace.dependencies]
+# The film engine — turbasvin's Rust port of spektrafilm, pinned to the
+# release tag. All API touchpoints stay inside reveal-engine so an upgrade
+# is one crate's churn.
+spektrafilm-core = { git = "https://github.com/turbasvin/spektrafilm-rs", tag = "v0.1.2" }
+spektrafilm-gpu = { git = "https://github.com/turbasvin/spektrafilm-rs", tag = "v0.1.2" }
+spektrafilm-math = { git = "https://github.com/turbasvin/spektrafilm-rs", tag = "v0.1.2" }
+# Same rawler version spektrafilm-rs decodes with — the two must agree at
+# the input boundary.
+rawler = "0.7"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "tiff"] }
+rayon = "1.10"
+anyhow = "1"
+thiserror = "2"
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+[package]
+name = "reveal"
+description = "Reveal — personal photography app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+# The `_lib` suffix keeps the lib name distinct from the bin name.
+name = "reveal_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+rawler.workspace = true
+# Grid-thumbnail downscaling in the reveal://thumb handler (decode/resize/encode).
+image.workspace = true
+# devtools: right-click → Inspect in release builds — keep while the app is
+# pre-1.0; drop for distribution.
+kamadak-exif = "0.5"
+chrono = "0.4"
+tauri = { version = "2", features = ["devtools", "tray-icon", "image-png"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-window-state = "2"
+tauri-plugin-global-shortcut = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+objc = "0.2"
+core-graphics = "0.24"
+notify = "6"
+rayon.workspace = true
+reveal-decode = { path = "crates/reveal-decode" }
+reveal-engine = { path = "crates/reveal-engine" }
+reveal-index = { path = "crates/reveal-index" }
+reveal-meta = { path = "crates/reveal-meta" }
+reveal-publish = { path = "crates/reveal-publish" }
+reveal-import = { path = "crates/reveal-import" }
+tauri-plugin-deep-link = "2.4.9"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Objective-C block construction for `dispatch_async` to the main queue —
+# used to keep AppKit calls (focus backdrop show/hide) on the main thread.
+block = "0.1"
+
+[dev-dependencies]
+tempfile = "3"

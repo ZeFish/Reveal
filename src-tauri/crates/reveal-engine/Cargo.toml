@@ -1,0 +1,19 @@
+[package]
+name = "reveal-engine"
+description = "Film-look engine: spektrafilm-rs orchestration, render scheduler, export"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+reveal-decode = { path = "../reveal-decode" }
+spektrafilm-core.workspace = true
+spektrafilm-gpu.workspace = true
+spektrafilm-math.workspace = true
+image.workspace = true
+anyhow.workspace = true
+rayon.workspace = true
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"

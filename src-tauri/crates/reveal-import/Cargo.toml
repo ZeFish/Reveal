@@ -1,0 +1,13 @@
+[package]
+name = "reveal-import"
+description = "Card ingest (YYYY/YYYY-MM-DD archive) and volume detection"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+reveal-decode = { path = "../reveal-decode" }
+chrono = "0.4"
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
+thiserror.workspace = true
