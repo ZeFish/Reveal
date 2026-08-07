@@ -12,18 +12,21 @@
     ["16:9", "16:9"],
   ];
 
+  /** @param {string} a */
   function setAspect(a) {
     if (!recipe) return;
     recipe.crop_aspect = a;
     edited();
   }
 
+  /** @param {string | number} val */
   function setAngle(val) {
     if (!recipe) return;
     recipe.crop_angle = Number(val);
     edited(true);
   }
 
+  /** @param {"h" | "v"} dir */
   function toggleFlip(dir) {
     if (!recipe) return;
     if (dir === "h") recipe.flip_h = !recipe.flip_h;

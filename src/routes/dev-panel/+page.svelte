@@ -120,7 +120,7 @@
     if (!recipe) return;
     ensureMigration(recipe, stage);
     const key = lutsKey(stage);
-    recipe[key] = (recipe[key] ?? []).filter((_, i) => i !== index);
+    recipe[key] = (recipe[key] ?? []).filter((/** @type {any} */ _, /** @type {number} */ i) => i !== index);
     edited();
   }
   /** @param {string} stage @param {number} index @param {number | string} value */
@@ -128,7 +128,7 @@
     if (!recipe) return;
     ensureMigration(recipe, stage);
     const key = lutsKey(stage);
-    recipe[key] = (recipe[key] ?? []).map((l, i) => (i === index ? { ...l, opacity: Number(value) } : l));
+    recipe[key] = (recipe[key] ?? []).map((/** @type {any} */ l, /** @type {number} */ i) => (i === index ? { ...l, opacity: Number(value) } : l));
     edited(true);
   }
   /** @param {string} stage @param {number} index @param {string} name */
@@ -136,7 +136,7 @@
     if (!recipe) return;
     ensureMigration(recipe, stage);
     const key = lutsKey(stage);
-    recipe[key] = (recipe[key] ?? []).map((l, i) => (i === index ? { ...l, name } : l));
+    recipe[key] = (recipe[key] ?? []).map((/** @type {any} */ l, /** @type {number} */ i) => (i === index ? { ...l, name } : l));
     edited();
   }
 
@@ -253,7 +253,7 @@
   });
 
   /** @param {boolean} [transient] @param {string} [key] */
-  function edited(transient = false, key = null) {
+  function edited(transient = false, key = undefined) {
     if (recipe) {
       // Touching a control engages a develop engine — DEFAULT to spektra, but
       // never clobber an explicit "rapid" choice (that killed fast-render mode

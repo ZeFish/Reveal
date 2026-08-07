@@ -1,15 +1,21 @@
 <script>
   import Icon from "$lib/components/Icon.svelte";
 
+  /**
+   * @typedef {Object} Props
+   * @property {boolean} [showClipping]
+   * @property {() => void} [onCropClick]
+   * @property {() => void} [toggleClipping]
+   * @property {() => void} [onPresetClick]
+   * @property {() => void} [onExportDesktopClick]
+   */
+
+  /** @type {Props} */
   let {
     showClipping = false,
-    /** @type {() => void} */
     onCropClick = () => {},
-    /** @type {() => void} */
     toggleClipping = () => {},
-    /** @type {() => void} */
     onPresetClick = () => {},
-    /** @type {() => void} */
     onExportDesktopClick = () => {},
   } = $props();
 </script>

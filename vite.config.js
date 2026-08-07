@@ -38,6 +38,7 @@ function stndShim() {
     },
     configureServer(server) {
       server.middlewares.use("/icons", (req, res, next) => {
+        if (!req.url) return next();
         const rel = decodeURIComponent(req.url.split("?")[0]);
         const file = path.join(iconsRoot, rel);
         if (!file.startsWith(iconsRoot) || !file.endsWith(".svg") || !fs.existsSync(file)) {

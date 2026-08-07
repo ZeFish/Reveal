@@ -16,6 +16,7 @@
 
   let activeGardenUrl = $derived(extractGardenUrl(storyContent) || liveUrl);
 
+  /** @param {string} url */
   async function openGardenPage(url) {
     if (!url) return;
     if (isTauri) {

@@ -1,4 +1,27 @@
 <script>
+  /**
+   * @typedef {Object} Props
+   * @property {*} [photoMenu]
+   * @property {Set<string>} [selectedPaths]
+   * @property {any[]} [installedEditors]
+   * @property {*} [copiedRecipe]
+   * @property {Set<string>} [storySet]
+   * @property {(s: string) => string} [stem]
+   * @property {() => void} [onClose]
+   * @property {(p: string) => void} [onOpenPhoto]
+   * @property {(p: string) => void} [onOpenPreview]
+   * @property {(p: string) => void} [onRevealInFinder]
+   * @property {(p: string, app: string) => void} [onOpenInEditor]
+   * @property {(p: string) => void} [onCopyImage]
+   * @property {() => void} [onCopySettings]
+   * @property {() => void} [onPasteSettings]
+   * @property {(n: number) => void} [onRate]
+   * @property {(p: string) => void} [onToggleStory]
+   * @property {() => void} [onExportSelection]
+   * @property {(p: string) => void} [onDevelopToVault]
+   */
+
+  /** @type {Props} */
   let {
     photoMenu = null,
     selectedPaths = new Set(),

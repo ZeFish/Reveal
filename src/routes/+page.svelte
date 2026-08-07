@@ -3444,7 +3444,6 @@
           {minRating}
           {isTauri}
           {debug}
-          {thumbUrl}
           {selectGridItem}
           {openPhoto}
           {openPhotoMenu}
@@ -3620,7 +3619,7 @@
             <span>BORDURE</span>
             <input type="checkbox" bind:checked={exportBorder} />
           </label>
-          <button onclick={exportCurrent}>Exporter cette photo</button>
+          <button onclick={() => exportCurrent()}>Exporter cette photo</button>
         </section>
 
         <!-- Section: Tonalité -->

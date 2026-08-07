@@ -232,6 +232,7 @@
     commit(true);
   }
 
+  /** @param {string} id */
   function breakOut(id) {
     const i = blocks.findIndex((b) => b.id === id);
     if (i < 0) return;
@@ -313,6 +314,7 @@
     const rect = el.getBoundingClientRect();
     const relY = (e.clientY - rect.top) / (rect.height || 1);
 
+    /** @type {"group" | "before" | "after"} */
     let mode = "group";
     if (relY < 0.28) {
       mode = "before";

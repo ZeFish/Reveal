@@ -1,4 +1,24 @@
 <script>
+  /**
+   * @typedef {Object} Preferences
+   * @property {string} date_folders
+   * @property {string} vault
+   * @property {string} logs_folder
+   * @property {string} export_folder
+   * @property {string} lut_folder
+   * @property {boolean} ai_cull_enabled
+   * @property {number} ai_cull_target
+   * @property {string} ai_api_key
+   */
+  /**
+   * @typedef {Object} Props
+   * @property {Preferences} [preferences]
+   * @property {() => void} [onClose]
+   * @property {(key: string) => void} [onChooseFolder]
+   * @property {() => void} [onSave]
+   */
+
+  /** @type {Props} */
   let {
     preferences = $bindable({
       date_folders: "",

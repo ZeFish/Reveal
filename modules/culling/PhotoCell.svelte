@@ -6,6 +6,28 @@
   // chrome must not pull the eye off the image.
   import Icon from "$lib/components/Icon.svelte";
 
+  /**
+   * @typedef {Object} Props
+   * @property {string} path
+   * @property {string} name
+   * @property {number} [previewVersion]
+   * @property {number} [rating]
+   * @property {boolean} [selected]
+   * @property {boolean} [inStory]
+   * @property {boolean} [isExporting]
+   * @property {boolean} [isRendering]
+   * @property {(e?: MouseEvent) => void} [onSelect]
+   * @property {(e: MouseEvent) => void} [onDblClick]
+   * @property {(e: MouseEvent) => void} [onContextMenu]
+   * @property {() => void} [onToggleStory]
+   * @property {(e: DragEvent) => void} [onDragStart]
+   * @property {string} [layout]
+   * @property {number} [aspect]
+   * @property {boolean} [fill]
+   * @property {number} [idx]
+   */
+
+  /** @type {Props} */
   let {
     path,
     name,
@@ -24,7 +46,7 @@
     aspect = 1.5,
     fill = true,
     idx
-  } = /** @type {{ path: string, name: string, previewVersion?: number, rating?: number, selected?: boolean, inStory?: boolean, isExporting?: boolean, isRendering?: boolean, onSelect: (e: MouseEvent) => void, onDblClick: (e: MouseEvent) => void, onContextMenu: (e: MouseEvent) => void, onToggleStory: () => void, onDragStart: (e: DragEvent) => void, layout?: string, aspect?: number, fill?: boolean, idx?: number }} */ ($props());
+  } = $props();
 
   let loaded = $state(false);
   let failed = $state(false);

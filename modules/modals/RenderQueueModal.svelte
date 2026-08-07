@@ -1,4 +1,13 @@
 <script>
+  /**
+   * @typedef {Object} Props
+   * @property {any[]} [exportQueue]
+   * @property {*} [activeExportJobId]
+   * @property {() => void} [onClose]
+   * @property {() => void} [onCancelQueue]
+   */
+
+  /** @type {Props} */
   let {
     exportQueue = [],
     activeExportJobId = null,

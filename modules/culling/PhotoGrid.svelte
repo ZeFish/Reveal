@@ -171,7 +171,7 @@
         {aspect}
         {fill}
         idx={start + j}
-        onSelect={(/** @type {MouseEvent} */ event) => onSelect(start + j, event)}
+        onSelect={(/** @type {MouseEvent | undefined} */ event) => onSelect(start + j, event)}
         onDblClick={() => onDblClick(f.path)}
         onContextMenu={(/** @type {MouseEvent} */ event) => onContextMenu(start + j, event)}
         onToggleStory={() => onToggleStory(f.path)}

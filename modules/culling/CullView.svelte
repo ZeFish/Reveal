@@ -18,7 +18,6 @@
     minRating = 0,
     isTauri = true,
     debug = "",
-    thumbUrl = (p) => p,
     selectGridItem = () => {},
     openPhoto = () => {},
     openPhotoMenu = () => {},
@@ -37,7 +36,6 @@
     {sel}
     {selectedPaths}
     {storySet}
-    {thumbUrl}
     {layout}
     {cols}
     {marginScale}
@@ -45,14 +43,14 @@
     fill={fillCells}
     {progress}
     scrollTop={currentScrollTop}
-    onScroll={(val) => {
+    onScroll={(/** @type {number} */ val) => {
       currentScrollTop = val;
       closePhotoMenu();
     }}
     onSelect={selectGridItem}
-    onDblClick={(path) => openPhoto(path, { openDevPanel: false })}
+    onDblClick={(/** @type {string} */ path) => openPhoto(path, { openDevPanel: false })}
     onContextMenu={openPhotoMenu}
-    onToggleStory={(path) => toggleStoryWithPath(path)}
+    onToggleStory={(/** @type {string} */ path) => toggleStoryWithPath(path)}
     onDragStart={onPhotoDragStart}
   />
 {:else if !loading}

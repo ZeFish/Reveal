@@ -6,7 +6,10 @@
   import Icon from "$lib/components/Icon.svelte";
 
   type Outcome = "success" | "stopped" | "failure";
-  type Card = { volume?: string; name: string; dcim: string; raw_count: number };
+  // `archive` is stashed from the `import-started` event payload once import
+  // begins (the destination folder, shown in the HUD) — not known at
+  // discovery time, so it's optional and absent until then.
+  type Card = { volume?: string; name: string; dcim: string; raw_count: number; archive?: string };
   type Progress = { done: number; total: number; current: string; path: string };
 
   let cards = $state<Card[]>([]);

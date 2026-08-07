@@ -22,6 +22,7 @@
     if (photoPath) navigator.clipboard?.writeText(photoPath);
   }
 
+  /** @param {string} path */
   function parentDir(path) {
     if (!path) return "";
     const parts = path.split("/");

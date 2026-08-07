@@ -26,6 +26,7 @@
   }
   let collapsedGroups = $state(readCollapsedGroups());
 
+  /** @param {string} label */
   function toggleGroup(label) {
     const next = new Set(collapsedGroups);
     if (next.has(label)) next.delete(label);
@@ -36,17 +37,23 @@
     } catch {}
   }
 
+  /** @param {string} stage */
   function lutListFor(stage) {
     if (stage === "pre") return recipe.rapid_pre_luts?.length ? recipe.rapid_pre_luts : (recipe.pre_luts || []);
     return recipe.rapid_post_luts?.length ? recipe.rapid_post_luts : (recipe.post_luts || []);
   }
 
+  /** @type {(v: number | undefined, min: number, max: number) => string} */
   const pct = (v, min, max) => `${((Number(v ?? 0) - min) / (max - min)) * 100}%`;
 
   let isPositive = $derived(
     films.find((f) => f.name === recipe.film)?.film_type === "positive"
   );
 
+  /**
+   * @param {any} group
+   * @param {any} control
+   */
   function isControlDisabled(group, control) {
     if (!isPositive) return false;
     if (control.id === "paper") return true;
@@ -54,6 +61,10 @@
     return false;
   }
 
+  /**
+   * @param {string} id
+   * @param {number | undefined | null} v
+   */
   function formatVal(id, v) {
     if (v === undefined || v === null) return "0";
     if (id === "temperature") {

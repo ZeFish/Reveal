@@ -1,4 +1,10 @@
 <script>
+  /**
+   * @typedef {Object} Props
+   * @property {() => void} [onClose]
+   */
+
+  /** @type {Props} */
   let { onClose = () => {} } = $props();
 </script>
 

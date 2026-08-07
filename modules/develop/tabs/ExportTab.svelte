@@ -26,6 +26,7 @@
     emit("dev-panel-choose-export-folder", {});
   }
 
+  /** @param {string} appPath */
   function openInEditor(appPath) {
     if (appPath) emit("dev-panel-open-in-editor", { appPath });
   }
