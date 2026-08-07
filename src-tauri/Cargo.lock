@@ -3772,6 +3772,7 @@ dependencies = [
  "objc",
  "rawler",
  "rayon",
+ "reveal-cull",
  "reveal-decode",
  "reveal-engine",
  "reveal-import",
@@ -3787,6 +3788,21 @@ dependencies = [
  "tauri-plugin-global-shortcut",
  "tauri-plugin-window-state",
  "tempfile",
+]
+
+[[package]]
+name = "reveal-cull"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "image",
+ "rayon",
+ "reveal-decode",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "ureq 2.12.1",
 ]
 
 [[package]]

@@ -6,6 +6,9 @@
       logs_folder: "",
       export_folder: "",
       lut_folder: "",
+      ai_cull_enabled: false,
+      ai_cull_target: 24,
+      ai_api_key: "",
     }),
     onClose = () => {},
     onChooseFolder = (/** @type {string} */ key) => {},
@@ -61,6 +64,23 @@
             <input bind:value={preferences.lut_folder} />
             <button onclick={() => onChooseFolder("lut_folder")}>CHOOSE…</button>
           </div>
+        </label>
+      </fieldset>
+      <fieldset>
+        <legend>AI CULL</legend>
+        <label class="settings-checkbox">
+          <input type="checkbox" bind:checked={preferences.ai_cull_enabled} />
+          <span>CULL &amp; EXPORT AUTOMATICALLY AFTER EACH IMPORT</span>
+        </label>
+        <label>
+          <span>KEEP</span>
+          <input type="number" min="1" max="200" bind:value={preferences.ai_cull_target} />
+          <small>How many photos per day-folder survive the cull.</small>
+        </label>
+        <label>
+          <span>VISION API KEY</span>
+          <input type="password" bind:value={preferences.ai_api_key} placeholder="sk-ant-…" autocomplete="off" />
+          <small>Sends downsized preview JPEGs (not RAWs) to Anthropic for ranking — costs per import.</small>
         </label>
       </fieldset>
     </div>
@@ -147,6 +167,16 @@
   .settings-scroll label {
     display: grid;
     gap: 6px;
+  }
+  .settings-scroll label.settings-checkbox {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+  }
+  .settings-scroll label.settings-checkbox input {
+    width: auto;
+    flex: 0 0 auto;
   }
   .settings-scroll input {
     box-sizing: border-box;

@@ -25,6 +25,9 @@
     toggleStoryWithPath = () => {},
     onPhotoDragStart = () => {},
     closePhotoMenu = () => {},
+    hasRoot = true,
+    scanning = false,
+    onAddLibraryFolder = () => {},
   } = $props();
 </script>
 
@@ -47,7 +50,7 @@
       closePhotoMenu();
     }}
     onSelect={selectGridItem}
-    onDblClick={(path) => openPhoto(path)}
+    onDblClick={(path) => openPhoto(path, { openDevPanel: false })}
     onContextMenu={openPhotoMenu}
     onToggleStory={(path) => toggleStoryWithPath(path)}
     onDragStart={onPhotoDragStart}
@@ -56,11 +59,24 @@
   <div class="empty">
     <hgroup>
       <h1>REVEAL</h1>
-      <p>
-        {curDir && minRating
-          ? "aucune photo à ce filtre"
-          : "indexe ta bibliothèque ou ouvre un dossier"}
-      </p>
+      {#if !hasRoot}
+        <!-- First launch, no catalogue root yet — the one thing a new
+             install actually needs before anything else works. A rail
+             button already covers this (`indexRoot`, shown when `!root`),
+             but it's a small text link off in a thin top bar; a brand new
+             user's eyes are on THIS screen, so the real call-to-action
+             belongs here too (reproduced 2026-08-03, portability audit). -->
+        <p>ajoute un dossier de photos pour commencer</p>
+        <button class="add-library" onclick={() => onAddLibraryFolder()} disabled={!isTauri || scanning}>
+          {scanning ? "indexation…" : "Ajouter un dossier"}
+        </button>
+      {:else}
+        <p>
+          {curDir && minRating
+            ? "aucune photo à ce filtre"
+            : "indexe ta bibliothèque ou ouvre un dossier"}
+        </p>
+      {/if}
       {#if !isTauri}<p><em>ouvre l'app Tauri</em></p>{/if}
       {#if debug}<p class="debug"><em>{debug}</em></p>{/if}
     </hgroup>
@@ -94,5 +110,8 @@
   .empty p.debug {
     margin-top: 0.8rem;
     opacity: 0.4;
+  }
+  .empty .add-library {
+    margin-top: 0.8rem;
   }
 </style>

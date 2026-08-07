@@ -70,6 +70,16 @@
 /* App-shell behaviors a document never needs. */
 html {
   height: 100%;
+  /* The shell is not a scrolling page — `overscroll-behavior: none` below
+     only stops rubber-banding, it does nothing if content actually exceeds
+     the window height. Without this, any element anywhere growing even 1px
+     taller than the viewport makes the WHOLE WINDOW scrollable, exposing
+     blank space above the fixed chrome (traffic lights, rail) — reproduced
+     2026-08-02 with an in-progress import HUD pushing content height past
+     the viewport. Panels/sidebars that need their own scroll already set
+     `overflow-y: auto` locally; this only locks the root.
+  */
+  overflow: hidden;
   /* WKWebView re-scales text on window resize otherwise. */
   -webkit-text-size-adjust: none;
   text-size-adjust: none;
@@ -81,7 +91,8 @@ body {
   margin: 0;
   padding: 0;
   max-width: none;
-  min-height: 100%;
+  height: 100%;
+  overflow: hidden;
   /* No rubber-band past the canvas; the shell is not a scrolling page. */
   overscroll-behavior: none;
   user-select: none;

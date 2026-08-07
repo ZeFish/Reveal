@@ -70,10 +70,19 @@
   } = $props();
 
   const EXPANDED_KEY = "reveal.sidebar.expanded";
+  const MANUALLY_COLLAPSED_KEY = "reveal.sidebar.manuallyCollapsed";
 
   // Restored synchronously at init — guarded for the prerender pass. The Set
   // is reassigned (never mutated) on toggle, so plain Set reactivity is enough.
   let expanded = $state(readExpanded());
+  // A node whose rel is a strict ancestor of the current directory auto-shows
+  // (see isExpanded) even when it's not in `expanded` — so you can always see
+  // where you are. That rule used to unconditionally win, which meant the
+  // chevron could never actually collapse an ancestor of whatever folder you
+  // were currently viewing (reproduced 2026-08-04: clicking the "2026"
+  // chevron while inside 2026/2026-08-01 visibly did nothing). This tracks an
+  // explicit "no, collapse it anyway" override that beats the auto-show rule.
+  let manuallyCollapsed = $state(readManuallyCollapsed());
   let libOpen = $state(false);
   /** @type {{ path: string, label: string, x: number, y: number } | null} */
   let folderMenu = $state(null);
@@ -127,16 +136,48 @@
     return new Set();
   }
 
+  function readManuallyCollapsed() {
+    if (typeof localStorage === "undefined") return new Set();
+    try {
+      const saved = JSON.parse(localStorage.getItem(MANUALLY_COLLAPSED_KEY) ?? "null");
+      if (Array.isArray(saved)) return new Set(saved);
+    } catch (_) {}
+    return new Set();
+  }
+
   /** @typedef {{ name: string, rel: string, abs: string, count: number, children: TreeNode[] }} TreeNode */
 
   /** @param {string} rel */
   function toggle(rel) {
-    const next = new Set(expanded);
-    if (next.has(rel)) next.delete(rel);
-    else next.add(rel);
-    expanded = next;
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem(EXPANDED_KEY, JSON.stringify([...next]));
+    if (isExpanded(rel)) {
+      const nextExpanded = new Set(expanded);
+      nextExpanded.delete(rel);
+      expanded = nextExpanded;
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem(EXPANDED_KEY, JSON.stringify([...nextExpanded]));
+      }
+      // The auto-show rule (isExpanded's curRel check, below) would
+      // otherwise immediately re-show this node — remember the explicit
+      // collapse so it actually sticks while browsing inside it.
+      if (curRel && curRel.startsWith(rel + "/")) {
+        const nextCollapsed = new Set(manuallyCollapsed);
+        nextCollapsed.add(rel);
+        manuallyCollapsed = nextCollapsed;
+        if (typeof localStorage !== "undefined") {
+          localStorage.setItem(MANUALLY_COLLAPSED_KEY, JSON.stringify([...nextCollapsed]));
+        }
+      }
+    } else {
+      const nextCollapsed = new Set(manuallyCollapsed);
+      nextCollapsed.delete(rel);
+      manuallyCollapsed = nextCollapsed;
+      const nextExpanded = new Set(expanded);
+      nextExpanded.add(rel);
+      expanded = nextExpanded;
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem(MANUALLY_COLLAPSED_KEY, JSON.stringify([...nextCollapsed]));
+        localStorage.setItem(EXPANDED_KEY, JSON.stringify([...nextExpanded]));
+      }
     }
   }
 
@@ -244,7 +285,11 @@
   /** @param {TreeNode} node */
   function navigate(node) {
     folderMenu = null;
-    if (node.children.length && !expanded.has(node.rel)) toggle(node.rel);
+    // Ensure-open, never toggle: `toggle` now flips whatever's currently
+    // VISIBLE (including nodes auto-shown because curDir lives inside them),
+    // so calling it here on a node that's already showing via that rule
+    // would collapse it instead of the no-op this always meant to be.
+    if (node.children.length) ensureExpanded(node.rel);
     onOpenDir(node.abs);
   }
 
@@ -435,8 +480,8 @@
     curDir && root && curDir.startsWith(root + "/") ? curDir.slice(root.length + 1) : null,
   );
   /** @param {string} rel */
-  /** @param {string} rel */
   function isExpanded(rel) {
+    if (manuallyCollapsed.has(rel)) return false;
     if (expanded.has(rel)) return true;
     return curRel ? curRel.startsWith(rel + "/") : false;
   }
@@ -465,7 +510,16 @@
   }
   /** @param {string|null} rel */
   function ensureExpanded(rel) {
-    if (!rel || expanded.has(rel)) return;
+    if (!rel) return;
+    if (manuallyCollapsed.has(rel)) {
+      const nextCollapsed = new Set(manuallyCollapsed);
+      nextCollapsed.delete(rel);
+      manuallyCollapsed = nextCollapsed;
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem(MANUALLY_COLLAPSED_KEY, JSON.stringify([...nextCollapsed]));
+      }
+    }
+    if (expanded.has(rel)) return;
     const next = new Set(expanded);
     next.add(rel);
     expanded = next;
@@ -1263,6 +1317,16 @@
     cursor: pointer;
     width: 8px;
     height: 8px;
+    box-sizing: content-box;
+    /* The visible chevron stays 8px, but an 8x8 hit target is easy to miss
+       by a couple pixels — a near-miss lands on .dir-row instead, which
+       only ever EXPANDS (never collapses) and no-ops when the folder is
+       already current, so the click appeared to do nothing (reproduced
+       2026-08-04). Padding widens the clickable area to 20x20 without
+       shifting layout — the matching negative margin cancels the padding's
+       footprint, so siblings sit exactly where they did before. */
+    padding: 6px;
+    margin: -6px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1353,10 +1417,15 @@
     inset: 0;
     z-index: 499;
   }
+  /* Spacing/typography mirrors ContextMenu.svelte's `.photo-context-menu`
+     (modules/menus/ContextMenu.svelte) — was noticeably tighter (4px 8px
+     button padding, hardcoded system font) than the photo menu's 5px 10px
+     + var(--font-text), which read as two different layouts side by side
+     (reproduced 2026-08-02). Same rhythm, one menu language. */
   .folder-menu {
     position: fixed;
     z-index: 500;
-    min-width: 200px;
+    min-width: 220px;
     padding: 4px;
     border: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
     border-radius: 8px;
@@ -1364,18 +1433,16 @@
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35), 0 0 0 0.5px rgba(0, 0, 0, 0.15);
     backdrop-filter: blur(24px) saturate(180%);
     -webkit-backdrop-filter: blur(24px) saturate(180%);
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    font-family: var(--font-text, sans-serif);
     font-size: 12px;
     color: var(--color-foreground);
     user-select: none;
   }
   .folder-menu-header {
-    padding: 4px 8px 5px;
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    color: color-mix(in srgb, var(--color-foreground) 50%, transparent);
-    text-transform: uppercase;
+    padding: 6px 10px;
+    font-size: 11px;
+    font-family: var(--font-monospace, monospace);
+    opacity: 0.6;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1387,12 +1454,9 @@
     align-items: center;
     justify-content: space-between;
     width: 100%;
-    padding: 4px 8px;
+    padding: 5px 10px;
     border-radius: var(--radius-sm);
     color: var(--color-foreground);
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
-    font-size: 12px;
-    line-height: 1.4;
     cursor: default;
   }
   .folder-menu button:hover:not(:disabled),
@@ -1402,7 +1466,7 @@
   }
   .folder-menu-divider {
     height: 1px;
-    margin: 3px 4px;
+    margin: 4px 0;
     background: color-mix(in srgb, var(--color-border) 40%, transparent);
   }
   .folder-menu button:disabled {

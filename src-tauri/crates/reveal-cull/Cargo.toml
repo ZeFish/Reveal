@@ -1,0 +1,19 @@
+[package]
+name = "reveal-cull"
+description = "AI culling: local technical prefilter + cloud vision ranking to pick the best frames from an import batch"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+reveal-decode = { path = "../reveal-decode" }
+image = { workspace = true, features = ["bmp"] }
+rayon.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror.workspace = true
+ureq = { version = "2", features = ["json"] }
+base64 = "0.22"
+
+[dev-dependencies]
+tempfile = "3"

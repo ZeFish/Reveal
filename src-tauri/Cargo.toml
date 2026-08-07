@@ -45,7 +45,7 @@ image.workspace = true
 # pre-1.0; drop for distribution.
 kamadak-exif = "0.5"
 chrono = "0.4"
-tauri = { version = "2", features = ["devtools", "tray-icon", "image-png"] }
+tauri = { version = "2", features = ["devtools", "tray-icon", "image-png", "macos-private-api"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-window-state = "2"
 tauri-plugin-global-shortcut = "2"
@@ -61,6 +61,7 @@ reveal-index = { path = "crates/reveal-index" }
 reveal-meta = { path = "crates/reveal-meta" }
 reveal-publish = { path = "crates/reveal-publish" }
 reveal-import = { path = "crates/reveal-import" }
+reveal-cull = { path = "crates/reveal-cull" }
 tauri-plugin-deep-link = "2.4.9"
 
 [target.'cfg(target_os = "macos")'.dependencies]

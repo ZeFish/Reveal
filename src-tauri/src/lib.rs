@@ -108,28 +108,18 @@ fn read_shell_prefs(app: &tauri::AppHandle) -> ShellPrefs {
 }
 
 pub fn show_import_panel(app: &tauri::AppHandle) {
+    // Real WKWebView transparency (the panel's CSS `rgba(30,30,30,.82)` +
+    // `backdrop-filter` showing the desktop through it, not an opaque
+    // backing store) requires macOS's private `drawsBackground` WKWebView
+    // key, which wry only sets when the `macos-private-api` Cargo feature
+    // and `macOSPrivateApi: true` (tauri.conf.json) are both on — applied
+    // once, at webview creation, before this window's content ever loads.
+    // No per-show native call needed here; NSWindow-level opacity is
+    // likewise handled unconditionally by tao from this window's own
+    // `"transparent": true` config.
     let app_handle = app.clone();
     let _ = app.run_on_main_thread(move || {
         if let Some(panel) = app_handle.get_webview_window("import-panel") {
-            #[cfg(target_os = "macos")]
-            {
-                if let Ok(ns_window) = panel.ns_window() {
-                    unsafe {
-                        use objc::{class, msg_send, sel, sel_impl};
-                        use objc::runtime::NO;
-                        let ns_win = ns_window as *mut objc::runtime::Object;
-                        let clear_color: *mut objc::runtime::Object = msg_send![class!(NSColor), clearColor];
-                        let _: () = msg_send![ns_win, setOpaque: NO];
-                        let _: () = msg_send![ns_win, setBackgroundColor: clear_color];
-                        let _: () = msg_send![ns_win, setHasShadow: NO];
-
-                        let content_view: *mut objc::runtime::Object = msg_send![ns_win, contentView];
-                        if !content_view.is_null() {
-                            make_webview_transparent(content_view);
-                        }
-                    }
-                }
-            }
             if let Ok(Some(monitor)) = app_handle.primary_monitor() {
                 let scale_factor = monitor.scale_factor();
                 let logical_size = tauri::LogicalSize::new(396.0, 108.0);
@@ -145,36 +135,6 @@ pub fn show_import_panel(app: &tauri::AppHandle) {
             let _ = panel.show();
         }
     });
-}
-
-#[cfg(target_os = "macos")]
-unsafe fn make_webview_transparent(view: *mut objc::runtime::Object) {
-    use objc::{msg_send, sel, sel_impl};
-    use objc::runtime::NO;
-
-    if view.is_null() {
-        return;
-    }
-
-    let responds_draws: bool = msg_send![view, respondsToSelector: sel!(setDrawsBackground:)];
-    if responds_draws {
-        let _: () = msg_send![view, setDrawsBackground: NO];
-    }
-
-    let responds_under_page: bool = msg_send![view, respondsToSelector: sel!(setUnderPageBackgroundColor:)];
-    if responds_under_page {
-        let clear_color: *mut objc::runtime::Object = msg_send![objc::class!(NSColor), clearColor];
-        let _: () = msg_send![view, setUnderPageBackgroundColor: clear_color];
-    }
-
-    let subviews: *mut objc::runtime::Object = msg_send![view, subviews];
-    if !subviews.is_null() {
-        let count: usize = msg_send![subviews, count];
-        for i in 0..count {
-            let subview: *mut objc::runtime::Object = msg_send![subviews, objectAtIndex: i];
-            make_webview_transparent(subview);
-        }
-    }
 }
 
 fn write_shell_prefs(app: &tauri::AppHandle, prefs: &ShellPrefs) -> Result<(), String> {
@@ -430,7 +390,7 @@ fn setup_main_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
     let import_card = MenuItem::with_id(app, "menu-import-card", "Import from Card", true, None::<&str>)?;
     let import_folder =
-        MenuItem::with_id(app, "menu-import-folder", "Import from Folder…", false, None::<&str>)?;
+        MenuItem::with_id(app, "menu-import-folder", "Add Library Folder…", true, None::<&str>)?;
     let auto_import =
         MenuItem::with_id(app, "menu-auto-import", "Toggle Automatic Import", true, None::<&str>)?;
     let import_menu =
@@ -496,6 +456,10 @@ fn setup_main_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         }
         "menu-auto-import" => {
             let _ = app.emit("toggle-auto-import-requested", ());
+        }
+        "menu-import-folder" => {
+            show_main_window(app);
+            let _ = app.emit("add-library-folder-requested", ());
         }
         "menu-engine-none" => {
             let _ = app.emit("menu-clear-develop-requested", ());
@@ -1187,9 +1151,11 @@ fn preview_sidecar_path(source: &std::path::Path) -> Option<std::path::PathBuf> 
 /// This is the camera's own full-resolution render — correct even when it
 /// diverges from a plain color decode (a monochrome film simulation, for
 /// instance: the sensor data is always color, but the camera's OWN JPEG
-/// correctly reflects what the photographer intended). Checked before the
-/// embedded-thumb extraction and the neutral fallback, since for "None" it's
-/// the most faithful as-shot source available when one exists.
+/// correctly reflects what the photographer intended). Checked AFTER the
+/// embedded-thumb extraction (only when a RAW has no embedded thumb to fall
+/// back on cheaply) — it's full camera resolution, tens of MB, and decoding
+/// it for every grid cell in a RAW+JPEG folder is what spiked memory into
+/// the tens of GB before this was reordered (2026-08-02).
 fn companion_jpeg_path(source: &std::path::Path) -> Option<std::path::PathBuf> {
     let stem = source.file_stem()?.to_string_lossy().to_string();
     ["JPG", "jpg", "JPEG", "jpeg"]
@@ -1287,6 +1253,72 @@ fn write_sidecar_if_changed(path: &std::path::Path, bytes: &[u8]) -> std::io::Re
         }
     }
     std::fs::write(path, bytes)
+}
+
+/// Persist a `reveal://thumb` render as the durable `.preview.jpg` sidecar so
+/// the NEXT request for this photo hits the cheap "developed sidecar" branch
+/// instead of re-decoding the source (embedded thumb, companion JPEG, or a
+/// full develop) every single time the grid loads it. Never touches the
+/// `.xmp` recipe/engine metadata — a photo with no saved develop settings
+/// still reads as engine "None" if reopened; this only caches rendered bytes.
+fn persist_thumb_cache(source: &std::path::Path, bytes: &[u8]) {
+    if let Some(sidecar_path) = preview_sidecar_path(source) {
+        if let Err(e) = write_sidecar_if_changed(&sidecar_path, bytes) {
+            eprintln!("thumb cache write {}: {e}", sidecar_path.display());
+        }
+    }
+}
+
+/// Bounds how many `reveal://thumb` decodes run at once. Without this, a
+/// folder opened all-at-once (masonry isn't grid-virtualized yet, per the
+/// README) can spawn one blocking decode per visible cell — fine for the
+/// cheap embedded-thumb path, but the companion-JPEG/full-develop fallbacks
+/// are expensive enough that hundreds running concurrently spikes memory
+/// into the tens of GB (confirmed 2026-08-02 opening a 213-photo RAW+JPEG
+/// folder — see reveal.md memory notes).
+struct ThumbSemaphore {
+    count: std::sync::Mutex<usize>,
+    cv: std::sync::Condvar,
+    max: usize,
+}
+
+impl ThumbSemaphore {
+    fn new(max: usize) -> Self {
+        Self { count: std::sync::Mutex::new(0), cv: std::sync::Condvar::new(), max }
+    }
+
+    fn acquire(&self) {
+        let mut count = self.count.lock().unwrap();
+        while *count >= self.max {
+            count = self.cv.wait(count).unwrap();
+        }
+        *count += 1;
+    }
+
+    fn release(&self) {
+        let mut count = self.count.lock().unwrap();
+        *count -= 1;
+        self.cv.notify_one();
+    }
+}
+
+struct ThumbConcurrencyState(std::sync::Arc<ThumbSemaphore>);
+
+/// RAII guard: acquired before a thumb decode, released (even on early
+/// return/panic-unwind) when the request finishes.
+struct ThumbPermit<'a>(&'a ThumbSemaphore);
+
+impl<'a> ThumbPermit<'a> {
+    fn acquire(sem: &'a ThumbSemaphore) -> Self {
+        sem.acquire();
+        Self(sem)
+    }
+}
+
+impl Drop for ThumbPermit<'_> {
+    fn drop(&mut self) {
+        self.0.release();
+    }
 }
 
 /// The develop cache under DevelopPreviews/ is a pure speed layer — we keep the
@@ -1393,20 +1425,17 @@ fn developed_preview_cache_path(
     )))
 }
 
-#[tauri::command]
-async fn develop_preview(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, EngineState>,
-    path: String,
-    recipe: reveal_engine::Recipe,
+/// Shared by `develop_preview` (returns bytes to the frontend) and
+/// `copy_developed_preview_to_clipboard` (writes bytes straight to
+/// NSPasteboard) — same cache-or-develop logic either way.
+async fn developed_preview_jpeg(
+    app: &tauri::AppHandle,
+    state: &EngineState,
+    path: &str,
+    recipe: &reveal_engine::Recipe,
     max_px: u32,
-) -> Result<IpcResponse, String> {
-    let cache_path = developed_preview_cache_path(
-        &app,
-        std::path::Path::new(&path),
-        &recipe,
-        max_px,
-    )?;
+) -> Result<Vec<u8>, String> {
+    let cache_path = developed_preview_cache_path(app, std::path::Path::new(path), recipe, max_px)?;
     // The durable truth is the `.preview.jpg` sibling of the RAW (file over
     // app), a 2048px develop that doubles as a web-ready export. Drag frames
     // (DRAG_PX) render below full res: they neither touch the sidecar nor land
@@ -1414,13 +1443,13 @@ async fn develop_preview(
     // churn files) — only the settled full-res render (max_px 2048) persists.
     let durable = max_px >= 2048;
     if let Ok(jpeg) = std::fs::read(&cache_path) {
-        write_preview_sidecar_bytes(&path, &jpeg, durable);
+        write_preview_sidecar_bytes(path, &jpeg, durable);
         eprintln!(
             "develop_preview cache: {} ({} ko)",
-            path.rsplit('/').next().unwrap_or(&path),
+            path.rsplit('/').next().unwrap_or(path),
             jpeg.len() / 1024
         );
-        return Ok(IpcResponse::new(jpeg));
+        return Ok(jpeg);
     }
 
     let engine = state.0.clone();
@@ -1428,9 +1457,10 @@ async fn develop_preview(
     // sidecar funnel below needs it. Passing only the filename here wrote
     // `DSCF….preview.jpg` into the process CWD (the repo root during dev)
     // instead of next to the RAW, so the grid never saw fresh develops.
-    let path_owned = path.clone();
+    let path_owned = path.to_string();
+    let recipe_owned = recipe.clone();
     let out = tauri::async_runtime::spawn_blocking(move || {
-        engine.develop_jpeg(std::path::Path::new(&path_owned), &recipe, max_px)
+        engine.develop_jpeg(std::path::Path::new(&path_owned), &recipe_owned, max_px)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1442,13 +1472,83 @@ async fn develop_preview(
     );
     if durable {
         if let Err(e) = std::fs::write(&cache_path, &out.jpeg) {
-            let source_name = path.rsplit('/').next().unwrap_or(&path);
+            let source_name = path.rsplit('/').next().unwrap_or(path);
             eprintln!("develop_preview cache write {source_name}: {e}");
         }
-        schedule_cache_prune(&app);
+        schedule_cache_prune(app);
     }
-    write_preview_sidecar_bytes(&path, &out.jpeg, durable);
-    Ok(IpcResponse::new(out.jpeg))
+    write_preview_sidecar_bytes(path, &out.jpeg, durable);
+    Ok(out.jpeg)
+}
+
+#[tauri::command]
+async fn develop_preview(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, EngineState>,
+    path: String,
+    recipe: reveal_engine::Recipe,
+    max_px: u32,
+) -> Result<IpcResponse, String> {
+    let jpeg = developed_preview_jpeg(&app, &state, &path, &recipe, max_px).await?;
+    Ok(IpcResponse::new(jpeg))
+}
+
+/// ⌘C in single-photo mode, for every non-Rapid engine (whose on-screen
+/// preview is a decoded JPEG, not a live canvas) — writes straight to
+/// NSPasteboard instead of going through the WebView's Clipboard API.
+/// Reading the on-screen preview back via `<img>`/`canvas.toBlob()` hit two
+/// separate WebKit bugs in a row (fetch() on the app's own blob: URLs
+/// throwing "Load failed"; then the resulting canvas read as tainted,
+/// throwing SecurityError) — reproduced 2026-08-02. Going fully native side-
+/// steps the whole WebView canvas/blob/CORS category instead of chasing a
+/// third WebKit quirk.
+#[tauri::command]
+async fn copy_developed_preview_to_clipboard(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, EngineState>,
+    path: String,
+    recipe: reveal_engine::Recipe,
+    max_px: u32,
+) -> Result<(), String> {
+    let jpeg = developed_preview_jpeg(&app, &state, &path, &recipe, max_px).await?;
+    #[cfg(target_os = "macos")]
+    {
+        return macos::clipboard::write_jpeg_image(&jpeg);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = jpeg;
+        Err("copy to clipboard is only implemented on macOS".to_string())
+    }
+}
+
+/// ⌘C outside single-photo mode (grid selection, or dev mode before a
+/// develop has produced a preview) — same source priority as the
+/// `reveal://thumb` protocol handler (developed sidecar → embedded camera
+/// preview → companion JPEG), but full quality, not the grid's downscaled
+/// copy. Native NSPasteboard write for the same reason as
+/// `copy_developed_preview_to_clipboard`: `fetch()` on `reveal://thumb`
+/// itself throws "TypeError: Load failed" in this WebView (reproduced
+/// 2026-08-02) — a pre-existing bug in the browser-side clipboard path, not
+/// specific to blob: URLs.
+#[tauri::command]
+fn copy_photo_preview_to_clipboard(path: String) -> Result<(), String> {
+    let source = std::path::Path::new(&path);
+    let jpeg = preview_sidecar_path(source)
+        .filter(|candidate| candidate.is_file())
+        .and_then(|candidate| std::fs::read(candidate).ok())
+        .or_else(|| reveal_decode::extract_thumb_preview(source).ok().map(|p| p.bytes))
+        .or_else(|| companion_jpeg_path(source).and_then(|candidate| std::fs::read(candidate).ok()))
+        .ok_or_else(|| format!("No preview available for {path}"))?;
+    #[cfg(target_os = "macos")]
+    {
+        return macos::clipboard::write_jpeg_image(&jpeg);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = jpeg;
+        Err("copy to clipboard is only implemented on macOS".to_string())
+    }
 }
 
 /// THE CONTRACT: every preview-serving path, for every develop engine, MUST
@@ -1984,6 +2084,20 @@ struct IndexState(std::sync::Arc<reveal_index::Index>);
 struct ExportState(std::sync::Arc<std::sync::atomic::AtomicBool>);
 
 impl Default for ExportState {
+    fn default() -> Self {
+        Self(std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)))
+    }
+}
+
+/// One AI cull runs at a time per day-folder — mirrors `ImportState`'s
+/// in-flight guard so triggering it twice for the same folder (e.g. a
+/// re-emitted `import-finished`) is a clear error instead of a data race.
+#[derive(Clone, Default)]
+struct CullState(std::sync::Arc<std::sync::Mutex<std::collections::BTreeSet<String>>>);
+
+struct CullCancelState(std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+impl Default for CullCancelState {
     fn default() -> Self {
         Self(std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)))
     }
@@ -2748,6 +2862,70 @@ async fn export_photo(
     .map_err(|e| e.to_string())?
 }
 
+/// Develop-and-write one batch of photos using each photo's SAVED recipe
+/// (engine defaults when none), emitting `event_name` progress. Shared by
+/// `export_photos` (manual grid/selection export) and `ai_cull` (the
+/// automatic post-cull export) so there's exactly one place that knows how a
+/// batch export actually runs.
+fn export_batch(
+    engine: &reveal_engine::Engine,
+    app: &tauri::AppHandle,
+    cancelled: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+    paths: &[String],
+    dest_dir: &str,
+    long_edge: u32,
+    border_frac: f32,
+    event_name: &str,
+) -> usize {
+    let total = paths.len();
+    let mut done = 0usize;
+    if std::fs::create_dir_all(dest_dir).is_err() {
+        return 0;
+    }
+    for (i, path) in paths.iter().enumerate() {
+        if cancelled.load(std::sync::atomic::Ordering::Acquire) {
+            let _ = app.emit(
+                event_name,
+                serde_json::json!({
+                    "done": done,
+                    "total": total,
+                    "current": "",
+                    "phase": "cancelled",
+                    "cancelled": true
+                }),
+            );
+            return done;
+        }
+        let src = std::path::Path::new(path);
+        let name = src.file_name().unwrap_or_default().to_string_lossy();
+        let _ = app.emit(
+            event_name,
+            serde_json::json!({ "done": i, "total": total, "current": name }),
+        );
+        let recipe = reveal_meta::read(src)
+            .ok()
+            .flatten()
+            .and_then(|s| s.engine_settings)
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default();
+        match engine.export_jpeg(src, &recipe, long_edge, border_frac) {
+            Ok((jpeg, _, _)) => {
+                let stem = src.file_stem().unwrap_or_default().to_string_lossy();
+                let out = std::path::Path::new(dest_dir).join(format!("{stem}.jpg"));
+                if std::fs::write(&out, &jpeg).is_ok() {
+                    done += 1;
+                }
+            }
+            Err(e) => eprintln!("export {name}: {e:#}"),
+        }
+    }
+    let _ = app.emit(
+        event_name,
+        serde_json::json!({ "done": total, "total": total, "current": "" }),
+    );
+    done
+}
+
 /// Batch-export every frame of `paths` using each photo's SAVED recipe
 /// (engine defaults when none). Emits `export-progress`.
 #[tauri::command]
@@ -2773,49 +2951,7 @@ async fn export_photos(
             dest_dir
         };
         let total = paths.len();
-        let mut done = 0usize;
-        std::fs::create_dir_all(&dest_dir).map_err(|e| e.to_string())?;
-        for (i, path) in paths.iter().enumerate() {
-            if cancelled.load(std::sync::atomic::Ordering::Acquire) {
-                let _ = app.emit(
-                    "export-progress",
-                    serde_json::json!({
-                        "done": done,
-                        "total": total,
-                        "current": "",
-                        "phase": "cancelled",
-                        "cancelled": true
-                    }),
-                );
-                return Ok(done);
-            }
-            let src = std::path::Path::new(path);
-            let name = src.file_name().unwrap_or_default().to_string_lossy();
-            let _ = app.emit(
-                "export-progress",
-                serde_json::json!({ "done": i, "total": total, "current": name }),
-            );
-            let recipe = reveal_meta::read(src)
-                .ok()
-                .flatten()
-                .and_then(|s| s.engine_settings)
-                .and_then(|v| serde_json::from_value(v).ok())
-                .unwrap_or_default();
-            match engine.export_jpeg(src, &recipe, long_edge, border_frac) {
-                Ok((jpeg, _, _)) => {
-                    let stem = src.file_stem().unwrap_or_default().to_string_lossy();
-                    let out = std::path::Path::new(&dest_dir).join(format!("{stem}.jpg"));
-                    if std::fs::write(&out, &jpeg).is_ok() {
-                        done += 1;
-                    }
-                }
-                Err(e) => eprintln!("export {name}: {e:#}"),
-            }
-        }
-        let _ = app.emit(
-            "export-progress",
-            serde_json::json!({ "done": total, "total": total, "current": "" }),
-        );
+        let done = export_batch(&engine, &app, &cancelled, &paths, &dest_dir, long_edge, border_frac, "export-progress");
         eprintln!("export batch: {done}/{total} → {dest_dir}");
         Ok(done)
     })
@@ -2828,6 +2964,318 @@ fn cancel_exports(cancellation: tauri::State<'_, ExportState>) {
     cancellation
         .0
         .store(true, std::sync::atomic::Ordering::Release);
+}
+
+/// The generic preferences bag (`prefs.json`, the same file
+/// `load_preferences`/`save_preferences` read/write for the Settings modal)
+/// — reused here rather than adding dedicated `ShellPrefs` fields + setter
+/// commands for four AI-cull settings.
+fn read_ai_cull_prefs(app: &tauri::AppHandle) -> (bool, u32, Option<String>, Option<String>) {
+    let Ok(path) = prefs_file(app) else {
+        return (false, 24, None, None);
+    };
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return (false, 24, None, None);
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return (false, 24, None, None);
+    };
+    let enabled = value.get("ai_cull_enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+    let target = value
+        .get("ai_cull_target")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .unwrap_or(24);
+    let api_key = value
+        .get("ai_api_key")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .filter(|s| !s.is_empty());
+    let model = value
+        .get("ai_model")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .filter(|s| !s.is_empty());
+    (enabled, target, api_key, model)
+}
+
+/// Local prefilter + cloud vision ranking, no side effects (no rating bump,
+/// no export) — just the picks plus counts for whatever summary the caller
+/// wants to show. Emits `cull-progress` (phase "local"/"cloud") on `app`
+/// along the way. Shared by the walk-away `ai_cull` (which rates+exports
+/// the result afterward) and the manual `ai_cull_selection` (whose caller
+/// decides what to do with the picks — today, add them to the quick
+/// collection).
+fn score_paths(
+    app: &tauri::AppHandle,
+    dir: &str,
+    paths: &[String],
+    target: u32,
+    api_key: &str,
+    model: Option<String>,
+    cancel: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> Result<(Vec<String>, usize, usize), String> {
+    let considered = paths.len();
+    let _ = app.emit(
+        "cull-progress",
+        serde_json::json!({ "dir": dir, "phase": "local", "done": 0, "total": considered }),
+    );
+    let survivors = reveal_cull::prefilter(paths, &reveal_cull::PrefilterConfig::default());
+    if cancel.load(std::sync::atomic::Ordering::Acquire) {
+        return Err("annulé".into());
+    }
+    let _ = app.emit(
+        "cull-progress",
+        serde_json::json!({ "dir": dir, "phase": "cloud", "done": 0, "total": survivors.len() }),
+    );
+
+    // Re-extract/re-encode only the survivors — keeping every candidate's
+    // preview bytes in memory for a full day's import would be wasteful.
+    let candidates: Vec<reveal_cull::RankCandidate> = survivors
+        .iter()
+        .filter_map(|s| {
+            reveal_cull::embedded_preview_jpeg(&s.path, 768)
+                .map(|jpeg_bytes| reveal_cull::RankCandidate { path: s.path.clone(), jpeg_bytes })
+        })
+        .collect();
+
+    let ranker = match model {
+        Some(m) => reveal_cull::AnthropicRanker::with_model(api_key.to_string(), m),
+        None => reveal_cull::AnthropicRanker::new(api_key.to_string()),
+    };
+    let candidate_count = candidates.len();
+    let progress_ranker = ProgressRanker {
+        inner: &ranker,
+        app,
+        dir,
+        total: candidate_count,
+        done: std::sync::atomic::AtomicUsize::new(0),
+    };
+    let ranked = reveal_cull::rank_all(&progress_ranker, candidates, 20, target as usize)
+        .map_err(|e| e.to_string())?;
+    if cancel.load(std::sync::atomic::Ordering::Acquire) {
+        return Err("annulé".into());
+    }
+
+    let survivors_count = survivors.len();
+    Ok((ranked.into_iter().map(|r| r.path).collect(), considered, survivors_count))
+}
+
+/// Wraps a `VisionRanker` to emit a `cull-progress` tick after every batch
+/// completes, instead of once at the phase's start — the cloud stage is a
+/// handful of sequential HTTP requests (one per ~20 photos) each taking real
+/// seconds, so without this the UI freezes at "0/N" for the whole stage even
+/// though it's actively working.
+struct ProgressRanker<'a> {
+    inner: &'a dyn reveal_cull::VisionRanker,
+    app: &'a tauri::AppHandle,
+    dir: &'a str,
+    total: usize,
+    done: std::sync::atomic::AtomicUsize,
+}
+
+impl reveal_cull::VisionRanker for ProgressRanker<'_> {
+    fn rank_batch(
+        &self,
+        candidates: &[reveal_cull::RankCandidate],
+    ) -> Result<Vec<reveal_cull::RankedResult>, reveal_cull::CullError> {
+        let result = self.inner.rank_batch(candidates)?;
+        let done = self
+            .done
+            .fetch_add(candidates.len(), std::sync::atomic::Ordering::Relaxed)
+            + candidates.len();
+        let _ = self.app.emit(
+            "cull-progress",
+            serde_json::json!({ "dir": self.dir, "phase": "cloud", "done": done, "total": self.total }),
+        );
+        Ok(result)
+    }
+}
+
+#[derive(Clone, serde::Serialize)]
+struct CullResult {
+    dir: String,
+    considered: usize,
+    survivors: usize,
+    picked: usize,
+    exported_to: String,
+}
+
+/// Auto-cull one just-imported day-folder down to the best `ai_cull_target`
+/// frames and export them — the AI-picks step between `import_card`'s
+/// preset application and a batch export. Structured like `import_card`/
+/// `export_photos`: an in-flight guard, progress events, a final result
+/// event. Local prefilter first (`reveal_cull::prefilter`), then a cloud
+/// vision ranking pass (`reveal_cull::rank_all`), then straight into
+/// `export_batch` — no round-trip back to the frontend for the export step.
+#[tauri::command]
+async fn ai_cull(
+    app: tauri::AppHandle,
+    engine_state: tauri::State<'_, EngineState>,
+    index_state: tauri::State<'_, IndexState>,
+    cull_state: tauri::State<'_, CullState>,
+    cancel_state: tauri::State<'_, CullCancelState>,
+    dir: String,
+    paths: Vec<String>,
+) -> Result<CullResult, String> {
+    {
+        let mut running = cull_state.0.lock().unwrap();
+        if running.contains(&dir) {
+            return Err("culling déjà en cours pour ce dossier".into());
+        }
+        running.insert(dir.clone());
+    }
+    cancel_state.0.store(false, std::sync::atomic::Ordering::Relaxed);
+
+    let (enabled, target, api_key, model) = read_ai_cull_prefs(&app);
+    if !enabled {
+        cull_state.0.lock().unwrap().remove(&dir);
+        return Err("culling IA désactivé".into());
+    }
+    let Some(api_key) = api_key else {
+        cull_state.0.lock().unwrap().remove(&dir);
+        return Err("aucune clé API de vision configurée".into());
+    };
+
+    let _ = app.emit(
+        "cull-started",
+        serde_json::json!({ "dir": dir, "total": paths.len() }),
+    );
+
+    let engine = engine_state.0.clone();
+    let index = index_state.0.clone();
+    let cancel = cancel_state.0.clone();
+    let app_for_worker = app.clone();
+    let dir_key = dir.clone();
+
+    let worker = tauri::async_runtime::spawn_blocking(move || -> Result<CullResult, String> {
+        let (picked, considered, survivors) =
+            score_paths(&app_for_worker, &dir_key, &paths, target, &api_key, model, &cancel)?;
+
+        // Mark the picks visibly (existing star-filter/index path) — the
+        // walk-away workflow has no review step, so this is the paper trail.
+        for path in &picked {
+            let p = std::path::Path::new(path);
+            if let Ok(mut sidecar) = reveal_meta::read(p).map(|s| s.unwrap_or_default()) {
+                sidecar.rating = Some(5);
+                let _ = reveal_meta::write(p, &sidecar);
+            }
+            let _ = index.set_rating(path, 5);
+        }
+
+        let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+        let folder_name = std::path::Path::new(&dir_key)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "culled".to_string());
+        let dest_dir = format!("{home}/Desktop/{folder_name}");
+
+        let exported = export_batch(&engine, &app_for_worker, &cancel, &picked, &dest_dir, 2048, 0.04, "cull-progress");
+
+        Ok(CullResult {
+            dir: dir_key,
+            considered,
+            survivors,
+            picked: exported,
+            exported_to: dest_dir,
+        })
+    })
+    .await;
+
+    cull_state.0.lock().unwrap().remove(&dir);
+
+    let result: Result<CullResult, String> = match worker {
+        Ok(inner) => inner,
+        Err(e) => Err(e.to_string()),
+    };
+
+    match &result {
+        Ok(stats) => {
+            let folder_name = std::path::Path::new(&stats.dir)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let _ = notify_user(
+                "Culling IA — Reveal".to_string(),
+                format!(
+                    "{folder_name} : {} de {} conservés, exportés vers {}",
+                    stats.picked, stats.considered, stats.exported_to
+                ),
+            )
+            .await;
+            let _ = app.emit("cull-finished", stats);
+        }
+        Err(message) => {
+            let _ = app.emit(
+                "cull-failed",
+                serde_json::json!({ "dir": dir, "message": message }),
+            );
+        }
+    }
+
+    result
+}
+
+#[tauri::command]
+fn cancel_cull(cancel_state: tauri::State<'_, CullCancelState>) {
+    cancel_state.0.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+#[derive(Clone, serde::Serialize)]
+struct CullSelectionResult {
+    dir: String,
+    considered: usize,
+    survivors: usize,
+    picked: Vec<String>,
+}
+
+/// The rail's manual "Culling IA" button: score `paths` (the current grid's
+/// view) and return the picks — no rating bump, no export. Unlike `ai_cull`,
+/// a click here is the user's explicit ask, so it runs regardless of the
+/// walk-away `ai_cull_enabled` toggle; it still needs a configured vision
+/// API key to actually score anything. The caller decides what to do with
+/// the picks — the frontend adds each to the folder's quick collection, the
+/// same story-note mechanism the `q` shortcut toggles.
+#[tauri::command]
+async fn ai_cull_selection(
+    app: tauri::AppHandle,
+    cull_state: tauri::State<'_, CullState>,
+    cancel_state: tauri::State<'_, CullCancelState>,
+    dir: String,
+    paths: Vec<String>,
+) -> Result<CullSelectionResult, String> {
+    {
+        let mut running = cull_state.0.lock().unwrap();
+        if running.contains(&dir) {
+            return Err("culling déjà en cours pour ce dossier".into());
+        }
+        running.insert(dir.clone());
+    }
+    cancel_state.0.store(false, std::sync::atomic::Ordering::Relaxed);
+
+    let (_enabled, target, api_key, model) = read_ai_cull_prefs(&app);
+    let Some(api_key) = api_key else {
+        cull_state.0.lock().unwrap().remove(&dir);
+        return Err("aucune clé API de vision configurée (Réglages → AI CULL)".into());
+    };
+
+    let cancel = cancel_state.0.clone();
+    let app_for_worker = app.clone();
+    let dir_key = dir.clone();
+
+    let worker = tauri::async_runtime::spawn_blocking(move || {
+        score_paths(&app_for_worker, &dir_key, &paths, target, &api_key, model, &cancel)
+    })
+    .await;
+
+    cull_state.0.lock().unwrap().remove(&dir);
+
+    let (picked, considered, survivors) = match worker {
+        Ok(inner) => inner?,
+        Err(e) => return Err(e.to_string()),
+    };
+
+    Ok(CullSelectionResult { dir, considered, survivors, picked })
 }
 
 /// The engine's default recipe — single source of truth for the panel.
@@ -3140,6 +3588,9 @@ pub fn run() {
             app.manage(ImportState::default());
             app.manage(ImportCancelState::default());
             app.manage(ExportState::default());
+            app.manage(CullState::default());
+            app.manage(CullCancelState::default());
+            app.manage(ThumbConcurrencyState(std::sync::Arc::new(ThumbSemaphore::new(6))));
             #[cfg(target_os = "macos")]
             macos::volume_watcher::start(app.handle().clone());
 
@@ -3215,7 +3666,11 @@ pub fn run() {
                         responder.respond(response);
                         return;
                     }
+                    let sem = app.state::<ThumbConcurrencyState>().0.clone();
                     tauri::async_runtime::spawn_blocking(move || {
+                        // Bounds how many of these run at once — see
+                        // `ThumbSemaphore`'s doc comment for why this exists.
+                        let _permit = ThumbPermit::acquire(&sem);
                         let t = std::time::Instant::now();
                         let source = std::path::Path::new(&path);
                         // File over app: the developed `.preview.jpg` sibling of
@@ -3242,34 +3697,18 @@ pub fn run() {
                                     HttpResponse::builder().status(404).body(Vec::new()).unwrap()
                                 }
                             }
-                        } else if let Some(companion) = companion_jpeg_path(source) {
-                            // RAW+JPEG shooting: the camera wrote its own full
-                            // JPEG right next to the RAW. It's the most
-                            // faithful "as shot" source — correct even for a
-                            // monochrome film simulation, which the sensor
-                            // data alone can't reproduce (RAW is always
-                            // color; a neutral render from it would silently
-                            // discard that intent).
-                            match std::fs::read(&companion) {
-                                Ok(bytes) => {
-                                    eprintln!(
-                                        "thumb: {} (companion jpg, {} ko, {} ms)",
-                                        source.file_name().unwrap_or_default().to_string_lossy(),
-                                        bytes.len() / 1024,
-                                        t.elapsed().as_millis()
-                                    );
-                                    HttpResponse::builder()
-                                        .header("Content-Type", "image/jpeg")
-                                        .header("Cache-Control", "max-age=3600")
-                                        .body(downscale_grid_thumb(bytes))
-                                        .unwrap()
-                                }
-                                Err(e) => {
-                                    eprintln!("thumb {} companion jpg read: {e}", companion.display());
-                                    HttpResponse::builder().status(404).body(Vec::new()).unwrap()
-                                }
-                            }
                         } else {
+                            // The camera's embedded preview is cheapest and
+                            // tried FIRST — a grid cell only needs
+                            // `GRID_THUMB_MAX_EDGE` px, so decoding a
+                            // full-resolution companion JPEG here (14-26 MB
+                            // compressed, 60-100+ MB once decoded) was pure
+                            // waste for the common case, and with no
+                            // concurrency limit on this handler it could spike
+                            // memory into the tens of GB opening one RAW+JPEG
+                            // folder (confirmed 2026-08-02, see reveal.md). The
+                            // companion JPEG — and full develop — now only run
+                            // when there's no embedded thumb to serve.
                             match reveal_decode::extract_thumb_preview(source) {
                             Ok(preview) => {
                                 eprintln!(
@@ -3279,13 +3718,45 @@ pub fn run() {
                                     preview.bytes.len() / 1024,
                                     t.elapsed().as_millis()
                                 );
+                                let small = downscale_grid_thumb(preview.bytes);
+                                persist_thumb_cache(source, &small);
                                 HttpResponse::builder()
                                     .header("Content-Type", "image/jpeg")
                                     .header("Cache-Control", "max-age=3600")
-                                    .body(downscale_grid_thumb(preview.bytes))
+                                    .body(small)
                                     .unwrap()
                             }
-                            Err(e) => {
+                            Err(thumb_err) => if let Some(companion) = companion_jpeg_path(source) {
+                                // RAW+JPEG shooting, but this RAW had no
+                                // embedded thumb to fall back on cheaply: the
+                                // camera wrote its own full JPEG right next to
+                                // the RAW — the most faithful "as shot" source,
+                                // correct even for a monochrome film
+                                // simulation the sensor data alone can't
+                                // reproduce (RAW is always color).
+                                eprintln!("thumb {path}: no embedded preview ({thumb_err}) - trying companion jpg");
+                                match std::fs::read(&companion) {
+                                    Ok(bytes) => {
+                                        eprintln!(
+                                            "thumb: {} (companion jpg, {} ko, {} ms)",
+                                            source.file_name().unwrap_or_default().to_string_lossy(),
+                                            bytes.len() / 1024,
+                                            t.elapsed().as_millis()
+                                        );
+                                        let small = downscale_grid_thumb(bytes);
+                                        persist_thumb_cache(source, &small);
+                                        HttpResponse::builder()
+                                            .header("Content-Type", "image/jpeg")
+                                            .header("Cache-Control", "max-age=3600")
+                                            .body(small)
+                                            .unwrap()
+                                    }
+                                    Err(e) => {
+                                        eprintln!("thumb {} companion jpg read: {e}", companion.display());
+                                        HttpResponse::builder().status(404).body(Vec::new()).unwrap()
+                                    }
+                                }
+                            } else {
                                 // No camera-embedded JPEG (some RAWs lack one, or
                                 // extraction failed) and no engine picked yet
                                 // (engine=None, or we wouldn't be in this "no
@@ -3297,7 +3768,7 @@ pub fn run() {
                                 // render. This only touches the durable JPEG
                                 // file, never the recipe sidecar metadata: the
                                 // photo still reads as "None" if reopened in dev.
-                                eprintln!("thumb {path}: {e} - generating neutral fallback preview");
+                                eprintln!("thumb {path}: {thumb_err} - generating neutral fallback preview");
                                 let engine = app.state::<EngineState>().0.clone();
                                 let neutral = reveal_engine::Recipe {
                                     engine: "rapid".to_string(),
@@ -3311,11 +3782,7 @@ pub fn run() {
                                             out.jpeg.len() / 1024,
                                             t.elapsed().as_millis()
                                         );
-                                        if let Some(sidecar_path) = preview_sidecar_path(source) {
-                                            if let Err(e) = write_sidecar_if_changed(&sidecar_path, &out.jpeg) {
-                                                eprintln!("thumb-fallback sidecar write {path}: {e}");
-                                            }
-                                        }
+                                        persist_thumb_cache(source, &out.jpeg);
                                         HttpResponse::builder()
                                             .header("Content-Type", "image/jpeg")
                                             .header("Cache-Control", "max-age=3600")
@@ -3382,6 +3849,9 @@ pub fn run() {
             vault_attachment_dir,
             export_photos,
             cancel_exports,
+            ai_cull,
+            ai_cull_selection,
+            cancel_cull,
             story_stems,
             story_toggle,
             publish_story,
@@ -3398,6 +3868,8 @@ pub fn run() {
             export_local_story,
             save_caption,
             develop_preview,
+            copy_developed_preview_to_clipboard,
+            copy_photo_preview_to_clipboard,
             develop_preview_rgba,
             default_recipe,
             frame_info,

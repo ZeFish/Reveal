@@ -132,17 +132,24 @@
     z-index: 9998;
     background: transparent;
   }
+  /* Theme-aware to match the sidebar's folder context menu
+     (modules/sidebar/Sidebar.svelte's `.folder-menu`) — this menu used to
+     hardcode a permanently-dark HUD look regardless of the app's own
+     light/dark theme, which is why the two menus looked unrelated and why
+     fixed-dark text/background here fought the app's actual theme
+     (reproduced 2026-08-02). Same tokens, same feel, one design language. */
   .photo-context-menu {
     position: fixed;
     z-index: 9999;
     min-width: 220px;
-    background: rgba(24, 24, 27, 0.95);
-    backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: color-mix(in srgb, var(--color-surface-high) 88%, transparent);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
     border-radius: 8px;
     padding: 4px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-    color: var(--color-foreground, #f4f4f5);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35), 0 0 0 0.5px rgba(0, 0, 0, 0.15);
+    color: var(--color-foreground);
     font-family: var(--font-text, sans-serif);
     font-size: 12px;
   }
@@ -157,7 +164,7 @@
   }
   .context-divider {
     height: 1px;
-    background: rgba(255, 255, 255, 0.1);
+    background: color-mix(in srgb, var(--color-border) 40%, transparent);
     margin: 4px 0;
   }
   .photo-context-menu button[role="menuitem"] {
@@ -169,6 +176,7 @@
     width: 100%;
     padding: 5px 10px;
     border-radius: var(--radius-sm);
+    color: var(--color-foreground);
     cursor: pointer;
   }
   .photo-context-menu button[role="menuitem"]:hover:not(:disabled) {
@@ -180,6 +188,15 @@
     cursor: default;
   }
   .photo-context-menu kbd {
+    /* The framework's global `kbd` rule (packages/styles) sets its own
+       background (var(--color-surface)) and no text color of its own, so
+       pin both here rather than relying on that — same "10% foreground
+       tint" convention Sidebar.svelte already uses for subtle badges. */
+    background-color: color-mix(in srgb, var(--color-foreground) 10%, transparent);
+    background-image: none;
+    box-shadow: none;
+    border-radius: 4px;
+    color: var(--color-foreground);
     font-family: var(--font-monospace, monospace);
     font-size: 10px;
     opacity: 0.6;
@@ -197,12 +214,14 @@
     top: 0;
     left: 100%;
     min-width: 160px;
-    background: rgba(24, 24, 27, 0.95);
-    backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: color-mix(in srgb, var(--color-surface-high) 88%, transparent);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
     border-radius: 8px;
     padding: 4px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35), 0 0 0 0.5px rgba(0, 0, 0, 0.15);
+    color: var(--color-foreground);
   }
   .context-submenu-panel.submenu-left {
     left: auto;
@@ -230,7 +249,7 @@
     all: unset;
     cursor: pointer;
     font-size: 13px;
-    color: rgba(255, 255, 255, 0.3);
+    color: color-mix(in srgb, var(--color-foreground) 30%, transparent);
     padding: 0 2px;
   }
   .star-btn.active {

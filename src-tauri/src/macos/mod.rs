@@ -1,4 +1,7 @@
 #[cfg(target_os = "macos")]
+pub mod clipboard;
+
+#[cfg(target_os = "macos")]
 pub mod focus_backdrop;
 
 

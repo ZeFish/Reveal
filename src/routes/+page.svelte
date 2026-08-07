@@ -3,7 +3,8 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen as tauriListen, emit } from "@tauri-apps/api/event";
   import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-  import { getCurrentWindow, currentMonitor } from "@tauri-apps/api/window";
+  import { getCurrentWindow, currentMonitor, availableMonitors } from "@tauri-apps/api/window";
+  import { LogicalPosition } from "@tauri-apps/api/dpi";
   import { isTauri } from "$lib/api.js";
   import Icon from "$lib/components/Icon.svelte";
   import Sidebar from "@modules/sidebar/Sidebar.svelte";
@@ -212,6 +213,16 @@
   let exportFolder = $state("");
   let appMessage = $state("");
   let autoImport = $state(false);
+  // AI cull (walk-away card→cull→export): mirrors autoImport's hydrate-at-
+  // boot pattern, but sourced from the generic preferences bag rather than
+  // a dedicated ShellPrefs field (see SettingsModal's "AI CULL" section).
+  let aiCullEnabled = $state(false);
+  let aiCullTarget = $state(24);
+  // Per-run bookkeeping: destDir -> file paths copied THIS import, built
+  // from import-progress's per-file payload (already emitted, previously
+  // unused beyond destDir) — the exact candidate pool for ai_cull, robust to
+  // a folder that already had photos in it before this run.
+  /** @type {Map<string, string[]>} */ let importedByFolder = new Map();
   /** @type {string | null} */ let lastImportedFolder = $state(null);
   // The card currently importing (has {volume, name, dcim}) — kept so the
   // rail can stop the run and, once done, offer to eject that same card.
@@ -234,6 +245,9 @@
     logs_folder: "Logs",
     export_folder: "",
     lut_folder: "",
+    ai_cull_enabled: false,
+    ai_cull_target: 24,
+    ai_api_key: "",
   });
 
   // Grid geometry + rail filters — the Swift model's columnsPref/cellAspect/
@@ -407,6 +421,9 @@
       layouts[currentMode].focus = !!shellPrefs.focus_mode;
       autoImport = !!shellPrefs.auto_import;
       importDir = shellPrefs.import_dir ?? null;
+      const savedPreferences = await invoke("load_preferences").catch(() => ({}));
+      aiCullEnabled = !!savedPreferences.ai_cull_enabled;
+      aiCullTarget = Number(savedPreferences.ai_cull_target) || 24;
       // The Garden account row: cached username shows instantly, the silent
       // /me re-verify refreshes stats (Swift `refreshIfNeeded`).
       if (shellPrefs.garden_username) {
@@ -460,6 +477,7 @@
         if (available.length) importCard(available[0]);
       });
       listen("toggle-auto-import-requested", () => toggleAutoImport());
+      listen("add-library-folder-requested", () => indexRoot());
       listen("app-error", (e) => {
         appMessage = e.payload.message ?? String(e.payload);
         setTimeout(() => (appMessage = ""), 5000);
@@ -468,6 +486,11 @@
       listen("import-progress", async (e) => {
         const payload = e.payload;
         progress = { verb: "import", ...payload };
+        if (payload?.destDir && payload?.dest) {
+          const list = importedByFolder.get(payload.destDir) ?? [];
+          list.push(payload.dest);
+          importedByFolder.set(payload.destDir, list);
+        }
         if (payload?.destDir) {
           const now = Date.now();
           if (now - lastImportRefresh > 250) {
@@ -491,6 +514,7 @@
       listen("import-started", (e) => {
         progress = { verb: "import", done: 0, total: 1, current: "Démarrage..." };
         appMessage = `Import démarré...`;
+        importedByFolder = new Map();
       });
       listen("import-finished", async (e) => {
         progress = null;
@@ -503,10 +527,43 @@
           await openDir(lastFolder);
         }
         setTimeout(() => (appMessage = ""), 4000);
+        // Walk-away AI cull: one folder at a time (not concurrently, so a
+        // multi-day card doesn't hammer the vision API in parallel), only
+        // for folders that actually received photos this run.
+        if (aiCullEnabled && stats?.folders?.length) {
+          for (const folder of stats.folders) {
+            const folderPaths = importedByFolder.get(folder);
+            if (folderPaths?.length) await triggerAiCull(folder, folderPaths);
+          }
+        }
       });
       listen("import-failed", (e) => {
         progress = null;
         appMessage = `Échec de l'import : ${e.payload.message}`;
+        setTimeout(() => (appMessage = ""), 6000);
+      });
+      // AI cull toasts — reuses the same appMessage pattern as import/export
+      // rather than a dedicated chip/modal (the flow is walk-away, no review
+      // step to build UI for).
+      listen("cull-started", (e) => {
+        appMessage = `Culling IA · ${e.payload?.total ?? "?"} photos…`;
+      });
+      listen("cull-progress", (e) => {
+        const p = e.payload;
+        const phaseLabel = p.phase === "cloud" ? "analyse visuelle" : "tri local";
+        appMessage = `Culling IA (${phaseLabel}) ${p.done}/${p.total}`;
+        // Keeps the generic bottom HUD (`import-hud`, driven by `progress`)
+        // ticking in step with the toast instead of freezing at the 0/N it
+        // was set to when the run started.
+        progress = { verb: "cull", done: p.done, total: p.total, current: phaseLabel };
+      });
+      listen("cull-finished", (e) => {
+        const stats = e.payload;
+        appMessage = `Culling IA ✓ ${stats.picked}/${stats.considered} conservés → ${stats.exported_to}`;
+        setTimeout(() => (appMessage = ""), 6000);
+      });
+      listen("cull-failed", (e) => {
+        appMessage = `Culling IA : ${e.payload.message}`;
         setTimeout(() => (appMessage = ""), 6000);
       });
       listen("export-progress", (e) => {
@@ -915,6 +972,68 @@
   }
 
   /**
+   * Beside the main window when there's room (right, then left); a
+   * different monitor if neither side fits on the main window's own
+   * monitor; the monitor's own right edge as a last resort when there's
+   * truly nowhere else. Palettes cascade by index so they don't spawn
+   * perfectly stacked.
+   *
+   * Called on EVERY show, not just window creation — recomputing once and
+   * letting `tauri-plugin-window-state` persist that position forever meant
+   * the panel drifted on top of the main window as soon as it moved/resized
+   * from wherever it was when the panel was first created (reproduced
+   * 2026-08-04).
+   * @param {number} index
+   * @param {number} panelWidth
+   */
+  async function computePalettePosition(index, panelWidth) {
+    const GAP = 12;
+    const CASCADE = 34;
+    try {
+      const main = getCurrentWindow();
+      const factor = await main.scaleFactor();
+      const outer = await main.outerPosition();
+      const size = await main.outerSize();
+      const mainMon = await currentMonitor();
+      if (!mainMon?.position || !mainMon?.size) return null;
+
+      const mainX = outer.x / factor;
+      const mainY = outer.y / factor;
+      const mainW = size.width / factor;
+      const monX = mainMon.position.x / factor;
+      const monW = mainMon.size.width / factor;
+
+      const rightX = Math.round(mainX + mainW) + GAP;
+      const fitsRight = rightX + panelWidth <= monX + monW;
+      const leftX = Math.round(mainX) - GAP - panelWidth;
+      const fitsLeft = leftX >= monX;
+
+      let baseX;
+      if (fitsRight) {
+        baseX = rightX;
+      } else if (fitsLeft) {
+        baseX = leftX;
+      } else {
+        const monitors = await availableMonitors();
+        const other = monitors.find(
+          (m) => m.position.x !== mainMon.position.x || m.position.y !== mainMon.position.y
+        );
+        if (other) {
+          const oX = other.position.x / factor;
+          const oY = other.position.y / factor;
+          return { x: Math.round(oX + GAP) + index * CASCADE, y: Math.round(oY + GAP) + index * CASCADE };
+        }
+        // Truly nowhere else on a single monitor with a wide main window —
+        // some overlap is unavoidable; at least stay predictable.
+        baseX = Math.round(monX + monW - panelWidth);
+      }
+      return { x: baseX + index * CASCADE, y: Math.round(mainY) + index * CASCADE };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /**
    * @param {{ label: string, url: string, flag: string, width: number, height: number }} spec
    * @param {number} index
    */
@@ -923,31 +1042,8 @@
     try {
       let win = await WebviewWindow.getByLabel(spec.label);
       if (currentMode === "dev" && layouts.dev[spec.flag] && !spaceLook) {
+        const pos = await computePalettePosition(index, spec.width);
         if (!win) {
-          // Place beside the main window when there's room; otherwise tuck
-          // against the right edge of the work area. Palettes cascade by index
-          // so they don't spawn perfectly stacked; window-state remembers where
-          // the user drags them thereafter.
-          let pos = null;
-          const PANEL_W = spec.width;
-          const GAP = 12;
-          const CASCADE = 34;
-          try {
-            const main = getCurrentWindow();
-            const factor = await main.scaleFactor();
-            const outer = await main.outerPosition();
-            const size = await main.outerSize();
-            const mon = await currentMonitor();
-            const monW = mon && mon.size ? mon.size.width / factor : null;
-            const monX = mon && mon.position ? mon.position.x / factor : 0;
-            const besideX = Math.round((outer.x + size.width) / factor) + GAP;
-            const fitsBeside = monW != null && besideX + PANEL_W <= monX + monW;
-            const baseX = fitsBeside ? besideX : (monW != null ? Math.round(monX + monW - PANEL_W) : besideX);
-            pos = {
-              x: baseX + index * CASCADE,
-              y: Math.round(outer.y / factor) + index * CASCADE,
-            };
-          } catch (_) {}
           win = new WebviewWindow(spec.label, {
             url: spec.url,
             title: paletteTitle(spec.label),
@@ -956,7 +1052,13 @@
             x: pos?.x,
             y: pos?.y,
             resizable: true,
-            alwaysOnTop: true,
+            // A real child window (macOS `addChildWindow:`) stacks above the
+            // main window and steps back with it when Reveal loses focus.
+            // `alwaysOnTop` instead sets a system-wide floating window
+            // level, which floats this panel above every OTHER app too —
+            // reproduced 2026-08-02, the panel stayed pinned over an
+            // unrelated app after switching away from Reveal.
+            parent: getCurrentWindow(),
             titleBarStyle: "overlay",
             hiddenTitle: true
           });
@@ -968,6 +1070,7 @@
             saveLayouts();
           });
         } else {
+          if (pos) await win.setPosition(new LogicalPosition(pos.x, pos.y));
           await win.show();
           // Only the Develop panel grabs focus on show, so three palettes don't
           // fight over it when entering Develop.
@@ -1211,6 +1314,8 @@
     if (isTauri) await invoke("save_preferences", { preferences });
     exportFolder = preferences.export_folder ?? "";
     saveExportPrefs();
+    aiCullEnabled = !!preferences.ai_cull_enabled;
+    aiCullTarget = Number(preferences.ai_cull_target) || 24;
     settingsOpen = false;
   }
 
@@ -1969,6 +2074,59 @@
     invoke("cancel_import").catch(() => {});
   }
 
+  /**
+   * Cull one just-imported day-folder down to `aiCullTarget` frames and
+   * export them — Rust does prefilter -> vision ranking -> export in one
+   * call (`ai_cull`), so this is just the invocation + error toast; progress
+   * comes through the `cull-*` events listened for at boot.
+   * @param {string} dir
+   * @param {string[]} paths
+   */
+  async function triggerAiCull(dir, paths) {
+    try {
+      await invoke("ai_cull", { dir, paths });
+    } catch (error) {
+      appMessage = `Culling IA (${dir.split("/").pop()}) : ${error}`;
+      setTimeout(() => (appMessage = ""), 6000);
+    }
+  }
+
+  /**
+   * The rail's manual "Culling IA" button: score the CURRENT folder's view
+   * (same prefilter + vision ranking as the walk-away flow, via
+   * `ai_cull_selection`) but instead of rating+exporting, add each pick to
+   * the folder's quick collection — the same story-note mechanism the `q`
+   * shortcut toggles. Only ADDS (never removes) — a photo already in the
+   * collection is left alone rather than toggled out.
+   */
+  async function cullCurrentFolder() {
+    const d = gridDir();
+    if (!d || !view.length || progress) return;
+    progress = { verb: "cull", done: 0, total: view.length, current: "" };
+    appMessage = `Culling IA · ${view.length} photos…`;
+    try {
+      const result = await invoke("ai_cull_selection", { dir: d, paths: view.map((f) => f.path) });
+      const currentStems = new Set(await invoke("story_stems", { dir: d }));
+      let added = 0;
+      for (const path of result.picked) {
+        const s = stem(path.split("/").pop());
+        if (currentStems.has(s)) continue;
+        const updated = await invoke("story_toggle", { dir: d, path });
+        storySet = new Set(updated);
+        currentStems.add(s);
+        added++;
+      }
+      await loadStory();
+      refreshStoryDirs();
+      appMessage = `Culling IA ✓ ${added} ajoutés à la collection rapide (${result.picked.length}/${result.considered} retenus)`;
+    } catch (error) {
+      appMessage = `Culling IA : ${error}`;
+    } finally {
+      progress = null;
+      setTimeout(() => (appMessage = ""), 6000);
+    }
+  }
+
   /** @param {Card} card */
   async function ejectCard(card) {
     if (!card?.volume || ejecting) return;
@@ -2209,45 +2367,47 @@
   }
 
   /** @param {string} path */
+  /** @param {string} path */
+  function showCopiedMessage(path) {
+    const filename = path.split("/").pop();
+    appMessage = `Image copiée dans le presse-papier (${filename}) ✓`;
+    setTimeout(() => {
+      if (appMessage.startsWith("Image copiée")) appMessage = "";
+    }, 2500);
+  }
+
+  // Every branch here writes straight to NSPasteboard from Rust rather than
+  // going through the WebView's Clipboard API — reading the app's own
+  // resources back through fetch()/<img>/canvas.toBlob() hit THREE separate
+  // WebKit bugs in a row in this WebView (fetch() on our own blob: URL threw
+  // "Load failed"; loading that into an <img> for canvas.toBlob() instead
+  // threw SecurityError/tainted canvas; and fetch() on the reveal://thumb
+  // custom protocol ALSO threw "Load failed", a pre-existing bug unrelated
+  // to blob: URLs) — all reproduced 2026-08-02. Native NSPasteboard writes
+  // sidestep the whole category. The sole exception is the Rapid engine's
+  // canvas, which is painted from locally-decoded RGBA pixels
+  // (putImageData), never a fetched/cross-origin image, so canvas.toBlob()
+  // on it was never tainted.
+  /** @param {string} path */
   async function copyImageToClipboard(path) {
     if (!path) return;
     try {
-      let pngBlob = null;
       if (currentMode === "dev" && useCanvas && canvasEl) {
         const canvas = canvasEl;
-        pngBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+        const pngBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+        if (pngBlob) {
+          await navigator.clipboard.write([new ClipboardItem({ [pngBlob.type]: pngBlob })]);
+          showCopiedMessage(path);
+        }
+        return;
       }
 
-      if (!pngBlob) {
-        const url = thumbUrl(path, Date.now());
-        const resp = await fetch(url);
-        const jpgBlob = await resp.blob();
-
-        const img = new Image();
-        const objectUrl = URL.createObjectURL(jpgBlob);
-        img.src = objectUrl;
-        await img.decode();
-
-        const canvas = document.createElement("canvas");
-        canvas.width = img.naturalWidth || 1920;
-        canvas.height = img.naturalHeight || 1080;
-        const ctx = canvas.getContext("2d");
-        if (ctx) ctx.drawImage(img, 0, 0);
-
-        pngBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
-        URL.revokeObjectURL(objectUrl);
+      if (currentMode === "dev" && photoPath === path && recipe) {
+        await invoke("copy_developed_preview_to_clipboard", { path, recipe, maxPx: PREVIEW_PX });
+      } else {
+        await invoke("copy_photo_preview_to_clipboard", { path });
       }
-
-      if (pngBlob) {
-        await navigator.clipboard.write([
-          new ClipboardItem({ [pngBlob.type]: pngBlob })
-        ]);
-        const filename = path.split("/").pop();
-        appMessage = `Image copiée dans le presse-papier (${filename}) ✓`;
-        setTimeout(() => {
-          if (appMessage.startsWith("Image copiée")) appMessage = "";
-        }, 2500);
-      }
+      showCopiedMessage(path);
     } catch (err) {
       console.error("Could not copy image to clipboard:", err);
       appMessage = `Échec de la copie de l'image : ${err}`;
@@ -2628,7 +2788,11 @@
 
   // ---- develop ------------------------------------------------------------
   /** @param {string} path */
-  async function openPhoto(path) {
+  /**
+   * @param {string} path
+   * @param {{ openDevPanel?: boolean }} [opts]
+   */
+  async function openPhoto(path, { openDevPanel = true } = {}) {
     if (imgUrl?.startsWith("blob:")) URL.revokeObjectURL(imgUrl);
     photoPath = path;
     picked = path.split("/").pop() ?? null;
@@ -2661,7 +2825,12 @@
         status = "";
       }
       if (currentMode !== "dev") {
-        await switchMode("dev");
+        // Double-click: single-photo view only, panel stays closed until "D"
+        // is pressed — same "quick look" semantics Space already uses
+        // (reproduced 2026-08-04, matches the existing spaceLook mechanism
+        // rather than inventing a second one).
+        if (!openDevPanel) spaceLook = true;
+        await switchMode("dev", { openDevPanel });
       }
     } catch (error) {
       status = "Could not load photo";
@@ -3166,6 +3335,7 @@
 
           {#if (curDir || folder) && view.length}
             <button class="rail-action" onclick={exportGrid} disabled={!!progress}>Exporter</button>
+            <button class="rail-action" onclick={cullCurrentFolder} disabled={!!progress}>Culling IA</button>
           {/if}
           {#if storySet.size}
             <button class="import rail-action" onclick={publishStory} disabled={!!progress}>
@@ -3281,6 +3451,9 @@
           {toggleStoryWithPath}
           {onPhotoDragStart}
           {closePhotoMenu}
+          hasRoot={!!root}
+          {scanning}
+          onAddLibraryFolder={indexRoot}
         />
       {:else if currentMode === "story"}
         <StoryView
