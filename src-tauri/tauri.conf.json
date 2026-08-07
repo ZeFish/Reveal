@@ -51,7 +51,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app"],
+    "targets": ["app", "dmg"],
     "resources": ["data"],
     "fileAssociations": [
       {
