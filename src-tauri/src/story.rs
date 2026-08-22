@@ -338,16 +338,16 @@ pub fn toggle(dir: &Path, photo_path: &Path) -> std::io::Result<Vec<String>> {
     if body_has_embed {
         // remove the embed line
         let kept: Vec<&str> = note.body.lines().filter(|l| l.trim() != embed).collect();
-        note.body = kept.join("\n");
-        if !note.body.ends_with('\n') {
-            note.body.push('\n');
-        }
+        let joined = kept.join("\n");
+        let trimmed = joined.trim();
+        note.body = if trimmed.is_empty() { String::new() } else { format!("{trimmed}\n") };
     } else {
-        if !note.body.ends_with('\n') {
-            note.body.push('\n');
+        let trimmed = note.body.trim();
+        if trimmed.is_empty() {
+            note.body = format!("{embed}\n");
+        } else {
+            note.body = format!("{trimmed}\n\n{embed}\n");
         }
-        note.body.push_str(&embed);
-        note.body.push('\n');
     }
 
     note.save()?;

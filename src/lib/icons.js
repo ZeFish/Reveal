@@ -12,6 +12,8 @@ import checkCircle from "../../../../packages/icon/icons/ph/check-circle.svg?raw
 import copy from "../../../../packages/icon/icons/ph/copy.svg?raw";
 import circleHalf from "../../../../packages/icon/icons/ph/circle-half.svg?raw";
 import downloadSimple from "../../../../packages/icon/icons/ph/download-simple.svg?raw";
+import arrowSquareOut from "../../../../packages/icon/icons/ph/arrow-square-out.svg?raw";
+import exportIcon from "../../../../packages/icon/icons/ph/export.svg?raw";
 import eyeSlash from "../../../../packages/icon/icons/ph/eye-slash.svg?raw";
 import folderOpen from "../../../../packages/icon/icons/ph/folder-open.svg?raw";
 import folderPlus from "../../../../packages/icon/icons/ph/folder-plus.svg?raw";
@@ -35,6 +37,7 @@ export const icons = {
   "arrows-clockwise": arrowsClockwise,
   "arrows-down-up": arrowsDownUp,
   "arrows-in-simple": arrowsInSimple,
+  "arrow-square-out": arrowSquareOut,
   "caret-down": caretDown,
   "caret-right": caretRight,
   check,
@@ -42,6 +45,7 @@ export const icons = {
   copy,
   "circle-half": circleHalf,
   "download-simple": downloadSimple,
+  export: exportIcon,
   "eye-slash": eyeSlash,
   "folder-open": folderOpen,
   "folder-plus": folderPlus,

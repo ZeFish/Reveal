@@ -22,6 +22,10 @@
     emit("dev-panel-export", {});
   }
 
+  function triggerDailyNote() {
+    emit("dev-panel-export-daily", {});
+  }
+
   function chooseExportFolder() {
     emit("dev-panel-choose-export-folder", {});
   }
@@ -108,8 +112,9 @@
       ><span class="knob"></span></button>
     </div>
     <button class="capsule fill" onclick={triggerExport} disabled={!photoPath}>Export</button>
+    <button class="capsule secondary" onclick={triggerDailyNote} disabled={!photoPath}>Note du jour (Obsidian)</button>
     <button class="capsule accent" onclick={publishPhoto} disabled={!photoPath || publishing}>
-      {publishing ? "Publishing…" : "Publish"}
+      {publishing ? "Publishing…" : "Publish (Garden)"}
     </button>
     {#if publishStatus}
       <p class="hint">{publishStatus}</p>
@@ -256,6 +261,13 @@
   .capsule.fill {
     color: var(--color-background);
     background: var(--color-foreground);
+  }
+  .capsule.secondary {
+    color: var(--color-foreground);
+    border: 1px solid var(--color-border);
+  }
+  .capsule.secondary:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
   }
   .capsule.accent {
     color: #fff;

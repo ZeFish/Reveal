@@ -633,7 +633,10 @@
           exportCurrent(""); // "" = the Desktop, regardless of the configured export folder
         });
         listen("dev-panel-export-vault", () => {
-          exportToVault();
+          exportToDailyNote();
+        });
+        listen("dev-panel-export-daily", () => {
+          exportToDailyNote();
         });
         listen("dev-panel-reset", async () => {
           // RÉINITIALISER — back to the engine defaults, like Swift's
@@ -743,7 +746,7 @@
         });
         listen("toggle-render-queue-requested", () => (queueOpen = !queueOpen));
         listen("toggle-shortcuts-requested", () => (shortcutsOpen = !shortcutsOpen));
-        listen("menu-export-requested", exportCurrent);
+        listen("menu-export-requested", () => exportCurrent());
         listen("menu-reset-develop-requested", async () => {
           if (recipe) {
             recipe = await invoke("default_recipe");
@@ -1079,7 +1082,7 @@
         }
       } else {
         if (win) {
-          await win.close();
+          await win.hide();
         }
       }
     } catch (e) {
@@ -1122,14 +1125,23 @@
   }
 
   function toggleDevPanel() {
+    // The panel's visibility is always stored under layouts.dev, regardless
+    // of which mode we're currently in (layouts.cull/story.devPanel are
+    // unused) — every reader of the flag reads layouts.dev.devPanel.
     // ⇧D during a quick look just reveals the panel the look was suppressing,
     // rather than toggling the stored preference off.
-    if (spaceLook && layouts[currentMode].devPanel) {
+    if (spaceLook && layouts.dev.devPanel) {
       spaceLook = false;
+      if (currentMode !== "dev") switchMode("dev", { openDevPanel: false });
+      return;
+    }
+    if (currentMode !== "dev") {
+      // ⇧D is a deliberate develop entry too — jump in with the panel open.
+      switchMode("dev", { openDevPanel: true });
       return;
     }
     spaceLook = false;
-    layouts[currentMode].devPanel = !layouts[currentMode].devPanel;
+    layouts.dev.devPanel = !layouts.dev.devPanel;
     saveLayouts();
   }
 
@@ -1515,7 +1527,7 @@
         return;
       }
       if (toVault) {
-        appMessage = await invoke("publish_photo", { path });
+        await exportSelectionToDailyNote(path);
         return;
       }
       progress = { verb: "Developing", done: 0, total: 1, current: path.split("/").pop() };
@@ -2294,28 +2306,63 @@
     }
   }
 
-  // Develop the current photo and drop the JPEG into the Obsidian vault's
-  // attachment folder (Kernel/attachments here) — a filesystem export into the
-  // vault, so the frame is ready to embed in a note. Distinct from Publish,
-  // which pushes to the Garden.
-  async function exportToVault() {
-    if (!photoPath || !recipe) return;
-    status = "Vers le vault…";
+  // Develop photo(s) and append to the Obsidian daily note (Logs/yymmdd.md).
+  // Filesystem export into the vault attachments folder + daily note append.
+  async function exportToDailyNote(targetPath, customRecipe) {
+    const target = targetPath || photoPath || view[sel]?.path;
+    if (!target) return;
+    status = "Vers le journal…";
     try {
-      const dest = await invoke("vault_attachment_dir");
-      const out = await invoke("export_photo", {
-        path: photoPath,
-        recipe: { ...recipe },
-        destDir: dest,
+      const rec = customRecipe || (target === photoPath ? recipe : null);
+      const notePath = await invoke("export_to_daily_note", {
+        path: target,
+        recipe: rec ? { ...rec } : null,
         longEdge: exportEdge,
         borderFrac: exportBorder ? 0.04 : 0,
       });
-      status = `Dans le vault → ${out.split("/").slice(-2).join("/")}`;
-      appMessage = status;
+      const noteName = notePath.split("/").slice(-2).join("/");
+      const filename = target.split("/").pop();
+      status = `Dans le journal → ${noteName}`;
+      appMessage = `Dans le journal → ${noteName} (${filename}) ✓`;
       setTimeout(() => (appMessage = ""), 4000);
       setTimeout(() => (status = ""), 3000);
     } catch (e) {
-      status = `Échec vault : ${e}`;
+      status = `Échec journal : ${e}`;
+      appMessage = `Échec export journal : ${e}`;
+      setTimeout(() => (appMessage = ""), 4000);
+    }
+  }
+
+  async function exportSelectionToDailyNote(clickedPath) {
+    const targets = selectedPaths.size > 0
+      ? view.filter((f) => selectedPaths.has(f.path)).map((f) => f.path)
+      : (clickedPath ? [clickedPath] : (view[sel] ? [view[sel].path] : []));
+
+    if (!targets.length) return;
+
+    if (targets.length === 1) {
+      return exportToDailyNote(targets[0]);
+    }
+
+    status = "Vers le journal…";
+    progress = { verb: "Journal", done: 0, total: targets.length, current: "" };
+    try {
+      const notePath = await invoke("export_batch_to_daily_note", {
+        paths: targets,
+        longEdge: exportEdge,
+        borderFrac: exportBorder ? 0.04 : 0,
+      });
+      const noteName = notePath.split("/").slice(-2).join("/");
+      status = `Dans le journal → ${noteName}`;
+      appMessage = `Dans le journal → ${targets.length} photos ajoutées à ${noteName} ✓`;
+      setTimeout(() => (appMessage = ""), 4000);
+      setTimeout(() => (status = ""), 3000);
+    } catch (e) {
+      status = `Échec journal : ${e}`;
+      appMessage = `Échec export journal : ${e}`;
+      setTimeout(() => (appMessage = ""), 4000);
+    } finally {
+      progress = null;
     }
   }
 
@@ -3289,9 +3336,6 @@
           {#if appMessage}
             <span class="progress">{appMessage}</span>
           {/if}
-          {#if liveUrl}
-            <span class="progress">{liveUrl}</span>
-          {/if}
 
           <!-- The live import chip — same DIN/mono treatment as export, plus
                a stop control; the copy finishes its current file then halts. -->
@@ -3334,12 +3378,13 @@
           {/if}
 
           {#if (curDir || folder) && view.length}
-            <button class="rail-action" onclick={exportGrid} disabled={!!progress}>Exporter</button>
-            <button class="rail-action" onclick={cullCurrentFolder} disabled={!!progress}>Culling IA</button>
-          {/if}
-          {#if storySet.size}
-            <button class="import rail-action" onclick={publishStory} disabled={!!progress}>
-              Publier ({storySet.size})
+            <button
+              class="rail-btn"
+              onclick={exportGrid}
+              disabled={!!progress}
+              title="Exporter la sélection ou le dossier (r)"
+            >
+              <Icon name="export" size="12px" />
             </button>
           {/if}
 
@@ -3352,12 +3397,53 @@
                 closeMenus();
                 layoutMenuOpen = !open;
               }}
-              title="Disposition de la grille"
+              title="Disposition et menu de la grille"
             >
               <Icon name={layout === "masonry" ? "rows" : "grid-four"} size="12px" />
             </button>
             {#if layoutMenuOpen}
               <div class="popover layout-pop">
+                {#if gardenUrl}
+                  <button
+                    class="pop-row"
+                    onclick={() => {
+                      closeMenus();
+                      if (gardenUrl) invoke("open_path", { path: gardenUrl });
+                    }}
+                  >
+                    <span>Ouvrir sur le web</span>
+                    <Icon name="arrow-square-out" size="10px" />
+                  </button>
+                {/if}
+                {#if storySet.size}
+                  <button
+                    class="pop-row"
+                    onclick={() => {
+                      closeMenus();
+                      publishStory();
+                    }}
+                    disabled={!!progress}
+                  >
+                    <span>Publier l'histoire ({storySet.size})</span>
+                    <Icon name="lightning" size="10px" />
+                  </button>
+                {/if}
+                {#if (curDir || folder) && view.length}
+                  <button
+                    class="pop-row"
+                    onclick={() => {
+                      closeMenus();
+                      cullCurrentFolder();
+                    }}
+                    disabled={!!progress}
+                  >
+                    <span>Culling IA</span>
+                    <Icon name="lightning" size="10px" />
+                  </button>
+                {/if}
+                {#if gardenUrl || storySet.size || ((curDir || folder) && view.length)}
+                  <div class="pop-divider"></div>
+                {/if}
                 <span class="pop-label">Colonnes</span>
                 <div class="pop-grid">
                   {#each [1, 2, 3, 4, 5, 6, 8, 10, 12] as n}
@@ -3473,6 +3559,7 @@
       {installedEditors}
       {copiedRecipe}
       {storySet}
+      {gardenUrl}
       {stem}
       onClose={closePhotoMenu}
       onOpenPhoto={(/** @type {string} */ p) => openPhoto(p)}
@@ -3486,6 +3573,9 @@
       onToggleStory={(/** @type {string} */ p) => toggleStoryWithPath(p)}
       onExportSelection={exportSelection}
       onDevelopToVault={(/** @type {string} */ p) => developFromMenu(p, true)}
+      onCull={cullCurrentFolder}
+      onPublishStory={publishStory}
+      onOpenGardenUrl={() => { if (gardenUrl) invoke("open_path", { path: gardenUrl }); }}
     />
     {#if progress}
       <div class="import-hud">

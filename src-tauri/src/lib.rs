@@ -5,6 +5,7 @@ use tauri::http::Response as HttpResponse;
 use tauri::ipc::Response as IpcResponse;
 use tauri::{Emitter, Manager};
 
+mod daily_note;
 mod preset;
 mod story;
 
@@ -2862,6 +2863,146 @@ async fn export_photo(
     .map_err(|e| e.to_string())?
 }
 
+/// Export one photo to the Obsidian vault attachment directory and append it to the capture-date Daily Note.
+#[tauri::command]
+async fn export_to_daily_note(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, EngineState>,
+    path: String,
+    recipe: Option<reveal_engine::Recipe>,
+    long_edge: u32,
+    border_frac: f32,
+) -> Result<String, String> {
+    let engine = state.0.clone();
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let src = std::path::Path::new(&path);
+        let stem = src.file_stem().unwrap_or_default().to_string_lossy();
+        let attachment_filename = format!("{stem}.jpg");
+
+        let dest_dir = vault_attachment_dir(app_handle.clone())?;
+        let out = std::path::Path::new(&dest_dir).join(&attachment_filename);
+
+        let final_recipe = match recipe {
+            Some(r) => r,
+            None => reveal_meta::read(src)
+                .ok()
+                .flatten()
+                .and_then(|s| s.engine_settings)
+                .and_then(|v| serde_json::from_value(v).ok())
+                .unwrap_or_default(),
+        };
+
+        let (jpeg, _, _) = engine
+            .export_jpeg(src, &final_recipe, long_edge, border_frac)
+            .map_err(|e| format!("{e:#}"))?;
+        std::fs::create_dir_all(&dest_dir).map_err(|e| e.to_string())?;
+        std::fs::write(&out, &jpeg).map_err(|e| e.to_string())?;
+
+        let capture_dt: chrono::DateTime<chrono::Local> = if let Some(ts) = reveal_decode::capture_timestamp(src) {
+            chrono::DateTime::from_timestamp(ts, 0)
+                .map(|utc| utc.with_timezone(&chrono::Local))
+                .unwrap_or_else(chrono::Local::now)
+        } else if let Ok(meta) = std::fs::metadata(src) {
+            if let Ok(mtime) = meta.modified() {
+                chrono::DateTime::from(mtime)
+            } else {
+                chrono::Local::now()
+            }
+        } else {
+            chrono::Local::now()
+        };
+
+        let caption = reveal_meta::read(src)
+            .ok()
+            .flatten()
+            .and_then(|s| s.description);
+
+        let vault = vault_path(&app_handle);
+        let prefs = load_preferences(app_handle);
+        let logs_folder = prefs.get("logs_folder").and_then(|v| v.as_str()).map(str::to_string);
+        let daily = daily_note::DailyNote::new(vault, logs_folder);
+        let note_path = daily.append_photos(&[attachment_filename], caption.as_deref(), capture_dt)?;
+
+        Ok(note_path.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Batch-export photos to the Obsidian vault attachment directory and append them to the Daily Note.
+#[tauri::command]
+async fn export_batch_to_daily_note(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, EngineState>,
+    paths: Vec<String>,
+    long_edge: u32,
+    border_frac: f32,
+) -> Result<String, String> {
+    let engine = state.0.clone();
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let dest_dir = vault_attachment_dir(app_handle.clone())?;
+        let vault = vault_path(&app_handle);
+        let prefs = load_preferences(app_handle.clone());
+        let logs_folder = prefs.get("logs_folder").and_then(|v| v.as_str()).map(str::to_string);
+        let daily = daily_note::DailyNote::new(vault, logs_folder);
+
+        let mut count = 0usize;
+        let mut last_note = String::new();
+
+        for path in &paths {
+            let src = std::path::Path::new(path);
+            let stem = src.file_stem().unwrap_or_default().to_string_lossy();
+            let attachment_filename = format!("{stem}.jpg");
+            let out = std::path::Path::new(&dest_dir).join(&attachment_filename);
+
+            let recipe = reveal_meta::read(src)
+                .ok()
+                .flatten()
+                .and_then(|s| s.engine_settings)
+                .and_then(|v| serde_json::from_value(v).ok())
+                .unwrap_or_default();
+
+            if let Ok((jpeg, _, _)) = engine.export_jpeg(src, &recipe, long_edge, border_frac) {
+                if std::fs::write(&out, &jpeg).is_ok() {
+                    let capture_dt: chrono::DateTime<chrono::Local> = if let Some(ts) = reveal_decode::capture_timestamp(src) {
+                        chrono::DateTime::from_timestamp(ts, 0)
+                            .map(|utc| utc.with_timezone(&chrono::Local))
+                            .unwrap_or_else(chrono::Local::now)
+                    } else if let Ok(meta) = std::fs::metadata(src) {
+                        if let Ok(mtime) = meta.modified() {
+                            chrono::DateTime::from(mtime)
+                        } else {
+                            chrono::Local::now()
+                        }
+                    } else {
+                        chrono::Local::now()
+                    };
+
+                    let caption = reveal_meta::read(src)
+                        .ok()
+                        .flatten()
+                        .and_then(|s| s.description);
+
+                    if let Ok(np) = daily.append_photos(&[attachment_filename], caption.as_deref(), capture_dt) {
+                        last_note = np.to_string_lossy().into_owned();
+                        count += 1;
+                    }
+                }
+            }
+        }
+
+        if count == 0 {
+            return Err("No photos could be exported to daily note".to_string());
+        }
+
+        Ok(last_note)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Develop-and-write one batch of photos using each photo's SAVED recipe
 /// (engine defaults when none), emitting `event_name` progress. Shared by
 /// `export_photos` (manual grid/selection export) and `ai_cull` (the
@@ -3846,6 +3987,8 @@ pub fn run() {
             create_dir,
             move_dir,
             export_photo,
+            export_to_daily_note,
+            export_batch_to_daily_note,
             vault_attachment_dir,
             export_photos,
             cancel_exports,

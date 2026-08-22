@@ -18,6 +18,10 @@
    * @property {(n: number) => void} [onRate]
    * @property {(p: string) => void} [onToggleStory]
    * @property {() => void} [onExportSelection]
+   * @property {string | null} [gardenUrl]
+   * @property {() => void} [onCull]
+   * @property {() => void} [onPublishStory]
+   * @property {() => void} [onOpenGardenUrl]
    * @property {(p: string) => void} [onDevelopToVault]
    */
 
@@ -28,6 +32,7 @@
     installedEditors = [],
     copiedRecipe = null,
     storySet = new Set(),
+    gardenUrl = null,
     stem = (/** @type {string} */ s) => s,
     onClose = () => {},
     onOpenPhoto = (/** @type {string} */ p) => {},
@@ -41,6 +46,9 @@
     onToggleStory = (/** @type {string} */ p) => {},
     onExportSelection = () => {},
     onDevelopToVault = (/** @type {string} */ p) => {},
+    onCull = undefined,
+    onPublishStory = undefined,
+    onOpenGardenUrl = undefined,
   } = $props();
 </script>
 
@@ -143,8 +151,28 @@
       <kbd>r</kbd>
     </button>
     <button role="menuitem" onclick={() => { onDevelopToVault(photoMenu.frame.path); onClose(); }}>
-      <span>Envoyer dans la voûte (Obsidian)</span>
+      <span>{selectedPaths.size > 1 ? "Ajouter la sélection à la note du jour" : "Ajouter à la note du jour (Obsidian)"}</span>
     </button>
+
+    {#if onCull || (storySet.size > 0 && onPublishStory) || (gardenUrl && onOpenGardenUrl)}
+      <div class="context-divider"></div>
+    {/if}
+
+    {#if onCull}
+      <button role="menuitem" onclick={() => { onCull(); onClose(); }}>
+        <span>Culling IA</span>
+      </button>
+    {/if}
+    {#if storySet.size > 0 && onPublishStory}
+      <button role="menuitem" onclick={() => { onPublishStory(); onClose(); }}>
+        <span>Publier la collection ({storySet.size})</span>
+      </button>
+    {/if}
+    {#if gardenUrl && onOpenGardenUrl}
+      <button role="menuitem" onclick={() => { onOpenGardenUrl(); onClose(); }}>
+        <span>Ouvrir sur le web</span>
+      </button>
+    {/if}
   </div>
 {/if}
 

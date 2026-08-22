@@ -103,9 +103,9 @@ export function parseStory(content) {
         caption += (caption ? " " : "") + s;
         j++;
       }
-      const rowBreak = !rowOpen || lastWasBlank;
-      blocks.push({ id: nextId(), isPhoto: true, stem: stemOf(inner), text: caption, rowBreak });
-      rowOpen = caption === ""; // a caption closes the flush row
+      // By default, every photo is separated on its own row/line
+      blocks.push({ id: nextId(), isPhoto: true, stem: stemOf(inner), text: caption, rowBreak: true });
+      rowOpen = false;
       lastWasBlank = false;
       i = j;
     } else {
