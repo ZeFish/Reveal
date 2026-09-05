@@ -56,67 +56,68 @@
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="context-backdrop" onclick={onClose} role="presentation"></div>
   <div
-    class="photo-context-menu"
+    class="photo-context-menu std-menu-content m-0"
     style="left: {photoMenu.x}px; top: {photoMenu.y}px"
     role="menu"
     tabindex="-1"
     oncontextmenu={(event) => event.preventDefault()}
   >
-    <div class="context-header">
+    <div class="std-menu-label">
       {selectedPaths.size > 1 ? `${selectedPaths.size} photos sélectionnées` : photoMenu.frame.name}
     </div>
-    <div class="context-divider"></div>
-    <button role="menuitem" onclick={() => { onOpenPhoto(photoMenu.frame.path); onClose(); }}>
-      <span>Développer</span>
-      <kbd>d</kbd>
+    <div class="std-menu-separator"></div>
+    <button class="std-menu-item" role="menuitem" onclick={() => { onOpenPhoto(photoMenu.frame.path); onClose(); }}>
+      <span class="item-label">Développer</span>
+      <kbd class="item-shortcut">d</kbd>
     </button>
-    <button role="menuitem" onclick={() => { onOpenPreview(photoMenu.frame.path); onClose(); }}>
-      <span>Aperçu (Quick Look)</span>
-      <kbd>Espace</kbd>
+    <button class="std-menu-item" role="menuitem" onclick={() => { onOpenPreview(photoMenu.frame.path); onClose(); }}>
+      <span class="item-label">Aperçu (Quick Look)</span>
+      <kbd class="item-shortcut">Espace</kbd>
     </button>
-    <button role="menuitem" onclick={() => { onRevealInFinder(photoMenu.frame.path); onClose(); }}>
-      <span>Afficher dans le Finder</span>
+    <button class="std-menu-item" role="menuitem" onclick={() => { onRevealInFinder(photoMenu.frame.path); onClose(); }}>
+      <span class="item-label">Afficher dans le Finder</span>
     </button>
     {#if installedEditors.length}
       <div class="context-submenu">
-        <button role="menuitem" aria-haspopup="menu">
-          <span>Ouvrir avec…</span>
+        <button class="std-menu-item" role="menuitem" aria-haspopup="menu">
+          <span class="item-label">Ouvrir avec…</span>
           <span class="submenu-arrow">›</span>
         </button>
         <div
-          class="context-submenu-panel"
+          class="context-submenu-panel std-menu-content m-0"
           class:submenu-left={photoMenu.submenuLeft}
           role="menu"
           tabindex="-1"
         >
           {#each installedEditors as [name, appPath]}
-            <button role="menuitem" onclick={() => { onOpenInEditor(photoMenu.frame.path, appPath); onClose(); }}>{name}</button>
+            <button class="std-menu-item" role="menuitem" onclick={() => { onOpenInEditor(photoMenu.frame.path, appPath); onClose(); }}><span class="item-label">{name}</span></button>
           {/each}
         </div>
       </div>
     {/if}
 
-    <div class="context-divider"></div>
+    <div class="std-menu-separator"></div>
 
-    <button role="menuitem" onclick={() => { onCopyImage(photoMenu.frame.path); onClose(); }}>
-      <span>Copier l'image</span>
-      <kbd>⌘C</kbd>
+    <button class="std-menu-item" role="menuitem" onclick={() => { onCopyImage(photoMenu.frame.path); onClose(); }}>
+      <span class="item-label">Copier l'image</span>
+      <kbd class="item-shortcut">⌘C</kbd>
     </button>
-    <button role="menuitem" onclick={() => { onCopySettings(); onClose(); }}>
-      <span>Copier les réglages</span>
-      <kbd>c</kbd>
+    <button class="std-menu-item" role="menuitem" onclick={() => { onCopySettings(); onClose(); }}>
+      <span class="item-label">Copier les réglages</span>
+      <kbd class="item-shortcut">c</kbd>
     </button>
     <button
+      class="std-menu-item"
       role="menuitem"
       disabled={!copiedRecipe}
       class:disabled={!copiedRecipe}
       onclick={() => { onPasteSettings(); onClose(); }}
     >
-      <span>Coller les réglages</span>
-      <kbd>v</kbd>
+      <span class="item-label">Coller les réglages</span>
+      <kbd class="item-shortcut">v</kbd>
     </button>
 
-    <div class="context-divider"></div>
+    <div class="std-menu-separator"></div>
 
     <div class="context-rating-row">
       <span class="context-rating-label">Note</span>
@@ -139,38 +140,38 @@
       </div>
     </div>
 
-    <button role="menuitem" onclick={() => { onToggleStory(photoMenu.frame.path); onClose(); }}>
-      <span>{storySet.has(stem(photoMenu.frame.name)) ? "Retirer de la collection" : "Ajouter à la collection"}</span>
-      <kbd>q</kbd>
+    <button class="std-menu-item" role="menuitem" onclick={() => { onToggleStory(photoMenu.frame.path); onClose(); }}>
+      <span class="item-label">{storySet.has(stem(photoMenu.frame.name)) ? "Retirer de la collection" : "Ajouter à la collection"}</span>
+      <kbd class="item-shortcut">q</kbd>
     </button>
 
-    <div class="context-divider"></div>
+    <div class="std-menu-separator"></div>
 
-    <button role="menuitem" onclick={() => { onExportSelection(); onClose(); }}>
-      <span>Exporter la sélection…</span>
-      <kbd>r</kbd>
+    <button class="std-menu-item" role="menuitem" onclick={() => { onExportSelection(); onClose(); }}>
+      <span class="item-label">Exporter la sélection…</span>
+      <kbd class="item-shortcut">r</kbd>
     </button>
-    <button role="menuitem" onclick={() => { onDevelopToVault(photoMenu.frame.path); onClose(); }}>
-      <span>{selectedPaths.size > 1 ? "Ajouter la sélection à la note du jour" : "Ajouter à la note du jour (Obsidian)"}</span>
+    <button class="std-menu-item" role="menuitem" onclick={() => { onDevelopToVault(photoMenu.frame.path); onClose(); }}>
+      <span class="item-label">{selectedPaths.size > 1 ? "Ajouter la sélection à la note du jour" : "Ajouter à la note du jour (Obsidian)"}</span>
     </button>
 
     {#if onCull || (storySet.size > 0 && onPublishStory) || (gardenUrl && onOpenGardenUrl)}
-      <div class="context-divider"></div>
+      <div class="std-menu-separator"></div>
     {/if}
 
     {#if onCull}
-      <button role="menuitem" onclick={() => { onCull(); onClose(); }}>
-        <span>Culling IA</span>
+      <button class="std-menu-item" role="menuitem" onclick={() => { onCull(); onClose(); }}>
+        <span class="item-label">Culling IA</span>
       </button>
     {/if}
     {#if storySet.size > 0 && onPublishStory}
-      <button role="menuitem" onclick={() => { onPublishStory(); onClose(); }}>
-        <span>Publier la collection ({storySet.size})</span>
+      <button class="std-menu-item" role="menuitem" onclick={() => { onPublishStory(); onClose(); }}>
+        <span class="item-label">Publier la collection ({storySet.size})</span>
       </button>
     {/if}
     {#if gardenUrl && onOpenGardenUrl}
-      <button role="menuitem" onclick={() => { onOpenGardenUrl(); onClose(); }}>
-        <span>Ouvrir sur le web</span>
+      <button class="std-menu-item" role="menuitem" onclick={() => { onOpenGardenUrl(); onClose(); }}>
+        <span class="item-label">Ouvrir sur le web</span>
       </button>
     {/if}
   </div>
@@ -183,74 +184,14 @@
     z-index: 9998;
     background: transparent;
   }
-  /* Theme-aware to match the sidebar's folder context menu
-     (modules/sidebar/Sidebar.svelte's `.folder-menu`) — this menu used to
-     hardcode a permanently-dark HUD look regardless of the app's own
-     light/dark theme, which is why the two menus looked unrelated and why
-     fixed-dark text/background here fought the app's actual theme
-     (reproduced 2026-08-02). Same tokens, same feel, one design language. */
+  /* Standard's .std-menu-content/.std-menu-item classes supply background,
+     border, shadow, hover/disabled states, and the kbd/shortcut treatment
+     (packages/styles/_standard-13-components.scss). Only positioning and
+     genuinely Reveal-specific bits (submenu flip, star rating) stay local. */
   .photo-context-menu {
     position: fixed;
     z-index: 9999;
     min-width: 220px;
-    background: color-mix(in srgb, var(--color-surface-high) 88%, transparent);
-    backdrop-filter: blur(24px) saturate(180%);
-    -webkit-backdrop-filter: blur(24px) saturate(180%);
-    border: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
-    border-radius: 8px;
-    padding: 4px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35), 0 0 0 0.5px rgba(0, 0, 0, 0.15);
-    color: var(--color-foreground);
-    font-family: var(--font-text, sans-serif);
-    font-size: 12px;
-  }
-  .context-header {
-    padding: 6px 10px;
-    font-size: 11px;
-    font-family: var(--font-monospace, monospace);
-    opacity: 0.6;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .context-divider {
-    height: 1px;
-    background: color-mix(in srgb, var(--color-border) 40%, transparent);
-    margin: 4px 0;
-  }
-  .photo-context-menu button[role="menuitem"] {
-    all: unset;
-    box-sizing: border-box;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
-    padding: 5px 10px;
-    border-radius: var(--radius-sm);
-    color: var(--color-foreground);
-    cursor: pointer;
-  }
-  .photo-context-menu button[role="menuitem"]:hover:not(:disabled) {
-    background: var(--color-accent);
-    color: #fff;
-  }
-  .photo-context-menu button[role="menuitem"]:disabled {
-    opacity: 0.4;
-    cursor: default;
-  }
-  .photo-context-menu kbd {
-    /* The framework's global `kbd` rule (packages/styles) sets its own
-       background (var(--color-surface)) and no text color of its own, so
-       pin both here rather than relying on that — same "10% foreground
-       tint" convention Sidebar.svelte already uses for subtle badges. */
-    background-color: color-mix(in srgb, var(--color-foreground) 10%, transparent);
-    background-image: none;
-    box-shadow: none;
-    border-radius: 4px;
-    color: var(--color-foreground);
-    font-family: var(--font-monospace, monospace);
-    font-size: 10px;
-    opacity: 0.6;
   }
   .context-submenu {
     position: relative;
@@ -265,14 +206,6 @@
     top: 0;
     left: 100%;
     min-width: 160px;
-    background: color-mix(in srgb, var(--color-surface-high) 88%, transparent);
-    backdrop-filter: blur(24px) saturate(180%);
-    -webkit-backdrop-filter: blur(24px) saturate(180%);
-    border: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
-    border-radius: 8px;
-    padding: 4px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35), 0 0 0 0.5px rgba(0, 0, 0, 0.15);
-    color: var(--color-foreground);
   }
   .context-submenu-panel.submenu-left {
     left: auto;

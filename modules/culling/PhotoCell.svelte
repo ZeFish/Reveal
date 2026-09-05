@@ -192,16 +192,23 @@
     isolation: isolate;
   }
 
-  /* Selected, light mode: the print lifts — a harder, darker drop. */
+  /* Selected, light mode: deep soft elevation lift without a harsh dark stroke. */
   .cell.selected {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.75);
+    border-color: var(--color-surface);
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.12),
+      0 6px 20px rgba(0, 0, 0, 0.4);
+    transform: translateY(-1px) translateZ(0);
+    z-index: 5;
   }
-  /* Selected, dark mode: the print-frame just changes colour (same width),
-     and the shadow stays at the quiet depth. */
+  /* Selected, dark mode: subtle luminous edge and deep shadow. */
   @media (prefers-color-scheme: dark) {
     .cell.selected {
-      border-color: rgb(82, 82, 82);
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+      border-color: var(--color-surface);
+      box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.2),
+        0 6px 20px rgba(0, 0, 0, 0.6);
+      transform: translateY(-1px) translateZ(0);
     }
   }
 

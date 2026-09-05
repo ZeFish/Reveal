@@ -3222,35 +3222,40 @@
             </div>
           {/if}
 
-          <!-- Star filter — icon-only; the threshold reads in the menu. -->
+          <!-- Star filter -->
           <div class="rail-menu">
             <button
-              class="rail-btn"
+              class="rail-btn star-filter-btn"
               class:on={minRating > 0 || filterStory}
               onclick={() => {
                 const open = starMenuOpen;
                 closeMenus();
                 starMenuOpen = !open;
               }}
-              title={minRating > 0 ? `Filtre : ≥ ${minRating}★` : "Filtrer par note"}
+              title={minRating > 0 ? `Filtre : ≥ ${minRating}★` : filterStory ? "Filtre : Collection Rapide" : "Filtrer par note (0-5)"}
             >
               <Icon name="star" size="12px" />
+              {#if minRating > 0}
+                <span class="rail-badge">{minRating}★</span>
+              {:else if filterStory}
+                <span class="rail-badge">Q</span>
+              {/if}
             </button>
             {#if starMenuOpen}
-              <div class="popover">
+              <div class="popover std-menu-content m-0">
                 <button
-                  class="pop-row"
+                  class="std-menu-item"
                   onclick={() => {
                     filterStory = !filterStory;
                   }}
                 >
-                  <span>Collection Rapide</span>
+                  <span class="item-label">Collection Rapide</span>
                   {#if filterStory}<Icon name="check" size="10px" />{/if}
                 </button>
-                <div class="pop-divider"></div>
+                <div class="std-menu-separator"></div>
                 {#each [0, 1, 2, 3, 4, 5] as n}
-                  <button class="pop-row" onclick={() => setMinRating(n)}>
-                    <span>{n === 0 ? "Tout" : `≥ ${n}★`}</span>
+                  <button class="std-menu-item" onclick={() => setMinRating(n)}>
+                    <span class="item-label">{n === 0 ? "Tout afficher" : `≥ ${n} ★`}</span>
                     {#if minRating === n}<Icon name="check" size="10px" />{/if}
                   </button>
                 {/each}
@@ -3272,25 +3277,25 @@
               <Icon name="arrows-down-up" size="12px" />
             </button>
             {#if sortMenuOpen}
-              <div class="popover">
+              <div class="popover std-menu-content m-0">
                 <button
-                  class="pop-row"
+                  class="std-menu-item"
                   onclick={() => {
                     sortDesc = false;
                     saveGridPrefs();
                   }}
                 >
-                  <span>Plus ancien d'abord</span>
+                  <span class="item-label">Plus ancien d'abord</span>
                   {#if !sortDesc}<Icon name="check" size="10px" />{/if}
                 </button>
                 <button
-                  class="pop-row"
+                  class="std-menu-item"
                   onclick={() => {
                     sortDesc = true;
                     saveGridPrefs();
                   }}
                 >
-                  <span>Plus récent d'abord</span>
+                  <span class="item-label">Plus récent d'abord</span>
                   {#if sortDesc}<Icon name="check" size="10px" />{/if}
                 </button>
               </div>
@@ -3402,47 +3407,49 @@
               <Icon name={layout === "masonry" ? "rows" : "grid-four"} size="12px" />
             </button>
             {#if layoutMenuOpen}
-              <div class="popover layout-pop">
+              <div class="popover layout-pop std-menu-content m-0">
                 {#if gardenUrl}
                   <button
-                    class="pop-row"
+                    class="std-menu-item"
                     onclick={() => {
                       closeMenus();
                       if (gardenUrl) invoke("open_path", { path: gardenUrl });
                     }}
                   >
-                    <span>Ouvrir sur le web</span>
+                    <span class="item-label">Ouvrir sur le web</span>
                     <Icon name="arrow-square-out" size="10px" />
                   </button>
                 {/if}
                 {#if storySet.size}
                   <button
-                    class="pop-row"
+                    class="std-menu-item"
+                    class:disabled={!!progress}
                     onclick={() => {
                       closeMenus();
                       publishStory();
                     }}
                     disabled={!!progress}
                   >
-                    <span>Publier l'histoire ({storySet.size})</span>
+                    <span class="item-label">Publier l'histoire ({storySet.size})</span>
                     <Icon name="lightning" size="10px" />
                   </button>
                 {/if}
                 {#if (curDir || folder) && view.length}
                   <button
-                    class="pop-row"
+                    class="std-menu-item"
+                    class:disabled={!!progress}
                     onclick={() => {
                       closeMenus();
                       cullCurrentFolder();
                     }}
                     disabled={!!progress}
                   >
-                    <span>Culling IA</span>
+                    <span class="item-label">Culling IA</span>
                     <Icon name="lightning" size="10px" />
                   </button>
                 {/if}
                 {#if gardenUrl || storySet.size || ((curDir || folder) && view.length)}
-                  <div class="pop-divider"></div>
+                  <div class="std-menu-separator"></div>
                 {/if}
                 <span class="pop-label">Colonnes</span>
                 <div class="pop-grid">
@@ -3457,10 +3464,10 @@
                     >{n}</button>
                   {/each}
                 </div>
-                <div class="pop-divider"></div>
+                <div class="std-menu-separator"></div>
                 <span class="pop-label">Format</span>
-                <button class="pop-row" onclick={toggleLayout}>
-                  <span>Mosaïque</span>
+                <button class="std-menu-item" onclick={toggleLayout}>
+                  <span class="item-label">Mosaïque</span>
                   {#if layout === "masonry"}<Icon name="check" size="10px" />{/if}
                 </button>
                 {#if layout !== "masonry"}
@@ -3477,17 +3484,17 @@
                     {/each}
                   </div>
                   <button
-                    class="pop-row"
+                    class="std-menu-item"
                     onclick={() => {
                       fillCells = !fillCells;
                       saveGridPrefs();
                     }}
                   >
-                    <span>{fillCells ? "Remplir les cases" : "Garder les proportions"}</span>
+                    <span class="item-label">{fillCells ? "Remplir les cases" : "Garder les proportions"}</span>
                     {#if !fillCells}<Icon name="check" size="10px" />{/if}
                   </button>
                 {/if}
-                <div class="pop-divider"></div>
+                <div class="std-menu-separator"></div>
                 <span class="pop-label">Marge</span>
                 <input
                   class="pop-slider"
@@ -3672,7 +3679,7 @@
             <div class="section-content">
               <label class="row check">
                 <span>AUTO-EXPO</span>
-                <input type="checkbox" bind:checked={recipe.auto_exposure} onchange={() => edited()} />
+                <input type="checkbox" role="switch" bind:checked={recipe.auto_exposure} onchange={() => edited()} />
               </label>
               <label class="row">
                 <span>EXPOSITION</span>
@@ -3707,7 +3714,7 @@
           </label>
           <label class="row check">
             <span>BORDURE</span>
-            <input type="checkbox" bind:checked={exportBorder} />
+            <input type="checkbox" role="switch" bind:checked={exportBorder} />
           </label>
           <button onclick={() => exportCurrent()}>Exporter cette photo</button>
         </section>
@@ -4298,12 +4305,21 @@
   .rail-btn:hover {
     color: var(--color-foreground);
   }
-  /* Active filter = solid ink + a filled star (Swift star.fill). */
-  .rail-btn.on {
-    color: var(--color-foreground);
+  .rail-btn.star-filter-btn {
+    width: auto;
+    gap: 3px;
+    padding: 1px 4px;
+    border-radius: var(--radius-sm);
   }
-  .rail-btn.on :global(svg path) {
-    fill: currentColor;
+  .rail-badge {
+    font-family: var(--font-monospace, monospace);
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 1;
+    padding: 1px 3.5px;
+    background: color-mix(in srgb, var(--color-foreground) 15%, transparent);
+    color: var(--color-foreground);
+    border-radius: 3px;
   }
   .frame-count {
     font-family: var(--font-monospace, monospace);
@@ -4343,6 +4359,11 @@
     inset: 0;
     z-index: 10;
   }
+  /* Surface, row and separator styling now come from Standard's
+     .std-menu-content/.std-menu-item/.std-menu-separator (see
+     packages/styles/_standard-13-components.scss) — only positioning and
+     the genuinely app-specific bits (column/aspect chip grids, margin
+     slider) stay local. */
   .popover {
     position: absolute;
     top: calc(100% + 8px);
@@ -4350,13 +4371,6 @@
     transform: translateX(-50%);
     z-index: 40;
     min-width: 168px;
-    background: var(--color-surface-high);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-lg);
-    padding: 8px;
-    display: flex;
-    flex-direction: column;
     gap: 2px;
   }
   .layout-pop {
@@ -4365,22 +4379,6 @@
     transform: none;
     min-width: 208px;
     gap: 6px;
-  }
-  .pop-row {
-    all: unset;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 4px 8px;
-    border-radius: var(--radius);
-    font-family: var(--font-text, sans-serif);
-    font-size: 10.8px;
-    color: var(--color-foreground);
-  }
-  .pop-row:hover {
-    background: color-mix(in srgb, var(--color-foreground) 6%, transparent);
   }
   .context-backdrop {
     position: fixed;
@@ -4848,7 +4846,6 @@
   }
   .row.check input {
     justify-self: start;
-    accent-color: var(--color-accent);
   }
   .row code {
     font-family: var(--font-monospace, monospace);

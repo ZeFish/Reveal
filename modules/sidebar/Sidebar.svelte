@@ -960,7 +960,7 @@
 {#if folderMenu}
   <div class="folder-context-backdrop" onclick={() => (folderMenu = null)} role="presentation"></div>
   <div
-    class="folder-menu"
+    class="folder-menu std-menu-content m-0"
     role="menu"
     tabindex="-1"
     aria-label={`${folderMenu.label} actions`}
@@ -968,13 +968,14 @@
     onclick={(event) => event.stopPropagation()}
     onkeydown={(event) => event.stopPropagation()}
   >
-    <div class="folder-menu-header">
+    <div class="std-menu-label">
       {folderMenu.label}
     </div>
-    <div class="folder-menu-divider"></div>
+    <div class="std-menu-separator"></div>
 
     {#if selectedCount > 0}
       <button
+        class="std-menu-item"
         role="menuitem"
         onclick={() => {
           const path = folderMenu?.path;
@@ -982,28 +983,30 @@
           if (path) onMoveSelectedPhotos(path);
         }}
       >
-        <span>Déplacer {selectedCount} photo{selectedCount > 1 ? 's' : ''} ici</span>
+        <span class="item-label">Déplacer {selectedCount} photo{selectedCount > 1 ? 's' : ''} ici</span>
       </button>
-      <div class="folder-menu-divider"></div>
+      <div class="std-menu-separator"></div>
     {/if}
 
-    <button role="menuitem" onclick={() => runFolderAction(onRevealDir)}>
-      <span>Afficher dans le Finder</span>
+    <button class="std-menu-item" role="menuitem" onclick={() => runFolderAction(onRevealDir)}>
+      <span class="item-label">Afficher dans le Finder</span>
     </button>
     <button
+      class="std-menu-item"
       role="menuitem"
       onclick={() => runFolderAction(/** @type {(path: string) => void} */ (onSetImportDir))}
       title="Les prochains imports atterrissent dans ce dossier"
     >
-      <span>{folderMenu.path === importDir ? "✓ Dossier d'import actif" : "Définir comme dossier d'import"}</span>
+      <span class="item-label">{folderMenu.path === importDir ? "✓ Dossier d'import actif" : "Définir comme dossier d'import"}</span>
     </button>
-    <button role="menuitem" onclick={() => runFolderAction(onRescanDir)} disabled={scanning}>
-      <span>Réindexer le dossier</span>
+    <button class="std-menu-item" role="menuitem" class:disabled={scanning} onclick={() => runFolderAction(onRescanDir)} disabled={scanning}>
+      <span class="item-label">Réindexer le dossier</span>
     </button>
 
-    <div class="folder-menu-divider"></div>
+    <div class="std-menu-separator"></div>
 
     <button
+      class="std-menu-item"
       role="menuitem"
         onclick={() => {
           const path = folderMenu?.path;
@@ -1011,11 +1014,12 @@
           if (path) beginCreateFolder(path);
         }}
     >
-      <span>Nouveau dossier…</span>
+      <span class="item-label">Nouveau dossier…</span>
     </button>
 
     {#if folderMenu.path !== root}
       <button
+        class="std-menu-item"
         role="menuitem"
         onclick={() => {
           const path = folderMenu?.path;
@@ -1024,7 +1028,7 @@
           if (path && name) beginRename(path, name);
         }}
       >
-        <span>Renommer…</span>
+        <span class="item-label">Renommer…</span>
       </button>
     {/if}
   </div>
@@ -1260,12 +1264,13 @@
   .dir-row {
     gap: 8px;
     padding: 4px 8px 4px calc(8px + var(--depth) * 12px);
+    position: relative;
   }
   .dir-row.current {
-    background: color-mix(in srgb, var(--color-foreground) 10%, transparent);
+    background: color-mix(in srgb, var(--color-foreground) 12%, transparent);
   }
   .dir-row:hover:not(.current) {
-    background: color-mix(in srgb, var(--color-foreground) 5%, transparent);
+    background: color-mix(in srgb, var(--color-foreground) 6%, transparent);
   }
   /* A photo (or another folder) is being dragged over this folder — it will
      land here on drop. */
@@ -1279,24 +1284,6 @@
      the row you're dragging FROM doesn't visually compete with the target. */
   .dir-row.dragging {
     opacity: 0.4;
-  }
-  /* Import-destination branch — a faint accent stripe down the left edge of
-     the chosen folder and every ancestor, so you can trace the branch from
-     the catalogue root down to where photos will land. `box-shadow inset`
-     avoids disrupting the row's padding/flex. The destination itself gets a
-     stronger stripe so it reads as the endpoint, not just another ancestor. */
-  .dir-row.import-branch,
-  .section-main.import-branch {
-    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--color-accent) 45%, transparent);
-  }
-  .dir-row.import-dest,
-  .section-main.import-dest {
-    box-shadow: inset 2px 0 0 var(--color-accent);
-  }
-  /* The destination's label also brightens, like the current-folder row,
-     so it stands out even when scrolled past the stripe's left edge. */
-  .dir-row.import-dest .dir-name {
-    color: color-mix(in srgb, var(--color-foreground) 85%, transparent);
   }
   /* Inline rename / new-folder editor — same footprint as .dir-name so the
      row doesn't jump when it switches between text and input. */
@@ -1357,29 +1344,35 @@
     flex-shrink: 0;
   }
   .dot.filled {
-    width: 8px;
-    height: 8px;
+    width: 7.5px;
+    height: 7.5px;
     border: none;
-    background: color-mix(in srgb, var(--color-foreground) 55%, transparent);
+    background: var(--color-foreground);
   }
   .dot.accent {
     border-color: color-mix(in srgb, var(--color-accent) 70%, transparent);
   }
   .dot.accent.filled {
     background: var(--color-accent);
+    box-shadow: 0 0 4px color-mix(in srgb, var(--color-accent) 50%, transparent);
   }
 
   .dir-name {
     font-family: var(--font-text, sans-serif);
     font-size: 10.8px;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
+    color: color-mix(in srgb, var(--color-foreground) 60%, transparent);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     min-width: 0;
+    transition: color var(--duration-instant);
   }
   .dir-row.current .dir-name {
-    color: color-mix(in srgb, var(--color-foreground) 85%, transparent);
+    color: var(--color-foreground);
+    font-weight: 600;
+  }
+  .dir-row:hover .dir-name {
+    color: var(--color-foreground);
   }
   .dir-spacer {
     flex: 1;
@@ -1417,61 +1410,12 @@
     inset: 0;
     z-index: 499;
   }
-  /* Spacing/typography mirrors ContextMenu.svelte's `.photo-context-menu`
-     (modules/menus/ContextMenu.svelte) — was noticeably tighter (4px 8px
-     button padding, hardcoded system font) than the photo menu's 5px 10px
-     + var(--font-text), which read as two different layouts side by side
-     (reproduced 2026-08-02). Same rhythm, one menu language. */
+  /* Same std-menu-* vocabulary as ContextMenu.svelte's `.photo-context-menu`
+     (modules/menus/ContextMenu.svelte) — only positioning stays local. */
   .folder-menu {
     position: fixed;
     z-index: 500;
     min-width: 220px;
-    padding: 4px;
-    border: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--color-surface-high) 88%, transparent);
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35), 0 0 0 0.5px rgba(0, 0, 0, 0.15);
-    backdrop-filter: blur(24px) saturate(180%);
-    -webkit-backdrop-filter: blur(24px) saturate(180%);
-    font-family: var(--font-text, sans-serif);
-    font-size: 12px;
-    color: var(--color-foreground);
-    user-select: none;
-  }
-  .folder-menu-header {
-    padding: 6px 10px;
-    font-size: 11px;
-    font-family: var(--font-monospace, monospace);
-    opacity: 0.6;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .folder-menu button {
-    all: unset;
-    box-sizing: border-box;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
-    padding: 5px 10px;
-    border-radius: var(--radius-sm);
-    color: var(--color-foreground);
-    cursor: default;
-  }
-  .folder-menu button:hover:not(:disabled),
-  .folder-menu button:focus-visible {
-    background: #007aff;
-    color: #ffffff;
-  }
-  .folder-menu-divider {
-    height: 1px;
-    margin: 4px 0;
-    background: color-mix(in srgb, var(--color-border) 40%, transparent);
-  }
-  .folder-menu button:disabled {
-    opacity: 0.35;
-    cursor: default;
   }
 
   .lib-section {

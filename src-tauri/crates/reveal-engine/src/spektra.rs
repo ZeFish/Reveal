@@ -177,7 +177,7 @@ impl RenderEngine for SpektraEngine {
                     // though the underlying values are discrete per stock.
                     EngineControl::Slider {
                         id: "development_time_min".to_string(),
-                        label: "Développement (min, 0=auto)".to_string(),
+                        label: "Durée (min)".to_string(),
                         min: 0.0,
                         max: 20.0,
                         step: 0.5,
@@ -185,7 +185,7 @@ impl RenderEngine for SpektraEngine {
                     },
                     EngineControl::Slider {
                         id: "density_gamma".to_string(),
-                        label: "Contraste (courbe)".to_string(),
+                        label: "Contraste".to_string(),
                         min: -0.5,
                         max: 0.5,
                         step: 0.01,
@@ -206,7 +206,7 @@ impl RenderEngine for SpektraEngine {
                     },
                     EngineControl::Slider {
                         id: "halation_size".to_string(),
-                        label: "Halo (rayon)".to_string(),
+                        label: "Halo".to_string(),
                         min: 0.5,
                         max: 1.5,
                         step: 0.05,
@@ -242,7 +242,7 @@ impl RenderEngine for SpektraEngine {
                     },
                     EngineControl::Slider {
                         id: "glare_percent".to_string(),
-                        label: "Éblouissement Force".to_string(),
+                        label: "Force".to_string(),
                         min: 0.0,
                         max: 0.2,
                         step: 0.005,
@@ -250,7 +250,7 @@ impl RenderEngine for SpektraEngine {
                     },
                     EngineControl::Slider {
                         id: "glare_roughness".to_string(),
-                        label: "Éblouissement Texture".to_string(),
+                        label: "Texture".to_string(),
                         min: 0.0,
                         max: 1.0,
                         step: 0.05,
@@ -258,7 +258,7 @@ impl RenderEngine for SpektraEngine {
                     },
                     EngineControl::Slider {
                         id: "glare_blur".to_string(),
-                        label: "Éblouissement Rayon".to_string(),
+                        label: "Rayon".to_string(),
                         min: 0.0,
                         max: 2.0,
                         step: 0.05,

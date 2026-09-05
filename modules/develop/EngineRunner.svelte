@@ -63,6 +63,13 @@
 
   /**
    * @param {string} id
+   */
+  function isSubParam(id) {
+    return id === "glare_percent" || id === "glare_roughness" || id === "glare_blur";
+  }
+
+  /**
+   * @param {string} id
    * @param {number | undefined | null} v
    */
   function formatVal(id, v) {
@@ -116,183 +123,189 @@
       {#if group.label}
         <button
           type="button"
-          class="din group-label group-toggle"
+          class="group-header"
           onclick={() => toggleGroup(group.label)}
           aria-expanded={!collapsedGroups.has(group.label)}
         >
-          <span class="chevron">{collapsedGroups.has(group.label) ? "▶" : "▼"}</span>
-          {group.label}
+          <span class="chevron" class:collapsed={collapsedGroups.has(group.label)}>
+            <Icon name="caret-down" size="8px" />
+          </span>
+          <span class="group-title">{group.label}</span>
+          <span class="group-line"></span>
         </button>
       {/if}
 
       {#if !group.label || !collapsedGroups.has(group.label)}
-      {#each group.controls as control}
-        {#if control.kind === "toggle"}
-          <div class="frow" class:disabled={isControlDisabled(group, control)}>
-            <span class="din frow-label">{control.label}</span>
-            <span class="spacer"></span>
-            <button
-              class="toggle"
-              class:on={recipe[control.id]}
-              role="switch"
-              aria-label={control.label}
-              aria-checked={recipe[control.id]}
-              onclick={() => {
-                recipe[control.id] = !recipe[control.id];
-                edited();
-              }}
-            >
-              <span class="knob"></span>
-            </button>
-          </div>
+        <div class="group-controls">
+          {#each group.controls as control}
+            {#if control.kind === "toggle"}
+              <div class="frow" class:disabled={isControlDisabled(group, control)}>
+                <span class="din frow-label" title={control.label}>{control.label}</span>
+                <span class="spacer"></span>
+                <input
+                  type="checkbox"
+                  role="switch"
+                  aria-label={control.label}
+                  checked={recipe[control.id]}
+                  onchange={() => {
+                    recipe[control.id] = !recipe[control.id];
+                    edited();
+                  }}
+                />
+              </div>
 
-        {:else if control.kind === "slider"}
-          <div class="frow" class:disabled={isControlDisabled(group, control)}>
-            <span
-              class="din frow-label"
-              title="Double-clic : remettre au défaut"
-              ondblclick={() => resetControl(control.id)}
-            >{control.label}</span>
-            <input
-              type="range"
-              min={control.min}
-              max={control.max}
-              step={control.step}
-              value={recipe[control.id]}
-              style="--f: {pct(recipe[control.id], control.min, control.max)}"
-              oninput={(e) => {
-                recipe[control.id] = parseFloat(e.currentTarget.value);
-                edited(true); // live: renders the small DRAG_PX proxy, snappy
-              }}
-              onchange={(e) => {
-                recipe[control.id] = parseFloat(e.currentTarget.value);
-                edited(false); // settle: one full-resolution render on release
-              }}
-              ondblclick={() => resetControl(control.id)}
-            />
-            <span class="val">{formatVal(control.id, recipe[control.id])}</span>
-          </div>
-
-        {:else if control.kind === "indexed_slider"}
-          <div class="frow" class:disabled={isControlDisabled(group, control)}>
-            <span
-              class="din frow-label"
-              title="Double-clic : remettre au défaut"
-              ondblclick={() => resetControl(control.id, control.index)}
-            >{control.label}</span>
-            <input
-              type="range"
-              min={control.min}
-              max={control.max}
-              step={control.step}
-              value={recipe[control.id]?.[control.index] ?? 0}
-              style="--f: {pct(recipe[control.id]?.[control.index], control.min, control.max)}"
-              oninput={(e) => {
-                if (!Array.isArray(recipe[control.id])) recipe[control.id] = [];
-                recipe[control.id][control.index] = parseFloat(e.currentTarget.value);
-                edited(true);
-              }}
-              onchange={(e) => {
-                if (!Array.isArray(recipe[control.id])) recipe[control.id] = [];
-                recipe[control.id][control.index] = parseFloat(e.currentTarget.value);
-                edited(false);
-              }}
-              ondblclick={() => resetControl(control.id, control.index)}
-            />
-            <span class="val">{formatVal(control.id, recipe[control.id]?.[control.index])}</span>
-          </div>
-
-        {:else if control.kind === "select"}
-          <div class="frow" class:disabled={isControlDisabled(group, control)}>
-            <span class="din frow-label">{control.label}</span>
-            <span class="pick">
-              <select
-                value={recipe[control.id]}
-                onchange={(e) => {
-                  recipe[control.id] = e.currentTarget.value;
-                  edited();
-                }}
+            {:else if control.kind === "slider"}
+              <div
+                class="frow"
+                class:sub-param={isSubParam(control.id)}
+                class:disabled={isControlDisabled(group, control) || (isSubParam(control.id) && !recipe.glare)}
               >
-                {#if control.options_type === "films"}
-                  {#each films as f}
-                    <option value={f.name}>{f.label}</option>
-                  {/each}
-                {:else if control.options_type === "papers"}
-                  {#each papers as p}
-                    <option value={p.name}>{p.label}</option>
-                  {/each}
-                {:else if control.options_type === "agx_looks"}
-                  <option value="base">Base Contrast (Standard)</option>
-                  <option value="punchy">Punchy (Éclatant)</option>
-                  <option value="golden">Golden (Heure Dorée)</option>
-                  <option value="soft">Soft (Doux)</option>
-                  <option value="bw">Filmic B&W (Noir & Blanc)</option>
-                {/if}
-              </select>
-              <Icon name="caret-down" size="8px" />
-            </span>
-          </div>
+                <span
+                  class="din frow-label"
+                  title={`${control.label} (Double-clic : réinitialiser)`}
+                  ondblclick={() => resetControl(control.id)}
+                >{control.label}</span>
+                <input
+                  type="range"
+                  min={control.min}
+                  max={control.max}
+                  step={control.step}
+                  value={recipe[control.id]}
+                  style="--f: {pct(recipe[control.id], control.min, control.max)}"
+                  oninput={(e) => {
+                    recipe[control.id] = parseFloat(e.currentTarget.value);
+                    edited(true); // live proxy
+                  }}
+                  onchange={(e) => {
+                    recipe[control.id] = parseFloat(e.currentTarget.value);
+                    edited(false); // full render
+                  }}
+                  ondblclick={() => resetControl(control.id)}
+                />
+                <span class="val mono">{formatVal(control.id, recipe[control.id])}</span>
+              </div>
 
-        {:else if control.kind === "lut_stack"}
-          <div class="lut-stack-section">
-            <div class="frow sub-bar">
-              <span class="lut-subhead"
-                >{control.stage === "pre" ? "Pre-Lut" : "Post-Lut"}</span
-              >
-              <span class="spacer"></span>
-              <button class="pill-btn add-lut-btn" onclick={() => addLutLayer(control.stage)}>
-                + LUT
-              </button>
-            </div>
+            {:else if control.kind === "indexed_slider"}
+              <div class="frow" class:disabled={isControlDisabled(group, control)}>
+                <span
+                  class="din frow-label"
+                  title={`${control.label} (Double-clic : réinitialiser)`}
+                  ondblclick={() => resetControl(control.id, control.index)}
+                >{control.label}</span>
+                <input
+                  type="range"
+                  min={control.min}
+                  max={control.max}
+                  step={control.step}
+                  value={recipe[control.id]?.[control.index] ?? 0}
+                  style="--f: {pct(recipe[control.id]?.[control.index], control.min, control.max)}"
+                  oninput={(e) => {
+                    if (!Array.isArray(recipe[control.id])) recipe[control.id] = [];
+                    recipe[control.id][control.index] = parseFloat(e.currentTarget.value);
+                    edited(true);
+                  }}
+                  onchange={(e) => {
+                    if (!Array.isArray(recipe[control.id])) recipe[control.id] = [];
+                    recipe[control.id][control.index] = parseFloat(e.currentTarget.value);
+                    edited(false);
+                  }}
+                  ondblclick={() => resetControl(control.id, control.index)}
+                />
+                <span class="val mono">{formatVal(control.id, recipe[control.id]?.[control.index])}</span>
+              </div>
 
-            {#if lutListFor(control.stage).length === 0}
+            {:else if control.kind === "select"}
+              <div class="frow" class:disabled={isControlDisabled(group, control)}>
+                <span class="din frow-label" title={control.label}>{control.label}</span>
+                <span class="pick">
+                  <select
+                    value={recipe[control.id]}
+                    onchange={(e) => {
+                      recipe[control.id] = e.currentTarget.value;
+                      edited();
+                    }}
+                  >
+                    {#if control.options_type === "films"}
+                      {#each films as f}
+                        <option value={f.name}>{f.label}</option>
+                      {/each}
+                    {:else if control.options_type === "papers"}
+                      {#each papers as p}
+                        <option value={p.name}>{p.label}</option>
+                      {/each}
+                    {:else if control.options_type === "agx_looks"}
+                      <option value="base">Base Contrast (Standard)</option>
+                      <option value="punchy">Punchy (Éclatant)</option>
+                      <option value="golden">Golden (Heure Dorée)</option>
+                      <option value="soft">Soft (Doux)</option>
+                      <option value="bw">Filmic B&W (Noir & Blanc)</option>
+                    {/if}
+                  </select>
+                  <Icon name="caret-down" size="7px" />
+                </span>
+              </div>
 
-            {:else}
-              {#each lutListFor(control.stage) as layer, idx}
-                <div class="lut-layer-card">
-                  <div class="frow layer-row">
-                    <span class="pick lut-file-pick">
-                      <select
-                        value={layer.name}
-                        onchange={(e) => setLutFile(control.stage, idx, e.currentTarget.value)}
-                      >
-                        <option value="">(Aucun)</option>
-                        {#each luts as name}
-                          <option value={name}>{name}</option>
-                        {/each}
-                      </select>
-                      <Icon name="caret-down" size="8px" />
-                    </span>
-                    <button
-                      class="icon-btn remove-lut-btn"
-                      onclick={() => removeLutLayer(control.stage, idx)}
-                      title="Supprimer cette couche LUT"
-                    >
-                      ×
-                    </button>
-                  </div>
-                  {#if layer.name}
-                    <div class="frow opacity-row">
-                      <span class="din opacity-label">Opacité</span>
-                      <span class="spacer"></span>
-                      <input
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.01"
-                        value={layer.opacity}
-                        oninput={(e) =>
-                          updateLutOpacity(control.stage, idx, parseFloat(e.currentTarget.value))}
-                      />
-                      <span class="val">{Math.round(layer.opacity * 100)}%</span>
-                    </div>
-                  {/if}
+            {:else if control.kind === "lut_stack"}
+              <div class="lut-stack-section">
+                <div class="frow sub-bar">
+                  <span class="lut-subhead">
+                    {control.stage === "pre" ? "Pre-Lut" : "Post-Lut"}
+                  </span>
+                  <span class="spacer"></span>
+                  <button type="button" class="pill-btn add-lut-btn" onclick={() => addLutLayer(control.stage)}>
+                    + LUT
+                  </button>
                 </div>
-              {/each}
+
+                {#if lutListFor(control.stage).length > 0}
+                  {#each lutListFor(control.stage) as layer, idx}
+                    <div class="lut-layer-card">
+                      <div class="frow layer-row">
+                        <span class="pick lut-file-pick">
+                          <select
+                            value={layer.name}
+                            onchange={(e) => setLutFile(control.stage, idx, e.currentTarget.value)}
+                          >
+                            <option value="">(Aucun)</option>
+                            {#each luts as name}
+                              <option value={name}>{name}</option>
+                            {/each}
+                          </select>
+                          <Icon name="caret-down" size="7px" />
+                        </span>
+                        <button
+                          type="button"
+                          class="icon-btn remove-lut-btn"
+                          onclick={() => removeLutLayer(control.stage, idx)}
+                          title="Supprimer cette couche LUT"
+                        >
+                          <Icon name="x" size="9px" />
+                        </button>
+                      </div>
+                      {#if layer.name}
+                        <div class="frow opacity-row">
+                          <span class="din opacity-label">Opacité</span>
+                          <span class="spacer"></span>
+                          <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.01"
+                            value={layer.opacity}
+                            style="--f: {pct(layer.opacity, 0, 1)}"
+                            oninput={(e) =>
+                              updateLutOpacity(control.stage, idx, parseFloat(e.currentTarget.value))}
+                          />
+                          <span class="val mono">{Math.round(layer.opacity * 100)}%</span>
+                        </div>
+                      {/if}
+                    </div>
+                  {/each}
+                {/if}
+              </div>
             {/if}
-          </div>
-        {/if}
-      {/each}
+          {/each}
+        </div>
       {/if}
     {/each}
   </div>
@@ -302,71 +315,109 @@
   .engine-runner {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: 0.15rem;
   }
-  .group-label {
-    font-family: var(--font-monospace, monospace);
-    font-size: 0.7rem;
+
+  /* Precision Leica Collapsible Group Header */
+  .group-header {
+    all: unset;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    width: 100%;
+    margin-top: 10px;
+    margin-bottom: 3px;
+    padding: 2px 0;
+    user-select: none;
+    color: color-mix(in srgb, var(--color-foreground) 45%, transparent);
+    transition: color var(--duration-fast) ease;
+  }
+  .group-header:hover {
+    color: var(--color-foreground);
+  }
+  .group-header .chevron {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: color-mix(in srgb, var(--color-foreground) 35%, transparent);
+    transition: transform var(--duration-fast) ease, color var(--duration-fast) ease;
+  }
+  .group-header:hover .chevron {
+    color: var(--color-foreground);
+  }
+  .group-header .chevron.collapsed {
+    transform: rotate(-90deg);
+  }
+  .group-title {
+    font-family: var(--font-header, sans-serif);
+    font-size: 9.5px;
     font-weight: 700;
     letter-spacing: 0.12em;
     text-transform: uppercase;
-    opacity: 0.75;
-    margin-top: 0.75rem;
-    margin-bottom: 0.35rem;
+    white-space: nowrap;
   }
-  .group-toggle {
+  .group-line {
+    flex: 1;
+    height: 1px;
+    background: color-mix(in srgb, var(--color-foreground) 6%, transparent);
+  }
+
+  .group-controls {
     display: flex;
-    align-items: center;
-    gap: 6px;
-    width: 100%;
-    border: none;
-    background: transparent;
-    padding: 0;
-    color: inherit;
-    cursor: pointer;
-    text-align: left;
+    flex-direction: column;
+    gap: 1.5px;
   }
-  .group-toggle .chevron {
-    display: inline-block;
-    width: 0.8em;
-    font-size: 0.65em;
-    opacity: 0.6;
-  }
+
+  /* Form Rows */
   .frow {
     display: flex;
     align-items: center;
     gap: 8px;
-    min-height: 16px;
-    transition: opacity var(--duration-standard);
+    min-height: 20px;
+    padding: 1px 0;
+    transition: opacity var(--duration-fast);
+  }
+  .frow.sub-param {
+    padding-left: 10px;
   }
   .frow.disabled {
-    opacity: 0.25;
+    opacity: 0.22;
     pointer-events: none;
     filter: grayscale(1);
   }
   .frow-label {
-    width: 88px;
+    width: 90px;
     flex-shrink: 0;
     white-space: nowrap;
-    font-family: var(--font-monospace, monospace);
-    font-size: 0.6rem;
-    letter-spacing: 0.04em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-family: var(--font-header, sans-serif);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.05em;
     text-transform: uppercase;
-    opacity: 0.7;
+    color: color-mix(in srgb, var(--color-foreground) 60%, transparent);
+    transition: color var(--duration-fast);
+    cursor: default;
+  }
+  .frow:hover .frow-label {
+    color: var(--color-foreground);
   }
   .spacer {
     flex: 1;
   }
   .val {
-    min-width: 48px;
+    width: 44px;
+    flex-shrink: 0;
     font-family: var(--font-monospace, monospace);
-    font-size: 0.62rem;
+    font-size: 10px;
     text-align: right;
-    opacity: 0.8;
+    color: color-mix(in srgb, var(--color-foreground) 80%, transparent);
     font-variant-numeric: tabular-nums;
   }
-  /* Foreground-tinted slider — the track fills to `--f` (set inline per
-     value); matches the original dev-panel sliders. */
+
+  /* Slider Styling — Precision Hairline Instrument */
   :global(input[type="range"]) {
     -webkit-appearance: none;
     appearance: none;
@@ -375,118 +426,143 @@
     height: 12px;
     background: transparent;
     margin: 0;
+    cursor: pointer;
   }
   :global(input[type="range"]::-webkit-slider-runnable-track) {
-    height: 3px;
-    border-radius: var(--radius-sm);
+    height: 1.5px;
+    border-radius: 1px;
     background: linear-gradient(
       to right,
       var(--color-foreground) var(--f, 50%),
-      var(--color-border) var(--f, 50%)
+      color-mix(in srgb, var(--color-foreground) 12%, transparent) var(--f, 50%)
     );
   }
   :global(input[type="range"]::-webkit-slider-thumb) {
     -webkit-appearance: none;
-    width: 12px;
-    height: 12px;
+    width: 6.5px;
+    height: 6.5px;
     border-radius: 50%;
     background: var(--color-foreground);
-    margin-top: -4.5px;
+    margin-top: -2.5px;
     border: none;
+    box-shadow: 0 0.5px 2px rgba(0, 0, 0, 0.4);
+    transition: transform var(--duration-instant) ease, background var(--duration-instant) ease;
   }
+  :global(input[type="range"]:hover::-webkit-slider-thumb) {
+    transform: scale(1.25);
+  }
+  :global(input[type="range"]:active::-webkit-slider-thumb) {
+    background: var(--color-accent, #d6202c);
+  }
+
+  /* Select Pickers */
   .pick {
     flex: 1;
     display: flex;
     align-items: center;
-    gap: 4px;
+    position: relative;
   }
   .pick select {
     width: 100%;
+    box-sizing: border-box;
     font-family: var(--font-text, sans-serif);
-    font-size: 0.75rem;
-    background: var(--color-surface-low, #1e1e1e);
+    font-size: 10.5px;
+    background: color-mix(in srgb, var(--color-foreground) 3%, transparent);
     color: var(--color-foreground, #fff);
-    border: 1px solid var(--color-border, #333);
-    border-radius: var(--radius-sm);
-    padding: 2px 6px;
+    border: 1px solid color-mix(in srgb, var(--color-foreground) 10%, transparent);
+    border-radius: var(--radius-sm, 3px);
+    padding: 2.5px 18px 2.5px 6px;
+    outline: none;
+    appearance: none;
+    -webkit-appearance: none;
+    transition: border-color var(--duration-fast), background var(--duration-fast);
   }
-  .toggle {
-    flex-shrink: 0;
-    width: 28px;
-    height: 16px;
-    border-radius: 8px;
-    background: var(--color-surface-high, #333);
-    border: none;
-    position: relative;
-    cursor: pointer;
-    padding: 0;
-    transition: background var(--duration-fast);
+  .pick select:hover {
+    background: color-mix(in srgb, var(--color-foreground) 6%, transparent);
+    border-color: color-mix(in srgb, var(--color-foreground) 18%, transparent);
   }
-  .toggle.on {
-    background: var(--color-accent);
+  .pick select:focus {
+    border-color: var(--color-accent);
   }
-  .toggle .knob {
-    display: block;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: #fff;
+  .pick :global(.icon) {
     position: absolute;
-    top: 2px;
-    left: 2px;
-    transition: transform var(--duration-fast);
+    right: 6px;
+    pointer-events: none;
+    color: color-mix(in srgb, var(--color-foreground) 40%, transparent);
   }
-  .toggle.on .knob {
-    transform: translateX(12px);
-  }
+
+  /* LUT Stacks */
   .lut-stack-section {
-    margin-top: 0.5rem;
+    margin-top: 0.3rem;
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: 0.25rem;
   }
   .sub-bar {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
   }
   .lut-subhead {
-    font-family: var(--font-monospace, monospace);
-    font-size: 0.62rem;
-    letter-spacing: 0.05em;
-    opacity: 0.85;
+    font-family: var(--font-header, sans-serif);
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
+    color: color-mix(in srgb, var(--color-foreground) 45%, transparent);
   }
-  .lut-hint {
-    font-size: 0.68rem;
-    opacity: 0.6;
-    margin: 0.2rem 0;
-    line-height: 1.3;
+  .pill-btn {
+    all: unset;
+    cursor: pointer;
+    font-family: var(--font-header, sans-serif);
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 1px 6px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--color-foreground) 12%, transparent);
+    background: color-mix(in srgb, var(--color-foreground) 3%, transparent);
+    color: var(--color-foreground);
+    transition: background 120ms, border-color 120ms;
   }
+  .pill-btn:hover {
+    background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
+    border-color: var(--color-accent);
+  }
+
   .lut-layer-card {
-    background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
-    border: 1px solid var(--color-border, #333);
-    border-radius: var(--radius);
-    padding: 0.4rem;
+    background: color-mix(in srgb, var(--color-foreground) 2.5%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-foreground) 7%, transparent);
+    border-radius: var(--radius-sm, 3px);
+    padding: 4px 6px;
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: 3px;
   }
   .layer-row {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: 5px;
   }
-  .lut-file-pick {
-    flex: 1;
-  }
-  .icon-btn, .pill-btn {
-    font-size: 0.65rem;
-    padding: 2px 6px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--color-border, #333);
-    background: var(--color-surface-low, #1e1e1e);
-    color: var(--color-foreground, #fff);
+  .icon-btn {
+    all: unset;
     cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    color: color-mix(in srgb, var(--color-foreground) 40%, transparent);
+    transition: color 120ms, background 120ms;
+  }
+  .icon-btn:hover {
+    color: var(--color-foreground);
+    background: color-mix(in srgb, var(--color-foreground) 10%, transparent);
+  }
+  .opacity-label {
+    font-size: 9.5px;
+  }
+  .mono {
+    font-family: var(--font-monospace, monospace);
   }
 </style>

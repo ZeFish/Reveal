@@ -11,6 +11,7 @@ import check from "../../../../packages/icon/icons/ph/check.svg?raw";
 import checkCircle from "../../../../packages/icon/icons/ph/check-circle.svg?raw";
 import copy from "../../../../packages/icon/icons/ph/copy.svg?raw";
 import circleHalf from "../../../../packages/icon/icons/ph/circle-half.svg?raw";
+import crop from "../../../../packages/icon/icons/ph/crop.svg?raw";
 import downloadSimple from "../../../../packages/icon/icons/ph/download-simple.svg?raw";
 import arrowSquareOut from "../../../../packages/icon/icons/ph/arrow-square-out.svg?raw";
 import exportIcon from "../../../../packages/icon/icons/ph/export.svg?raw";
@@ -26,6 +27,7 @@ import notePencil from "../../../../packages/icon/icons/ph/note-pencil.svg?raw";
 import plus from "../../../../packages/icon/icons/ph/plus.svg?raw";
 import rows from "../../../../packages/icon/icons/ph/rows.svg?raw";
 import sidebarSimple from "../../../../packages/icon/icons/ph/sidebar-simple.svg?raw";
+import slidersHorizontal from "../../../../packages/icon/icons/ph/sliders-horizontal.svg?raw";
 import stackSimple from "../../../../packages/icon/icons/ph/stack-simple.svg?raw";
 import star from "../../../../packages/icon/icons/ph/star.svg?raw";
 import stopCircle from "../../../../packages/icon/icons/ph/stop-circle.svg?raw";
@@ -44,6 +46,7 @@ export const icons = {
   "check-circle": checkCircle,
   copy,
   "circle-half": circleHalf,
+  crop,
   "download-simple": downloadSimple,
   export: exportIcon,
   "eye-slash": eyeSlash,
@@ -58,6 +61,7 @@ export const icons = {
   plus,
   rows,
   "sidebar-simple": sidebarSimple,
+  "sliders-horizontal": slidersHorizontal,
   "stack-simple": stackSimple,
   star,
   "stop-circle": stopCircle,
