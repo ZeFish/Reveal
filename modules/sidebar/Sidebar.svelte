@@ -1,4 +1,10 @@
 <script>
+  import ContextMenu from "@stnd/ui/ContextMenu.svelte";
+  import MenuItem from "@stnd/ui/ContextMenuItem.svelte";
+  import MenuLabel from "@stnd/ui/ContextMenuLabel.svelte";
+  import MenuSeparator from "@stnd/ui/ContextMenuSeparator.svelte";
+  import Popover from "@stnd/ui/Popover.svelte";
+  import Alert from "@stnd/ui/Alert.svelte";
   // The floating sidebar — a 1:1 port of the Swift `sidebarCard` +
   // `folderBrowser` + `FolderTree` (CullView.swift / FolderTree.swift):
   // full-height elevated card, the brand cluster (traffic lights + toggles +
@@ -8,6 +14,7 @@
   import Icon from "$lib/components/Icon.svelte";
   import StoryThemePanel from "./StoryThemePanel.svelte";
   import StoryNotesList from "./StoryNotesList.svelte";
+  import { APPLE_PHOTOS_ROOT, photoCollectionAncestors } from "./applePhotosTree.js";
 
   let {
     root,
@@ -67,15 +74,20 @@
     onRenameDir = () => {},
     onCreateFolder = () => {},
     onMoveDir = () => {},
+    /** @type {import('./applePhotosTree.js').PhotoLibrary | null} */
+    applePhotos = null,
+    onConnectApplePhotos = () => {},
+    onRefreshApplePhotos = () => {},
   } = $props();
 
-  const EXPANDED_KEY = "reveal.sidebar.expanded";
-  const MANUALLY_COLLAPSED_KEY = "reveal.sidebar.manuallyCollapsed";
+  const EXPANDED_KEY = "reveal.sidebar.expanded.v2";
+  const MANUALLY_COLLAPSED_KEY = "reveal.sidebar.manuallyCollapsed.v2";
 
   // Restored synchronously at init — guarded for the prerender pass. The Set
   // is reassigned (never mutated) on toggle, so plain Set reactivity is enough.
   let expanded = $state(readExpanded());
-  // A node whose rel is a strict ancestor of the current directory auto-shows
+  // A node's full catalogue-qualified path auto-shows when it is an ancestor
+  // of the current directory. PhotoKit nodes use their source-prefixed IDs.
   // (see isExpanded) even when it's not in `expanded` — so you can always see
   // where you are. That rule used to unconditionally win, which meant the
   // chevron could never actually collapse an ancestor of whatever folder you
@@ -87,22 +99,13 @@
   /** @type {{ path: string, label: string, x: number, y: number } | null} */
   let folderMenu = $state(null);
 
-  // Account popover state — one of null | "signin" | "settings".
-  /** @type {"signin" | "settings" | null} */
-  let accountPopover = $state(null);
+  let accountOpen = $state(false);
   let pastedKey = $state("");
   let verifying = $state(false);
   /** @type {string | null} */
   let accountError = $state(null);
 
   const signedIn = $derived(!!garden?.signed_in);
-
-  /** @param {MouseEvent} event */
-  function toggleAccountPopover(event) {
-    event.stopPropagation(); // the window click handler would close it instantly
-    accountPopover = accountPopover ? null : signedIn ? "settings" : "signin";
-    accountError = null;
-  }
 
   async function submitKey() {
     if (!pastedKey.trim() || verifying) return;
@@ -111,7 +114,7 @@
     try {
       await onGardenSignIn(pastedKey);
       pastedKey = "";
-      accountPopover = null;
+      accountOpen = false;
     } catch (e) {
       accountError = typeof e === "string" ? e : (/** @type {Error} */ (e)?.message ?? String(e));
     } finally {
@@ -123,7 +126,7 @@
     try {
       await onGardenSignOut();
     } finally {
-      accountPopover = null;
+      accountOpen = false;
     }
   }
 
@@ -145,7 +148,15 @@
     return new Set();
   }
 
-  /** @typedef {{ name: string, rel: string, abs: string, count: number, children: TreeNode[] }} TreeNode */
+  /** @typedef {{ name: string, rel: string, abs: string, count: number, children: TreeNode[], source?: "photos" }} TreeNode */
+  const photoAncestors = $derived(new Set(applePhotos?.active
+    ? photoCollectionAncestors(applePhotos.albums, applePhotos.album).slice(0, -1)
+    : []));
+
+  /** @param {string} rel */
+  function isAncestor(rel) {
+    return applePhotos?.active ? photoAncestors.has(rel) : !!curDir?.startsWith(rel + "/");
+  }
 
   /** @param {string} rel */
   function toggle(rel) {
@@ -156,10 +167,10 @@
       if (typeof localStorage !== "undefined") {
         localStorage.setItem(EXPANDED_KEY, JSON.stringify([...nextExpanded]));
       }
-      // The auto-show rule (isExpanded's curRel check, below) would
+      // The auto-show rule (isExpanded's ancestor check, below) would
       // otherwise immediately re-show this node — remember the explicit
       // collapse so it actually sticks while browsing inside it.
-      if (curRel && curRel.startsWith(rel + "/")) {
+      if (isAncestor(rel)) {
         const nextCollapsed = new Set(manuallyCollapsed);
         nextCollapsed.add(rel);
         manuallyCollapsed = nextCollapsed;
@@ -181,7 +192,7 @@
     }
   }
 
-  const CAT_EXPANDED_KEY = "reveal.sidebar.catalogs.expanded";
+  const CAT_EXPANDED_KEY = "reveal.sidebar.catalogs.expanded.v2";
 
   let expandedCatalogs = $state(readExpandedCatalogs());
 
@@ -196,6 +207,7 @@
 
   /** @param {string} cat */
   function isCatExpanded(cat) {
+    if (cat === APPLE_PHOTOS_ROOT && !applePhotos?.loaded) return false;
     return !expandedCatalogs.has(`collapsed:${cat}`);
   }
 
@@ -203,8 +215,8 @@
   function toggleCatExpanded(cat) {
     const next = new Set(expandedCatalogs);
     const key = `collapsed:${cat}`;
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
+    if (isCatExpanded(cat)) next.add(key);
+    else next.delete(key);
     expandedCatalogs = next;
     if (typeof localStorage !== "undefined") {
       localStorage.setItem(CAT_EXPANDED_KEY, JSON.stringify([...next]));
@@ -218,9 +230,7 @@
     // named folders carry no photos of their own). Intermediate folders are
     // synthesised as nodes by the byRel walk below, so nesting is faithful.
     const rootsList = roots?.length ? [...roots] : root ? [root] : [];
-    if (!rootsList.length) return [];
-
-    return rootsList.map((catRoot) => {
+    const catalogues = rootsList.map((catRoot) => {
       let total = 0;
       const isExpanded = isCatExpanded(catRoot);
       /** @type {TreeNode[]} */
@@ -249,7 +259,7 @@
             acc = acc ? `${acc}/${part}` : part;
             let node = byRel.get(acc);
             if (!node) {
-              node = { name: part, rel: acc, abs: `${catRoot}/${acc}`, count: 0, children: [] };
+              node = { name: part, rel: `${catRoot}/${acc}`, abs: `${catRoot}/${acc}`, count: 0, children: [] };
               byRel.set(acc, node);
               siblings.push(node);
             }
@@ -274,16 +284,35 @@
         tree: { nodes: top },
       };
     });
+    if (applePhotos?.supported) {
+      /** @param {import('./applePhotosTree.js').PhotoCollection[]} collections
+       * @returns {TreeNode[]} */
+      const photoNodes = (collections) => collections.map((collection) => ({
+        name: collection.title,
+        rel: APPLE_PHOTOS_ROOT + collection.id,
+        abs: APPLE_PHOTOS_ROOT + collection.id,
+        count: collection.count ?? 0,
+        source: "photos",
+        children: photoNodes(collection.children),
+      }));
+      catalogues.push({
+        cat: APPLE_PHOTOS_ROOT, name: "Apple Photos",
+        total: applePhotos.total ?? 0,
+        tree: { nodes: photoNodes(applePhotos.albums) },
+      });
+    }
+    return catalogues;
   });
 
   const grandTotal = $derived(dirs.reduce((/** @type {number} */ sum, /** @type {any} */ d) => sum + d.count, 0));
 
-  const isLibrary = $derived(curDir === root);
+  const isLibrary = $derived(!!root && curDir === root && !applePhotos?.active);
 
   // A row shows its folder (recursively, subfolders included — the backend
   // query is prefix-based); a row with children also discloses on navigate.
   /** @param {TreeNode} node */
   function navigate(node) {
+    if (node.source === "photos" && applePhotos?.busy) return;
     folderMenu = null;
     // Ensure-open, never toggle: `toggle` now flips whatever's currently
     // VISIBLE (including nodes auto-shown because curDir lives inside them),
@@ -301,13 +330,11 @@
   function openFolderMenu(event, path, label) {
     event.preventDefault();
     event.stopPropagation();
-    const menuWidth = 200;
-    const menuHeight = 220;
     folderMenu = {
       path,
       label,
-      x: Math.max(8, Math.min(event.clientX, window.innerWidth - menuWidth - 12)),
-      y: Math.max(8, Math.min(event.clientY, window.innerHeight - menuHeight - 12)),
+      x: event.clientX,
+      y: event.clientY,
     };
   }
 
@@ -461,7 +488,7 @@
   function beginCreateFolder(parentAbs) {
     creatingIn = parentAbs;
     createValue = "Nouveau dossier";
-    ensureExpanded(relForAbs(parentAbs));
+    ensureExpanded(parentAbs);
   }
   async function commitCreateFolder() {
     const parentAbs = creatingIn;
@@ -476,18 +503,16 @@
     }
   }
 
-  const curRel = $derived(
-    curDir && root && curDir.startsWith(root + "/") ? curDir.slice(root.length + 1) : null,
-  );
   /** @param {string} rel */
   function isExpanded(rel) {
     if (manuallyCollapsed.has(rel)) return false;
     if (expanded.has(rel)) return true;
-    return curRel ? curRel.startsWith(rel + "/") : false;
+    return isAncestor(rel);
   }
   /** @param {TreeNode} node */
   function isCurrent(node) {
-    return !isLibrary && node.abs === curDir;
+    if (node.source === "photos") return !!applePhotos?.active && node.abs === APPLE_PHOTOS_ROOT + applePhotos.album;
+    return !applePhotos?.active && !isLibrary && node.abs === curDir;
   }
 
   // The import-destination accent: the chosen folder gets a filled accent
@@ -503,11 +528,6 @@
     return !!importDir && (importDir === abs || importDir.startsWith(abs + "/"));
   }
 
-  /** @param {string} abs */
-  function relForAbs(abs) {
-    if (!root || abs === root) return null;
-    return abs.startsWith(root + "/") ? abs.slice(root.length + 1) : null;
-  }
   /** @param {string|null} rel */
   function ensureExpanded(rel) {
     if (!rel) return;
@@ -550,19 +570,6 @@
   const pinStory = (notePath) => onSetPinned(notePath, true);
 </script>
 
-<svelte:window
-  onclick={() => {
-    folderMenu = null;
-    accountPopover = null;
-  }}
-  onkeydown={(event) => {
-    if (event.key === "Escape") {
-      folderMenu = null;
-      accountPopover = null;
-    }
-  }}
-/>
-
 {#snippet statusDot(/** @type {boolean} */ filled, /** @type {boolean} */ accent)}
   <span class="dot" class:filled class:accent aria-hidden="true"></span>
 {/snippet}
@@ -578,16 +585,24 @@
     style="--depth: {depth}"
     role="button"
     tabindex="0"
-    draggable="true"
+    draggable={node.source !== "photos"}
+    aria-disabled={node.source === "photos" && applePhotos?.busy}
+    aria-label={node.name}
+    aria-pressed={isCurrent(node)}
     onclick={() => navigate(node)}
-    oncontextmenu={(event) => openFolderMenu(event, node.abs, node.name)}
-    ondragstart={(event) => onFolderDragStart(event, node)}
-    ondragend={onFolderDragEnd}
-    ondragover={(event) => onRowDragOver(event, node.abs)}
-    ondragleave={() => onRowDragLeave(node.abs)}
-    ondrop={(event) => onRowDrop(event, node.abs)}
+    oncontextmenu={(event) => node.source === "photos" ? event.preventDefault() : openFolderMenu(event, node.abs, node.name)}
+    ondragstart={node.source === "photos" ? undefined : (event) => onFolderDragStart(event, node)}
+    ondragend={node.source === "photos" ? undefined : onFolderDragEnd}
+    ondragover={node.source === "photos" ? undefined : (event) => onRowDragOver(event, node.abs)}
+    ondragleave={node.source === "photos" ? undefined : () => onRowDragLeave(node.abs)}
+    ondrop={node.source === "photos" ? undefined : (event) => onRowDrop(event, node.abs)}
     onkeydown={(e) => {
-      if (e.key === "Enter") navigate(node);
+      if (e.target !== e.currentTarget) return;
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        e.stopPropagation();
+        navigate(node);
+      }
     }}
   >
     {#if hasChildren(node)}
@@ -598,7 +613,8 @@
           e.stopPropagation();
           toggle(node.rel);
         }}
-        aria-label={isExpanded(node.rel) ? "Collapse" : "Expand"}
+        aria-label={`${isExpanded(node.rel) ? "Collapse" : "Expand"} ${node.name}`}
+        aria-expanded={isExpanded(node.rel)}
       >
         <Icon name="caret-right" size="9px" />
       </button>
@@ -719,7 +735,7 @@
     <button
       class="tab"
       class:active={mode === "story"}
-      disabled={isLibrary}
+      disabled={isLibrary || applePhotos?.active}
       onclick={() => onMode("story")}
       title={isLibrary ? "Choose a folder to start a storytelling" : "Storytelling (S)"}
     >Storytelling</button>
@@ -734,13 +750,14 @@
       class:drop-target={root && dropTarget === root}
       role="button"
       tabindex="0"
-      onclick={onOpenLibrary}
+      aria-disabled={!root}
+      onclick={() => { if (root) onOpenLibrary(); }}
       oncontextmenu={(event) => root && openFolderMenu(event, root, "Library")}
       ondragover={(event) => root && onRowDragOver(event, root)}
       ondragleave={() => root && onRowDragLeave(root)}
       ondrop={(event) => root && onRowDrop(event, root)}
       onkeydown={(e) => {
-        if (e.key === "Enter") onOpenLibrary();
+        if (e.key === "Enter" && root && e.target === e.currentTarget) onOpenLibrary();
       }}
     >
       {@render statusDot(isLibrary, true)}
@@ -770,43 +787,53 @@
     <!-- Section per catalogue with collapse toggle & open handling -->
     {#each catalogueTrees as { cat, name, total, tree } (cat)}
       {@const open = isCatExpanded(cat)}
+      {@const photos = cat === APPLE_PHOTOS_ROOT}
       <div class="section">
         <button
           class="cat-disc"
           onclick={(e) => {
             e.stopPropagation();
             toggleCatExpanded(cat);
+            if (photos && !open && !applePhotos?.loaded) onConnectApplePhotos();
           }}
+          disabled={photos && applePhotos?.busy && !applePhotos.loaded}
+          aria-label={`${open ? "Collapse" : "Expand"} ${name}`}
+          aria-expanded={open}
           title={open ? "Collapse catalogue" : "Expand catalogue"}
         >
           <span class="disc" class:open><Icon name="caret-right" size="9px" /></span>
         </button>
         <button
           class="section-main"
-          class:current={curDir === cat}
+          class:current={photos ? applePhotos?.active && !applePhotos.album : curDir === cat}
           class:import-dest={isImportDest(cat)}
           class:import-branch={isImportBranch(cat)}
-          title={cat}
+          title={photos ? "Apple Photos" : cat}
+          aria-pressed={photos ? applePhotos?.active && !applePhotos.album : curDir === cat}
+          disabled={photos && applePhotos?.busy}
           onclick={() => {
             if (!isCatExpanded(cat)) toggleCatExpanded(cat);
             onOpenDir(cat);
           }}
-          oncontextmenu={(event) => openFolderMenu(event, cat, name)}
+          oncontextmenu={(event) => photos ? event.preventDefault() : openFolderMenu(event, cat, name)}
         >
           <span class="section-name">{name}</span>
         </button>
         <span class="dir-spacer"></span>
-        <span class="dir-count">{total.toLocaleString("en-CA")}</span>
+        <span class="dir-count">{!photos || applePhotos?.loaded ? total.toLocaleString("en-CA") : ""}</span>
         <button
           class="add-btn"
           onclick={(e) => {
             e.stopPropagation();
-            onRescanDir(cat);
+            if (photos) onRefreshApplePhotos();
+            else onRescanDir(cat);
           }}
-          disabled={scanning}
-          title="Reindex this catalogue"
+          disabled={photos ? applePhotos?.busy : scanning}
+          title={photos ? "Refresh Apple Photos" : "Reindex this catalogue"}
+          aria-label={photos ? "Refresh Apple Photos" : `Reindex ${name}`}
+          aria-busy={photos ? applePhotos?.busy : scanning}
         >
-          <Icon name="arrows-clockwise" size="9px" class={scanning ? "spin" : ""} />
+          <Icon name="arrows-clockwise" size="9px" class={(photos ? applePhotos?.busy : scanning) ? "spin" : ""} />
         </button>
       </div>
 
@@ -887,17 +914,20 @@
        `GardenAccountRow`): signed out, a quiet invite; signed in, the
        initial-avatar + username, with popovers riding above the row. -->
   <div class="account">
-    {#if accountPopover === "signin"}
-      <div
-        class="account-popover"
-        role="dialog"
-        tabindex="-1"
-        aria-label="Garden sign in"
-        onclick={(event) => event.stopPropagation()}
-        onkeydown={(event) => {
-          if (event.key !== "Escape") event.stopPropagation();
-        }}
-      >
+    <Popover bind:open={accountOpen} label="Garden account" side="top" onclose={() => { accountError = null; }}>
+      {#snippet trigger(/** @type {import('svelte/elements').HTMLButtonAttributes} */ attributes)}
+        <button class="account-id" {...attributes}>
+          {#if signedIn}
+            <span class="account-avatar">{(garden?.username ?? "?").slice(0, 1).toUpperCase()}</span>
+            <span class="account-name">{garden?.username}</span>
+          {:else}
+            <Icon name="user-circle" size="14px" />
+            <span>Connect Garden</span>
+          {/if}
+        </button>
+      {/snippet}
+      <div class="account-form">
+      {#if !signedIn}
         <span class="pop-title">Garden account</span>
         <button class="pop-primary" onclick={() => onOpenUrl?.("https://standard.garden/connect/reveal")}>
           Se connecter avec le navigateur
@@ -907,6 +937,7 @@
         <input
           class="pop-key"
           type="password"
+          aria-label="Garden API key"
           placeholder="sg_..."
           bind:value={pastedKey}
           onkeydown={(e) => {
@@ -914,23 +945,12 @@
           }}
         />
         {#if accountError}
-          <span class="pop-error">{accountError}</span>
+          <div role="alert"><Alert class="error">{accountError}</Alert></div>
         {/if}
         <button class="pop-primary" disabled={!pastedKey.trim() || verifying} onclick={submitKey}>
           {verifying ? "Vérification…" : "Se connecter"}
         </button>
-      </div>
-    {:else if accountPopover === "settings"}
-      <div
-        class="account-popover"
-        role="dialog"
-        tabindex="-1"
-        aria-label="Garden account"
-        onclick={(event) => event.stopPropagation()}
-        onkeydown={(event) => {
-          if (event.key !== "Escape") event.stopPropagation();
-        }}
-      >
+      {:else}
         <span class="pop-title">Garden account</span>
         <span class="pop-user">{garden?.username}</span>
         {#if garden?.tier}
@@ -939,17 +959,9 @@
         <span class="pop-meta">{garden?.notes_count ?? 0} notes · {garden?.total_views ?? 0} vues</span>
         <div class="pop-divider"></div>
         <button class="pop-danger" onclick={signOut}>Se déconnecter</button>
-      </div>
-    {/if}
-    <button class="account-id" onclick={toggleAccountPopover}>
-      {#if signedIn}
-        <span class="account-avatar">{(garden?.username ?? "?").slice(0, 1).toUpperCase()}</span>
-        <span class="account-name">{garden?.username}</span>
-      {:else}
-        <Icon name="user-circle" size="14px" />
-        <span>Connect Garden</span>
       {/if}
-    </button>
+      </div>
+    </Popover>
     <span class="dir-spacer"></span>
     <button class="chrome-btn" onclick={onShowSettings} title="Reveal settings">
       <Icon name="gear" size="12px" />
@@ -958,69 +970,47 @@
 </nav>
 
 {#if folderMenu}
-  <div class="folder-context-backdrop" onclick={() => (folderMenu = null)} role="presentation"></div>
-  <div
-    class="folder-menu std-menu-content m-0"
-    role="menu"
-    tabindex="-1"
-    aria-label={`${folderMenu.label} actions`}
-    style={`left: ${folderMenu.x}px; top: ${folderMenu.y}px`}
-    onclick={(event) => event.stopPropagation()}
-    onkeydown={(event) => event.stopPropagation()}
-  >
-    <div class="std-menu-label">
-      {folderMenu.label}
-    </div>
-    <div class="std-menu-separator"></div>
+  <ContextMenu open position={folderMenu} label={`${folderMenu.label} actions`} onclose={() => { folderMenu = null; }}>
+  {#snippet content()}
+    <MenuLabel label={folderMenu?.label} />
+    <MenuSeparator />
 
     {#if selectedCount > 0}
-      <button
-        class="std-menu-item"
-        role="menuitem"
+      <MenuItem
         onclick={() => {
           const path = folderMenu?.path;
           folderMenu = null;
           if (path) onMoveSelectedPhotos(path);
         }}
       >
-        <span class="item-label">Déplacer {selectedCount} photo{selectedCount > 1 ? 's' : ''} ici</span>
-      </button>
-      <div class="std-menu-separator"></div>
+        Move {selectedCount} photo{selectedCount > 1 ? 's' : ''} here
+      </MenuItem>
+      <MenuSeparator />
     {/if}
 
-    <button class="std-menu-item" role="menuitem" onclick={() => runFolderAction(onRevealDir)}>
-      <span class="item-label">Afficher dans le Finder</span>
-    </button>
-    <button
-      class="std-menu-item"
-      role="menuitem"
+    <MenuItem label="Show in Finder" onclick={() => runFolderAction(onRevealDir)} />
+    <MenuItem
       onclick={() => runFolderAction(/** @type {(path: string) => void} */ (onSetImportDir))}
-      title="Les prochains imports atterrissent dans ce dossier"
+      title="Future imports will use this folder"
     >
-      <span class="item-label">{folderMenu.path === importDir ? "✓ Dossier d'import actif" : "Définir comme dossier d'import"}</span>
-    </button>
-    <button class="std-menu-item" role="menuitem" class:disabled={scanning} onclick={() => runFolderAction(onRescanDir)} disabled={scanning}>
-      <span class="item-label">Réindexer le dossier</span>
-    </button>
+      {folderMenu?.path === importDir ? "✓ Active import folder" : "Set as import folder"}
+    </MenuItem>
+    <MenuItem label="Reindex folder" onclick={() => runFolderAction(onRescanDir)} disabled={scanning} />
 
-    <div class="std-menu-separator"></div>
+    <MenuSeparator />
 
-    <button
-      class="std-menu-item"
-      role="menuitem"
+    <MenuItem
         onclick={() => {
           const path = folderMenu?.path;
           folderMenu = null;
           if (path) beginCreateFolder(path);
         }}
     >
-      <span class="item-label">Nouveau dossier…</span>
-    </button>
+      New folder…
+    </MenuItem>
 
-    {#if folderMenu.path !== root}
-      <button
-        class="std-menu-item"
-        role="menuitem"
+    {#if folderMenu?.path !== root}
+      <MenuItem
         onclick={() => {
           const path = folderMenu?.path;
           const name = folderMenu?.label;
@@ -1028,10 +1018,11 @@
           if (path && name) beginRename(path, name);
         }}
       >
-        <span class="item-label">Renommer…</span>
-      </button>
+        Rename…
+      </MenuItem>
     {/if}
-  </div>
+  {/snippet}
+  </ContextMenu>
 {/if}
 
 <style>
@@ -1405,19 +1396,6 @@
     flex-shrink: 0;
   }
 
-  .folder-context-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 499;
-  }
-  /* Same std-menu-* vocabulary as ContextMenu.svelte's `.photo-context-menu`
-     (modules/menus/ContextMenu.svelte) — only positioning stays local. */
-  .folder-menu {
-    position: fixed;
-    z-index: 500;
-    min-width: 220px;
-  }
-
   .lib-section {
     flex-shrink: 0;
     padding: 8px 12px 12px;
@@ -1535,22 +1513,12 @@
     text-overflow: ellipsis;
   }
 
-  /* The popover card riding above the row — same surface as folder-menu. */
-  .account-popover {
-    position: absolute;
-    bottom: calc(100% + 4px);
-    left: 8px;
-    z-index: 500;
+  .account-form {
     width: 196px;
     display: flex;
     flex-direction: column;
     gap: 8px;
     padding: 12px;
-    border: 1px solid var(--color-border);
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--color-surface-high) 94%, transparent);
-    box-shadow: var(--shadow-lg);
-    backdrop-filter: blur(20px);
   }
   .pop-title {
     font-family: var(--font-header, sans-serif);
@@ -1583,12 +1551,6 @@
   }
   .pop-key:focus {
     border-color: color-mix(in srgb, var(--color-foreground) 30%, transparent);
-  }
-  .pop-error {
-    font-family: var(--font-text, sans-serif);
-    font-size: 10px;
-    line-height: 1.4;
-    color: var(--color-accent);
   }
   .pop-primary {
     all: unset;
@@ -1641,8 +1603,6 @@
     padding: 0 14px;
     flex: 1;
     overflow-y: auto;
-  }
-  .theme-section {
   }
   .theme-section > summary {
     cursor: pointer;

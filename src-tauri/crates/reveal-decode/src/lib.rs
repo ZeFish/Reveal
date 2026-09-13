@@ -62,6 +62,12 @@ pub trait RawDecoder: Send + Sync {
 /// Dynamic Decoder Registry — resolves the optimal decoder slice for a file.
 pub struct DecoderRegistry;
 
+impl RawDecoder for DecoderRegistry {
+    fn decode_linear(&self, path: &Path, fast: bool) -> Result<LinearImage, DecodeError> {
+        Self::get_decoder(path).decode_linear(path, fast)
+    }
+}
+
 impl DecoderRegistry {
     pub fn get_decoder(path: &Path) -> Box<dyn RawDecoder> {
         let ext = path
@@ -72,9 +78,49 @@ impl DecoderRegistry {
 
         if RAW_EXTENSIONS.contains(&ext.as_str()) {
             Box::new(LibrawDecoder)
+        } else if ["jpg", "jpeg", "png", "tif", "tiff"].contains(&ext.as_str()) {
+            Box::new(RasterDecoder)
         } else {
             Box::new(RawlerDecoder)
         }
+    }
+}
+
+/// Rendered sRGB sources have a transfer curve, unlike sensor data. PhotoKit
+/// converts wide-gamut/HEIC inputs to oriented sRGB TIFF before this boundary.
+pub struct RasterDecoder;
+
+impl RawDecoder for RasterDecoder {
+    fn decode_linear(&self, path: &Path, _fast: bool) -> Result<LinearImage, DecodeError> {
+        use image::ImageDecoder;
+        let reader = image::ImageReader::open(path).map_err(|e| DecodeError::Decode(e.to_string()))?;
+        let mut decoder = reader.into_decoder().map_err(|e| DecodeError::Decode(e.to_string()))?;
+        let orientation = decoder.orientation().map_err(|e| DecodeError::Decode(e.to_string()))?;
+        let mut image = image::DynamicImage::from_decoder(decoder).map_err(|e| DecodeError::Decode(e.to_string()))?;
+        image.apply_orientation(orientation);
+        let rgb = image.to_rgb32f();
+        Ok(LinearImage {
+            width: rgb.width(), height: rgb.height(),
+            data: rgb.into_raw().into_iter().map(srgb_to_linear).collect(),
+            primaries: Primaries::SRgbLinear,
+        })
+    }
+}
+
+fn srgb_to_linear(value: f32) -> f32 {
+    if value <= 0.04045 { value / 12.92 } else { ((value + 0.055) / 1.055).powf(2.4) }
+}
+
+#[cfg(test)]
+mod raster_tests {
+    use super::*;
+
+    #[test]
+    fn rendered_inputs_are_linearized_before_development() {
+        assert_eq!(srgb_to_linear(0.0), 0.0);
+        assert!((srgb_to_linear(1.0) - 1.0).abs() < 1e-6);
+        assert!((srgb_to_linear(0.5) - 0.21404114).abs() < 1e-6);
+        assert!((srgb_to_linear(0.04045) - 0.0031308).abs() < 1e-7);
     }
 }
 

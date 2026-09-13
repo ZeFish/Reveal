@@ -25,6 +25,7 @@
     onPhotoDragStart = () => {},
     closePhotoMenu = () => {},
     hasRoot = true,
+    applePhotosActive = false,
     scanning = false,
     onAddLibraryFolder = () => {},
   } = $props();
@@ -57,7 +58,9 @@
   <div class="empty">
     <hgroup>
       <h1>REVEAL</h1>
-      {#if !hasRoot}
+      {#if applePhotosActive}
+        <p>No photos in this view. Try another album or load more photos.</p>
+      {:else if !hasRoot}
         <!-- First launch, no catalogue root yet — the one thing a new
              install actually needs before anything else works. A rail
              button already covers this (`indexRoot`, shown when `!root`),

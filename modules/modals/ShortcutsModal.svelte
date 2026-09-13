@@ -1,4 +1,5 @@
 <script>
+  import Dialog from "@stnd/ui/Dialog.svelte";
   /**
    * @typedef {Object} Props
    * @property {() => void} [onClose]
@@ -8,13 +9,10 @@
   let { onClose = () => {} } = $props();
 </script>
 
-<!-- svelte-ignore a11y_click_events_have_key_events -->
-<div class="shortcuts-overlay" onclick={onClose} role="presentation">
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div class="shortcuts-panel" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
+<Dialog open label="Keyboard shortcuts" onclose={onClose} style="--dialog-width: min(90vw, 760px); --dialog-max-height: 85vh">
     <header class="panel-header">
       <h2>RACCOURCIS CLAVIER</h2>
-      <button class="close-btn" onclick={onClose}>✕</button>
+      <button class="close-btn" onclick={onClose} aria-label="Close keyboard shortcuts">✕</button>
     </header>
     <div class="shortcuts-grid">
       <div class="shortcut-group">
@@ -57,32 +55,9 @@
         <div class="shortcut-row"><kbd>?</kbd> / <kbd>h</kbd> <span>Afficher cette aide</span></div>
       </div>
     </div>
-  </div>
-</div>
+</Dialog>
 
 <style>
-  .shortcuts-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 10000;
-    background: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(8px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .shortcuts-panel {
-    background: var(--color-surface-low, #18181b);
-    border: var(--border, 1px solid rgba(255, 255, 255, 0.15));
-    border-radius: var(--radius-lg);
-    width: min(90vw, 760px);
-    max-height: 85vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
-    color: var(--color-foreground, #f4f4f5);
-  }
   .panel-header {
     display: flex;
     align-items: center;

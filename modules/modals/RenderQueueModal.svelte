@@ -1,4 +1,5 @@
 <script>
+  import Alert from "@stnd/ui/Alert.svelte";
   /**
    * @typedef {Object} Props
    * @property {any[]} [exportQueue]
@@ -24,7 +25,7 @@
     {#if activeExportJobId}
       <button class="queue-cancel" onclick={onCancelQueue}>Cancel Queue</button>
     {/if}
-    <button class="close-btn" onclick={onClose}>✕</button>
+    <button class="close-btn" onclick={onClose} aria-label="Close render queue">✕</button>
   </div>
   <div class="modal-body queue-list">
     {#if exportQueue.length === 0}
@@ -43,9 +44,11 @@
             <span>{item.current || item.phase}</span>
             <span>{item.done} / {item.total}</span>
           </div>
-          <span class="queue-phase" class:error={item.status === "failed"}>
-            {item.phase}
-          </span>
+          {#if item.status === "failed"}
+            <div role="alert"><Alert class="error">{item.phase}</Alert></div>
+          {:else}
+            <span class="queue-phase">{item.phase}</span>
+          {/if}
         </div>
       {/each}
     {/if}
@@ -170,8 +173,5 @@
     font-size: 0.7rem;
     font-family: var(--font-monospace, monospace);
     color: var(--color-accent);
-  }
-  .queue-phase.error {
-    color: #f44336;
   }
 </style>

@@ -9,6 +9,7 @@
   // container class app-specific: Standard's global `.grid` utility flows
   // children by column, which would turn this contact sheet into one long row.
   import PhotoCell from "./PhotoCell.svelte";
+  import { untrack } from "svelte";
 
   /** @typedef {{ path: string, name: string, previewVersion?: number, rating?: number }} PhotoFrame */
 
@@ -77,10 +78,13 @@
 
   // Parent-driven scroll restore (per-folder memory).
   $effect(() => {
-    if (gridElement && Math.abs(gridElement.scrollTop - scrollTop) > 2) {
+    const limit = virtual ? Math.max(0, totalRows * rowPitch + 64 - safeViewH) : Infinity;
+    const target = Math.max(0, Math.min(scrollTop, limit));
+    if (gridElement && (Math.abs(gridElement.scrollTop - target) > 2 || top !== target)) {
       isProgrammaticScroll = true;
-      top = scrollTop;
-      gridElement.scrollTop = scrollTop;
+      top = target;
+      gridElement.scrollTop = target;
+      if (target !== scrollTop) untrack(() => onScroll(target));
       setTimeout(() => {
         isProgrammaticScroll = false;
       }, 50);
@@ -89,30 +93,31 @@
 
   // Keyboard nav: the selected cell may not exist in the DOM yet, so keep it
   // visible by geometry, never by scrollIntoView.
+  /** @type {number | undefined} */
+  let lastFocusedIndex;
   $effect(() => {
-    if (!virtual || !gridElement || !frames.length || sel < 0) return;
-    const row = Math.floor(sel / cols);
-    const y0 = row * rowPitch;
-    const y1 = y0 + rowH + gap;
-    const st = gridElement.scrollTop;
-    if (y0 < st) {
-      isProgrammaticScroll = true;
-      top = y0;
-      gridElement.scrollTop = y0;
-      onScroll(y0);
-      setTimeout(() => {
-        isProgrammaticScroll = false;
-      }, 50);
-    } else if (y1 > st + safeViewH) {
-      const target = y1 - safeViewH;
+    const focusedIndex = sel;
+    const element = gridElement;
+    if (!element || lastFocusedIndex === focusedIndex) return;
+    const initial = lastFocusedIndex === undefined;
+    lastFocusedIndex = focusedIndex;
+    untrack(() => {
+      // A remount restores the stored viewport, not the last selection. Only
+      // selection changes should pull a manually scrolled grid back to a cell.
+      if ((initial && scrollTop > 0) || !virtual || !frames.length || focusedIndex < 0) return;
+      const row = Math.floor(focusedIndex / cols);
+      const y0 = row * rowPitch;
+      const y1 = y0 + rowH + gap;
+      const viewportHeight = safeViewH;
+      const st = element.scrollTop;
+      const target = y0 < st ? y0 : y1 > st + viewportHeight ? y1 - viewportHeight : null;
+      if (target === null) return;
       isProgrammaticScroll = true;
       top = target;
-      gridElement.scrollTop = target;
+      element.scrollTop = target;
       onScroll(target);
-      setTimeout(() => {
-        isProgrammaticScroll = false;
-      }, 50);
-    }
+      setTimeout(() => { isProgrammaticScroll = false; }, 50);
+    });
   });
 
   function handleScroll() {

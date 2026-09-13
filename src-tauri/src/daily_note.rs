@@ -42,8 +42,16 @@ impl DailyNote {
             return Err("No attachment names provided".to_string());
         }
 
+        if self.vault_path.as_os_str().is_empty() || !self.vault_path.exists() {
+            return Err(format!(
+                "Vault directory does not exist: '{}'",
+                self.vault_path.display()
+            ));
+        }
+
         let logs_dir = self.vault_path.join(&self.logs_folder);
-        std::fs::create_dir_all(&logs_dir).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(&logs_dir)
+            .map_err(|e| format!("Could not create daily note directory '{}': {e}", logs_dir.display()))?;
 
         let note_file = self.note_path(&dt);
         let content = if note_file.exists() {
@@ -75,7 +83,8 @@ impl DailyNote {
         let trimmed_content = content.trim_end();
         let updated = format!("{trimmed_content}\n\n{block}\n");
 
-        std::fs::write(&note_file, updated).map_err(|e| e.to_string())?;
+        std::fs::write(&note_file, updated)
+            .map_err(|e| format!("Could not write daily note '{}': {e}", note_file.display()))?;
         Ok(note_file)
     }
 

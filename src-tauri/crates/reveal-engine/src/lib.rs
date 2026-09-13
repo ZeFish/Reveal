@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
-use reveal_decode::{LibrawDecoder, Primaries, RawDecoder};
+use reveal_decode::{DecoderRegistry, Primaries, RawDecoder};
 use serde::{Deserialize, Serialize};
 use spektrafilm_core::params::RuntimeParams;
 use spektrafilm_core::profile;
@@ -343,7 +343,7 @@ pub struct Engine {
     luts_dir: PathBuf,
     lut_cache: Mutex<HashMap<String, Arc<Cube>>>,
     backend: Box<dyn ComputeBackend>,
-    decoder: LibrawDecoder,
+    decoder: DecoderRegistry,
     /// Decoded photo, already in ProPhoto working space. Keyed by (path, fast)
     /// so a half-res preview decode and a full-res export decode don't evict
     /// each other's meaning — `fast` previews and full exports cache apart.
@@ -383,7 +383,7 @@ impl Engine {
             luts_dir,
             lut_cache: Mutex::new(HashMap::new()),
             backend,
-            decoder: LibrawDecoder,
+            decoder: DecoderRegistry,
             decoded: Mutex::new(None),
             preview_input: Mutex::new(None),
             registry,

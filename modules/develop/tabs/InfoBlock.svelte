@@ -45,7 +45,7 @@
     <span class="mono dim">{[exif.make, exif.model].filter(Boolean).join(" ")}</span>
   {/if}
   {#if exif?.width && exif?.height}
-    <span class="mono dim">{exif.width} × {exif.height} px · RAW + preview</span>
+    <span class="mono dim">{exif.width} × {exif.height} px · {photoPath?.startsWith("apple-photos://") ? "Apple Photos" : "RAW + preview"}</span>
   {/if}
   {#if renderMs}<span class="mono dim">Rendered in {renderMs} ms</span>{/if}
   {#if status}<span class="mono">{status}</span>{/if}
@@ -61,11 +61,11 @@
   ></textarea>
   {#if photoPath}
     <div class="path-row">
-      <span class="mono path">{parentDir(photoPath)}</span>
+      <span class="mono path">{photoPath.startsWith("apple-photos://") ? "Apple Photos (read-only original)" : parentDir(photoPath)}</span>
       <button class="ghost" onclick={copyPath} title="Copy path">
         <Icon name="copy" size="10px" />
       </button>
-      <button class="ghost" onclick={revealInFinder} title="Reveal in Finder">
+      <button class="ghost" onclick={revealInFinder} title="Reveal in Finder" disabled={photoPath.startsWith("apple-photos://")}>
         <Icon name="folder-open" size="10px" />
       </button>
     </div>

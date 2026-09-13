@@ -92,7 +92,7 @@
   class:selected
   class:exporting={isExporting}
   data-idx={idx}
-  draggable="true"
+  draggable={!path.startsWith("apple-photos://")}
   ondragstart={onDragStart}
   onclick={onSelect}
   ondblclick={onDblClick}
@@ -148,6 +148,8 @@
        hover-only when it isn't, so empty dots don't clutter the grid. -->
   <button
     class="story-dot-btn"
+    disabled={path.startsWith("apple-photos://")}
+    hidden={path.startsWith("apple-photos://")}
     class:in-story={inStory}
     onclick={(e) => {
       e.stopPropagation();

@@ -8,6 +8,8 @@
   import { isTauri } from "$lib/api.js";
   import Icon from "$lib/components/Icon.svelte";
   import Sidebar from "@modules/sidebar/Sidebar.svelte";
+  import { APPLE_PHOTOS_ROOT, findPhotoCollection } from "@modules/sidebar/applePhotosTree.js";
+  import { reloadPhotoPages, restorePhotoSelection } from "@modules/sidebar/applePhotosBrowsing.js";
   import CullView from "@modules/culling/CullView.svelte";
   import DevelopView from "@modules/develop/DevelopView.svelte";
   import StoryView from "@modules/story/StoryView.svelte";
@@ -15,6 +17,12 @@
   import SettingsModal from "@modules/modals/SettingsModal.svelte";
   import RenderQueueModal from "@modules/modals/RenderQueueModal.svelte";
   import ContextMenu from "@modules/menus/ContextMenu.svelte";
+  import Dropdown from "@stnd/ui/Dropdown.svelte";
+  import DropdownItem from "@stnd/ui/DropdownItem.svelte";
+  import DropdownSeparator from "@stnd/ui/DropdownSeparator.svelte";
+  import Popover from "@stnd/ui/Popover.svelte";
+  import Dialog from "@stnd/ui/Dialog.svelte";
+  import Alert from "@stnd/ui/Alert.svelte";
   import { AppController } from "$lib/controllers/AppController.js";
   import { extractGardenUrl } from "$lib/story.js";
 
@@ -79,7 +87,6 @@
    * @property {Frame} frame
    * @property {number} x
    * @property {number} y
-   * @property {boolean} submenuLeft
    */
   /** A film/paper profile from `list_profiles`. */
   /** @typedef {Object} Profile
@@ -191,6 +198,204 @@
   // freezes the folder open. Raw means only reassigning `frames` is reactive,
   // so in-place edits (rating, previewVersion) reassign with `frames = [...frames]`.
   /** @type {Frame[]} */ let frames = $state.raw([]);
+  let applePhotosSupported = $state(false);
+  let applePhotosActive = $state(false);
+  let applePhotosBusy = $state(false);
+  let applePhotosConnecting = $state(false);
+  let applePhotosLoaded = $state(false);
+  let applePhotosAlbum = $state("");
+  /** @type {import('@modules/sidebar/applePhotosTree.js').PhotoCollection[]} */
+  let applePhotosAlbums = $state([]);
+  /** @type {number | null} */
+  let applePhotosLibraryTotal = $state(null);
+  /** @type {Promise<boolean> | null} */
+  let applePhotosConnection = null;
+  let applePhotosTotal = $state(0);
+  let applePhotosOffset = $state(0);
+  let applePhotosRequest = 0;
+  /** @type {{phase: string, name: string, error?: string} | null} */
+  let applePhotosTransfer = $state(null);
+  const applePhotosLibrary = $derived({
+    supported: applePhotosSupported, active: applePhotosActive,
+    busy: applePhotosBusy || applePhotosConnecting, loaded: applePhotosLoaded,
+    album: applePhotosAlbum, albums: applePhotosAlbums, total: applePhotosLibraryTotal,
+  });
+
+  $effect(() => {
+    if (!isTauri) return;
+    invoke("apple_photos_status", { authorize: false })
+      .then((result) => { applePhotosSupported = result.supported; })
+      .catch((error) => { appMessage = `Could not check Apple Photos availability: ${error}`; });
+    const unlisten = listen("apple-photos-transfer", ({ payload }) => {
+      applePhotosTransfer = payload;
+      if (payload.phase === "error") appMessage = `Apple Photos: ${payload.error}`;
+    });
+    return () => { unlisten.then((stop) => stop()); };
+  });
+
+  /**
+   * Disclosure can connect the catalogue without changing the current grid.
+   * Startup restoration checks access but must never prompt for permission.
+   * @param {boolean} authorize
+   * @param {boolean} refresh
+   */
+  async function loadApplePhotosCollections(authorize = true, refresh = false) {
+    if (applePhotosConnection) {
+      const connected = await applePhotosConnection;
+      // A user click can arrive while the non-prompting startup check runs.
+      // Don't consume that deliberate connection attempt with a false result.
+      if (!connected && authorize) return loadApplePhotosCollections(authorize, refresh);
+      return connected;
+    }
+    applePhotosConnecting = true;
+    applePhotosConnection = (async () => {
+      const access = await invoke("apple_photos_status", { authorize });
+      if (!["authorized", "limited"].includes(access.authorization)) {
+        applePhotosAlbums = [];
+        applePhotosLoaded = false;
+        applePhotosLibraryTotal = null;
+        if (applePhotosActive) frames = [];
+        if (!authorize) return false;
+        throw new Error("Allow Reveal in System Settings > Privacy & Security > Photos, then click Apple Photos again.");
+      }
+      if (refresh || !applePhotosLoaded) {
+        const collection = await invoke("apple_photos_albums");
+        applePhotosAlbums = collection.albums;
+        applePhotosLibraryTotal = collection.total;
+        applePhotosLoaded = true;
+      }
+      return true;
+    })();
+    try {
+      return await applePhotosConnection;
+    } finally {
+      applePhotosConnection = null;
+      applePhotosConnecting = false;
+    }
+  }
+
+  async function connectApplePhotos() {
+    try {
+      appMessage = "";
+      await loadApplePhotosCollections();
+    } catch (error) {
+      appMessage = `Could not connect Apple Photos: ${error}`;
+    }
+  }
+
+  async function refreshApplePhotos() {
+    if (applePhotosBusy || applePhotosConnecting) return;
+    if (applePhotosActive) {
+      await openApplePhotos(applePhotosAlbum, { refresh: true });
+      return;
+    }
+    try {
+      appMessage = "";
+      await loadApplePhotosCollections(true, true);
+    } catch (error) {
+      appMessage = `Could not refresh Apple Photos: ${error}`;
+    }
+  }
+
+  /**
+   * @param {string} album A PhotoKit album OR collection-list folder ID.
+   * @param {{authorize?: boolean, refresh?: boolean}} options
+   */
+  async function openApplePhotos(album = "", { authorize = true, refresh = false } = {}) {
+    const request = ++applePhotosRequest;
+    let preserve = applePhotosActive && applePhotosAlbum === album;
+    const previous = {
+      selected: new Set(selectedPaths), focus: view[sel]?.path,
+      anchor: view[selectionAnchor]?.path, index: sel,
+    };
+    const loadedCount = frames.length;
+    const descending = sortDesc;
+    applePhotosBusy = true;
+    appMessage = "";
+    try {
+      if (!await loadApplePhotosCollections(authorize, refresh) || request !== applePhotosRequest) return;
+      // A removed collection must not leave the active row/grid orphaned after
+      // refresh or relaunch. The catalogue header is always a valid fallback.
+      if (album && !findPhotoCollection(applePhotosAlbums, album)) {
+        album = "";
+        preserve = false;
+      }
+      /** @type {(offset: number) => Promise<{frames: Frame[], total: number, next: number}>} */
+      const readPage = (offset) => invoke("apple_photos_list", { album: album || null, offset, descending });
+      const page = await reloadPhotoPages(
+        readPage,
+        {
+          minimumCount: preserve ? loadedCount : 0,
+          retainedPaths: preserve ? [...previous.selected, previous.focus, previous.anchor,
+            currentMode === "dev" && photoPath?.startsWith("apple-photos://") ? photoPath : null] : [],
+          isCurrent: () => request === applePhotosRequest,
+        },
+      );
+      if (!page || request !== applePhotosRequest) return;
+      applePhotosAlbum = album;
+      applePhotosActive = true;
+      applePhotosTotal = page.total;
+      applePhotosOffset = page.next;
+      curDir = null;
+      folder = null;
+      frames = page.frames;
+      if (preserve) {
+        const restored = restorePhotoSelection(view, previous);
+        selectedPaths = restored.selected;
+        sel = restored.index;
+        selectionAnchor = restored.anchor;
+        // Keep layout/filter, active Develop photo/recipe and scroll. PhotoGrid
+        // keeps a moved focused row visible using its existing virtual geometry.
+      } else {
+        minRating = 0;
+        filterStory = false;
+        storySet = new Set();
+        sel = 0;
+        selectOnly(0);
+        currentScrollTop = 0;
+      }
+      localStorage.setItem("reveal.lastDirectory", APPLE_PHOTOS_ROOT + album);
+      if (!preserve) await switchMode("cull");
+    } catch (error) {
+      if (request === applePhotosRequest) appMessage = `Could not open Apple Photos: ${error}`;
+    } finally {
+      if (request === applePhotosRequest) applePhotosBusy = false;
+    }
+  }
+
+  async function loadMoreApplePhotos() {
+    if (applePhotosBusy || !applePhotosActive) return;
+    const request = applePhotosRequest;
+    applePhotosBusy = true;
+    try {
+      const page = await invoke("apple_photos_list", {
+        album: applePhotosAlbum || null, offset: applePhotosOffset, descending: sortDesc,
+      });
+      if (request !== applePhotosRequest) return;
+      const known = new Set(frames.map((frame) => frame.path));
+      frames = [...frames, ...page.frames.filter((/** @type {Frame} */ frame) => !known.has(frame.path))];
+      applePhotosOffset = page.next;
+      applePhotosTotal = page.total;
+    } catch (error) {
+      if (request === applePhotosRequest) appMessage = `Could not load more photos: ${error}`;
+    } finally {
+      if (request === applePhotosRequest) applePhotosBusy = false;
+    }
+  }
+
+  function leaveApplePhotos() {
+    applePhotosRequest += 1;
+    applePhotosActive = false;
+    applePhotosBusy = false;
+  }
+
+  async function cancelApplePhotosTransfer() {
+    try {
+      await invoke("apple_photos_cancel");
+    } catch (error) {
+      appMessage = `Could not cancel photo download: ${error}`;
+    }
+  }
   let loading = $state(false); // a folder open is in flight — suppresses the empty-state splash so switching folders doesn't flash "REVEAL"
   let sel = $state(0);
   /** @type {Set<string>} */ let selectedPaths = $state(new Set());
@@ -241,6 +446,7 @@
   /** @type {GardenAccount | null} */ let gardenAccount = $state(null);
   let preferences = $state({
     date_folders: "%Y/%Y-%m-%d",
+    obsidian_enabled: false,
     vault: "",
     logs_folder: "Logs",
     export_folder: "",
@@ -248,6 +454,7 @@
     ai_cull_enabled: false,
     ai_cull_target: 24,
     ai_api_key: "",
+    apple_photos_cache_limit_gib: 4,
   });
 
   // Grid geometry + rail filters — the Swift model's columnsPref/cellAspect/
@@ -258,9 +465,7 @@
   let fillCells = $state(true);
   let filterStory = $state(false);
   let sortDesc = $state(false);
-  let starMenuOpen = $state(false);
   let layoutMenuOpen = $state(false);
-  let sortMenuOpen = $state(false);
   let storyDirs = $state(new Set());
   // Story-notes sidebar state. pinnedStories = the pinned-list order
   // (frontmatter pinned-at descending — newest/newest-pinned at top);
@@ -759,7 +964,7 @@
           else edited(false);
         });
         listen("menu-publish-requested", () => {
-          if (view[sel]) developFromMenu(view[sel].path, true);
+          if (preferences.obsidian_enabled && view[sel]) developFromMenu(view[sel].path, true);
         });
       }
 
@@ -795,6 +1000,10 @@
    * @param {{ openDevPanel?: boolean }} [opts]
    */
   async function switchMode(to, { openDevPanel = true } = {}) {
+    if (to === "story" && applePhotosActive) {
+      appMessage = "Storytelling needs a filesystem folder. You can edit and export Apple Photos directly.";
+      return;
+    }
     closePhotoMenu();
     if (to === "story" && !curDir && !folder) return;
     if (to !== "dev") zoomMode = "frame"; // always re-enter develop framed
@@ -1234,10 +1443,11 @@
   // the story set (Collection Rapide), in the chosen name order.
   const view = $derived.by(() => {
     let rows = frames;
+    if (applePhotosActive && minRating) rows = rows.filter((frame) => frame.rating >= minRating);
     if (filterStory) rows = rows.filter((f) => storySet.has(stem(f.name)));
     // Ascending = the backend's ORDER BY capture_at, name. Descending flips
     // on the same key — capture date first, filename as the tiebreak.
-    if (sortDesc) {
+    if (sortDesc && !applePhotosActive) {
       rows = [...rows].sort(
         (a, b) => Number(b.capture_at || 0) - Number(a.capture_at || 0) || b.name.localeCompare(a.name),
       );
@@ -1300,13 +1510,10 @@
     if (!frame) return;
     if (!selectedPaths.has(frame.path)) selectOnly(index);
     sel = index;
-    const menuWidth = 230;
-    const menuHeight = 360;
     photoMenu = {
       frame,
-      x: Math.max(8, Math.min(event.clientX, window.innerWidth - menuWidth - 12)),
-      y: Math.max(8, Math.min(event.clientY, window.innerHeight - menuHeight - 12)),
-      submenuLeft: event.clientX > window.innerWidth - (menuWidth * 2) - 20,
+      x: event.clientX,
+      y: event.clientY,
     };
   }
 
@@ -1330,6 +1537,8 @@
     aiCullTarget = Number(preferences.ai_cull_target) || 24;
     settingsOpen = false;
   }
+  const readApplePhotosCache = () => invoke("apple_photos_cache_status");
+  const clearApplePhotosCache = () => invoke("apple_photos_cache_clear");
 
   // The sidebar's Garden account row — sign-in verifies the pasted key
   // against /api/me and stores it; errors bubble to the popover.
@@ -1387,7 +1596,7 @@
     if (
       target instanceof Element &&
       target.closest(
-        "button, input, select, textarea, a, nav, [role='button'], [role='menu'], [contenteditable='true'], [draggable='true'], .cell, .photo-cell, .roll-cell, .frame, .gap, .composer, .surface, .roll, [role='listitem'], .sidebar-peek, .popover, .settings-overlay, .photo-mat",
+        "button, input, select, textarea, a, nav, dialog, [role='dialog'], [role='button'], [role='menu'], [contenteditable='true'], [draggable='true'], .cell, .photo-cell, .roll-cell, .frame, .gap, .composer, .surface, .roll, [role='listitem'], .sidebar-peek, .photo-mat",
       )
     ) {
       return;
@@ -1493,6 +1702,10 @@
   /** @param {string} path */
   async function openPhotoPreview(path) {
     closePhotoMenu();
+    if (path.startsWith("apple-photos://")) {
+      await openPhoto(path, { openDevPanel: false });
+      return;
+    }
     try {
       await invoke("open_path", { path });
     } catch (error) {
@@ -1527,6 +1740,11 @@
         return;
       }
       if (toVault) {
+        if (!preferences.obsidian_enabled) {
+          appMessage = "L'intégration Obsidian est désactivée dans les réglages";
+          setTimeout(() => (appMessage = ""), 3000);
+          return;
+        }
         await exportSelectionToDailyNote(path);
         return;
       }
@@ -1564,6 +1782,10 @@
   }
 
   async function rescan() {
+    if (applePhotosActive) {
+      await refreshApplePhotos();
+      return;
+    }
     if (!roots.length) return;
     scanning = true;
     try {
@@ -1632,6 +1854,11 @@
    * @param {DragEvent} event
    */
   function onPhotoDragStart(path, event) {
+    if (path.startsWith("apple-photos://")) {
+      event.preventDefault();
+      appMessage = "Export Apple Photos before moving them to a folder.";
+      return;
+    }
     if (!event.dataTransfer) return;
     const paths =
       selectedPaths.has(path) && selectedPaths.size > 1 ? [...selectedPaths] : [path];
@@ -1798,6 +2025,12 @@
    * @param {boolean} [restoreMode]
    */
   async function openDir(dir, restoreMode = true) {
+    if (dir?.startsWith(APPLE_PHOTOS_ROOT)) {
+      await openApplePhotos(dir.slice(APPLE_PHOTOS_ROOT.length), { authorize: restoreMode });
+      return;
+    }
+    leaveApplePhotos();
+    const request = applePhotosRequest;
     // NOTE: the index stores dirs in the canonical firmlink form
     // (/System/Volumes/Data/mnt/…) — pass paths through verbatim; any
     // "normalization" to the short alias breaks the exact-match query.
@@ -1815,6 +2048,7 @@
     /** @type {RevealWindow} */ (window).__log?.(`openDir start dir=${dir} minRating=${JSON.stringify(minRating)}`);
     try {
       const rawRows = await invoke("index_frames", { dir, minRating });
+      if (request !== applePhotosRequest) return;
       const rows = (Array.isArray(rawRows) ? rawRows : []).filter(r => r.name && !r.name.startsWith('.') && !r.name.startsWith('._'));
       debug = `reçu ${rows.length}`;
       frames = rows;
@@ -1824,7 +2058,7 @@
       withPreviewVersions(rows).then((updated) => {
         // Fresh array ref: `updated` is the same array we mutated in place, and
         // a raw $state only reacts to an identity change.
-        if (curDir === dir && Array.isArray(updated)) frames = [...updated];
+        if (request === applePhotosRequest && curDir === dir && Array.isArray(updated)) frames = [...updated];
       });
     } catch (e) {
       debug = `échec: ${e}`;
@@ -1951,6 +2185,10 @@
 
   /** @param {string} path */
   async function toggleStoryWithPath(path) {
+    if (path.startsWith("apple-photos://")) {
+      appMessage = "Apple Photos albums are read-only. Use ratings to select photos, then export.";
+      return;
+    }
     const d = gridDir();
     if (!path || !d) return;
     storySet = new Set(await invoke("story_toggle", { dir: d, path }));
@@ -2112,6 +2350,10 @@
    * collection is left alone rather than toggled out.
    */
   async function cullCurrentFolder() {
+    if (applePhotosActive) {
+      appMessage = "AI culling is available for filesystem folders, not Apple Photos.";
+      return;
+    }
     const d = gridDir();
     if (!d || !view.length || progress) return;
     progress = { verb: "cull", done: 0, total: view.length, current: "" };
@@ -2308,6 +2550,7 @@
 
   // Develop photo(s) and append to the Obsidian daily note (Logs/yymmdd.md).
   // Filesystem export into the vault attachments folder + daily note append.
+  /** @param {string} [targetPath] @param {Recipe | null} [customRecipe] */
   async function exportToDailyNote(targetPath, customRecipe) {
     const target = targetPath || photoPath || view[sel]?.path;
     if (!target) return;
@@ -2333,6 +2576,7 @@
     }
   }
 
+  /** @param {string} [clickedPath] */
   async function exportSelectionToDailyNote(clickedPath) {
     const targets = selectedPaths.size > 0
       ? view.filter((f) => selectedPaths.has(f.path)).map((f) => f.path)
@@ -2374,6 +2618,7 @@
 
   /** @param {string} path */
   async function openFolder(path) {
+    leaveApplePhotos();
     folder = path;
     curDir = null;
     // Folder switch always starts with the full contact sheet.
@@ -2400,7 +2645,7 @@
    * @param {number} [version]
    */
   function thumbUrl(path, version = 0) {
-    return `reveal://thumb?p=${encodeURIComponent(path)}&v=${version}`;
+    return `reveal://thumb?p=${encodeURIComponent(path)}&v=${version}&size=2048`;
   }
 
 
@@ -2408,9 +2653,16 @@
   async function rate(n) {
     const targets = selectedFrames();
     if (!targets.length) return;
-    for (const frame of targets) frame.rating = n;
-    frames = [...frames]; // raw array — reassign so the grid stars update
-    await Promise.all(targets.map((frame) => invoke("set_rating", { path: frame.path, rating: n })));
+    try {
+      for (const frame of targets) {
+        await invoke("set_rating", { path: frame.path, rating: n });
+        frame.rating = n;
+      }
+    } catch (error) {
+      appMessage = `Could not save photo rating: ${error}`;
+    } finally {
+      frames = [...frames];
+    }
   }
 
   /** @param {string} path */
@@ -2579,12 +2831,6 @@
       toggleSidebar();
       return true;
     }
-    if (res.action === "CLOSE_OVERLAY") {
-      if (photoMenu) closePhotoMenu();
-      else if (shortcutsOpen) shortcutsOpen = false;
-      else if (settingsOpen) settingsOpen = false;
-      return true;
-    }
     if (res.action === "EXIT_FULLSCREEN") {
       exitFullscreen();
       return true;
@@ -2594,7 +2840,15 @@
 
   /** @param {KeyboardEvent} e */
   function onKey(e) {
+    // Shared surfaces own their keys. Never let a menu/dialog keystroke also
+    // navigate photos, change mode, or dispatch an export.
+    if (e.defaultPrevented || document.querySelector("dialog[open]") ||
+      (e.target instanceof Element && e.target.closest("[role='menu'], [role='dialog'], [contenteditable='true']"))) return;
     if (["INPUT", "SELECT", "TEXTAREA"].includes(/** @type {HTMLElement} */ (e.target).tagName)) return;
+    // Catalogue/disclosure buttons own native activation. Space/Enter must
+    // not simultaneously open a photo or enter quick look/fullscreen.
+    if (["Enter", " "].includes(e.key) && e.target instanceof Element &&
+      e.target.closest("button, [role='button']")) return;
 
     // ⌘A / Ctrl-A — select all
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
@@ -2745,8 +2999,7 @@
       return;
     }
     if (e.key === "Escape") {
-      const hasOverlay = !!(photoMenu || shortcutsOpen || settingsOpen);
-      applyWorkflowResult(controller.handleEscape({ hasOverlay, fullscreen }));
+      applyWorkflowResult(controller.handleEscape({ hasOverlay: false, fullscreen }));
       e.preventDefault();
       return;
     }
@@ -2893,8 +3146,10 @@
   function captionEdited() {
     clearTimeout(captionTimer);
     const path = photoPath;
+    const description = caption;
     captionTimer = setTimeout(() => {
-      if (path) invoke("save_caption", { path, description: caption });
+      if (path) invoke("save_caption", { path, description })
+        .catch((error) => { appMessage = `Could not save caption: ${error}`; });
     }, 400);
   }
 
@@ -2937,6 +3192,11 @@
           }
           imgFailed = false;
           status = "";
+          const frame = frames.find((item) => item.path === path);
+          if (frame && px >= PREVIEW_PX) {
+            frame.previewVersion = Date.now();
+            frames = [...frames];
+          }
         }
       } else {
         useCanvas = false;
@@ -2980,8 +3240,11 @@
     }
     scheduleRender(live ? DRAG_PX : PREVIEW_PX);
     clearTimeout(saveTimer);
+    const path = photoPath;
+    const snapshot = recipe ? { ...recipe } : null;
     saveTimer = setTimeout(() => {
-      if (photoPath && recipe) invoke("save_recipe", { path: photoPath, recipe: { ...recipe } });
+      if (path && snapshot) invoke("save_recipe", { path, recipe: snapshot })
+        .catch((error) => { appMessage = `Could not save development settings: ${error}`; });
     }, 300);
   }
 
@@ -3014,10 +3277,6 @@
     if (curDir) openDir(curDir);
   }
 
-  function closeMenus() {
-    starMenuOpen = sortMenuOpen = layoutMenuOpen = false;
-  }
-
   /** @type {[string, number][]} */
   const aspects = [
     ["1:1", 1],
@@ -3041,7 +3300,7 @@
   /** @type {ReturnType<typeof setTimeout> | undefined} */
   let sidebarPeekTimer = undefined;
   function openSidebarPeek() {
-    if (!root || layouts[currentMode].sidebar) return;
+    if ((!root && !applePhotosSupported) || layouts[currentMode].sidebar) return;
     clearTimeout(sidebarPeekTimer);
     sidebarPeek = true;
   }
@@ -3054,8 +3313,24 @@
     sidebarPeek = false;
   }
 
-  const sidebarVisible = $derived(!!root && layouts[currentMode].sidebar);
+  const sidebarVisible = $derived((!!root || applePhotosSupported) && layouts[currentMode].sidebar);
 </script>
+
+{#if applePhotosTransfer?.phase === "loading"}
+  <div class="photos-transfer" role="status">
+    <Alert class="info" title="Apple Photos">
+    <span>Preparing {applePhotosTransfer.name} from Apple Photos (iCloud if needed)...</span>
+    <button class="btn ghost" onclick={cancelApplePhotosTransfer}>Cancel download</button>
+    </Alert>
+  </div>
+{:else if applePhotosTransfer?.phase === "error"}
+  <div class="photos-transfer" role="alert">
+    <Alert class="error" title="Apple Photos">
+    <span>{applePhotosTransfer.error}</span>
+    <button class="btn ghost" onclick={() => { applePhotosTransfer = null; }}>Dismiss</button>
+    </Alert>
+  </div>
+{/if}
 
 <svelte:window onkeydown={onKey} />
 
@@ -3078,6 +3353,9 @@
     <div class="body">
       {#if sidebarVisible}
         <Sidebar
+          applePhotos={applePhotosLibrary}
+          onConnectApplePhotos={connectApplePhotos}
+          onRefreshApplePhotos={refreshApplePhotos}
           {root}
           {roots}
           {dirs}
@@ -3134,6 +3412,9 @@
           onmouseleave={scheduleSidebarPeekClose}
         >
           <Sidebar
+            applePhotos={applePhotosLibrary}
+            onConnectApplePhotos={connectApplePhotos}
+            onRefreshApplePhotos={refreshApplePhotos}
             {root}
             {roots}
             {dirs}
@@ -3190,7 +3471,7 @@
           />
         </div>
       {/if}
-      <div class="content" onmousedown={startWindowDrag}>
+      <div class="content" role="presentation" onmousedown={startWindowDrag}>
         <!-- The top rail — canvas-toned, one toolbar line across the window;
              the brand cluster only rides here when the sidebar isn't inline. -->
         <header class="rail" class:solo={!sidebarVisible} data-tauri-drag-region>
@@ -3223,84 +3504,62 @@
           {/if}
 
           <!-- Star filter -->
-          <div class="rail-menu">
-            <button
-              class="rail-btn star-filter-btn"
-              class:on={minRating > 0 || filterStory}
-              onclick={() => {
-                const open = starMenuOpen;
-                closeMenus();
-                starMenuOpen = !open;
-              }}
-              title={minRating > 0 ? `Filtre : ≥ ${minRating}★` : filterStory ? "Filtre : Collection Rapide" : "Filtrer par note (0-5)"}
-            >
+          <Dropdown label="Filter by rating" triggerClass={`rail-btn star-filter-btn ${minRating > 0 || filterStory ? "on" : ""}`}>
+            {#snippet trigger()}
               <Icon name="star" size="12px" />
               {#if minRating > 0}
                 <span class="rail-badge">{minRating}★</span>
               {:else if filterStory}
                 <span class="rail-badge">Q</span>
               {/if}
-            </button>
-            {#if starMenuOpen}
-              <div class="popover std-menu-content m-0">
-                <button
-                  class="std-menu-item"
+            {/snippet}
+                <DropdownItem
+                  role="menuitemcheckbox" aria-checked={filterStory}
                   onclick={() => {
                     filterStory = !filterStory;
                   }}
+                  disabled={applePhotosActive}
                 >
-                  <span class="item-label">Collection Rapide</span>
+                  Quick collection
                   {#if filterStory}<Icon name="check" size="10px" />{/if}
-                </button>
-                <div class="std-menu-separator"></div>
+                </DropdownItem>
+                <DropdownSeparator />
                 {#each [0, 1, 2, 3, 4, 5] as n}
-                  <button class="std-menu-item" onclick={() => setMinRating(n)}>
-                    <span class="item-label">{n === 0 ? "Tout afficher" : `≥ ${n} ★`}</span>
+                  <DropdownItem role="menuitemradio" aria-checked={minRating === n} onclick={() => setMinRating(n)}>
+                    {n === 0 ? "Show all" : `≥ ${n} ★`}
                     {#if minRating === n}<Icon name="check" size="10px" />{/if}
-                  </button>
+                  </DropdownItem>
                 {/each}
-              </div>
-            {/if}
-          </div>
+          </Dropdown>
 
           <!-- Sort -->
-          <div class="rail-menu">
-            <button
-              class="rail-btn"
-              onclick={() => {
-                const open = sortMenuOpen;
-                closeMenus();
-                sortMenuOpen = !open;
-              }}
-              title="Trier"
-            >
+          <Dropdown label="Sort photos" triggerClass="rail-btn">
+            {#snippet trigger()}
               <Icon name="arrows-down-up" size="12px" />
-            </button>
-            {#if sortMenuOpen}
-              <div class="popover std-menu-content m-0">
-                <button
-                  class="std-menu-item"
+            {/snippet}
+                <DropdownItem
+                  role="menuitemradio" aria-checked={!sortDesc}
                   onclick={() => {
                     sortDesc = false;
                     saveGridPrefs();
+                    if (applePhotosActive) openApplePhotos(applePhotosAlbum);
                   }}
                 >
-                  <span class="item-label">Plus ancien d'abord</span>
+                  Oldest first
                   {#if !sortDesc}<Icon name="check" size="10px" />{/if}
-                </button>
-                <button
-                  class="std-menu-item"
+                </DropdownItem>
+                <DropdownItem
+                  role="menuitemradio" aria-checked={sortDesc}
                   onclick={() => {
                     sortDesc = true;
                     saveGridPrefs();
+                    if (applePhotosActive) openApplePhotos(applePhotosAlbum);
                   }}
                 >
-                  <span class="item-label">Plus récent d'abord</span>
+                  Newest first
                   {#if sortDesc}<Icon name="check" size="10px" />{/if}
-                </button>
-              </div>
-            {/if}
-          </div>
+                </DropdownItem>
+          </Dropdown>
 
           <span class="frame-count">
             {#if view.length !== frames.length}
@@ -3311,8 +3570,16 @@
           </span>
 
           <span class="rail-spacer"></span>
+          {#if applePhotosActive}
+            <span class="frame-count">{frames.length} / {applePhotosTotal} Apple Photos</span>
+            {#if applePhotosOffset < applePhotosTotal}
+              <button class="rail-action" onclick={loadMoreApplePhotos} disabled={applePhotosBusy}>
+                {applePhotosBusy ? "Loading..." : "Load more photos"}
+              </button>
+            {/if}
+          {/if}
 
-          {#if !root}
+          {#if !root && !applePhotosActive}
             <button class="rail-action" onclick={indexRoot} disabled={!isTauri || scanning}>
               {scanning ? "indexation…" : "Indexer une bibliothèque"}
             </button>
@@ -3394,25 +3661,23 @@
           {/if}
 
           <!-- The grid's whole geometry behind ONE icon. -->
-          <div class="rail-menu">
+          <Popover bind:open={layoutMenuOpen} label="Grid layout" align="end">
+          {#snippet trigger(/** @type {import('svelte/elements').HTMLButtonAttributes} */ attributes)}
             <button
               class="rail-btn"
-              onclick={() => {
-                const open = layoutMenuOpen;
-                closeMenus();
-                layoutMenuOpen = !open;
-              }}
-              title="Disposition et menu de la grille"
+              {...attributes}
+              aria-label="Grid layout"
+              title="Grid layout"
             >
               <Icon name={layout === "masonry" ? "rows" : "grid-four"} size="12px" />
             </button>
-            {#if layoutMenuOpen}
-              <div class="popover layout-pop std-menu-content m-0">
+          {/snippet}
+              <div class="layout-controls">
                 {#if gardenUrl}
                   <button
                     class="std-menu-item"
                     onclick={() => {
-                      closeMenus();
+                      layoutMenuOpen = false;
                       if (gardenUrl) invoke("open_path", { path: gardenUrl });
                     }}
                   >
@@ -3425,7 +3690,7 @@
                     class="std-menu-item"
                     class:disabled={!!progress}
                     onclick={() => {
-                      closeMenus();
+                      layoutMenuOpen = false;
                       publishStory();
                     }}
                     disabled={!!progress}
@@ -3439,7 +3704,7 @@
                     class="std-menu-item"
                     class:disabled={!!progress}
                     onclick={() => {
-                      closeMenus();
+                      layoutMenuOpen = false;
                       cullCurrentFolder();
                     }}
                     disabled={!!progress}
@@ -3503,21 +3768,13 @@
                   max="6"
                   step="0.25"
                   bind:value={marginScale}
+                  aria-label="Grid margin"
                   style="--f: {pct(marginScale, 0.25, 6)}"
                   onchange={saveGridPrefs}
                 />
               </div>
-            {/if}
-          </div>
+          </Popover>
         </header>
-
-        {#if starMenuOpen || sortMenuOpen || layoutMenuOpen}
-          <div
-            class="pop-backdrop"
-            onclick={closeMenus}
-            role="presentation"
-          ></div>
-        {/if}
 
       {#if currentMode === "cull"}
         <CullView
@@ -3543,7 +3800,8 @@
           {toggleStoryWithPath}
           {onPhotoDragStart}
           {closePhotoMenu}
-          hasRoot={!!root}
+          hasRoot={!!root || applePhotosActive}
+          {applePhotosActive}
           {scanning}
           onAddLibraryFolder={indexRoot}
         />
@@ -3579,8 +3837,8 @@
       onRate={(/** @type {number} */ n) => rate(n)}
       onToggleStory={(/** @type {string} */ p) => toggleStoryWithPath(p)}
       onExportSelection={exportSelection}
-      onDevelopToVault={(/** @type {string} */ p) => developFromMenu(p, true)}
-      onCull={cullCurrentFolder}
+      onDevelopToVault={preferences.obsidian_enabled ? (/** @type {string} */ p) => developFromMenu(p, true) : undefined}
+      onCull={applePhotosActive ? undefined : cullCurrentFolder}
       onPublishStory={publishStory}
       onOpenGardenUrl={() => { if (gardenUrl) invoke("open_path", { path: gardenUrl }); }}
     />
@@ -3596,15 +3854,15 @@
     {/if}
 
     {#if catalogOpen}
-      <div class="overlay-modal" onclick={() => (catalogOpen = false)} role="presentation">
-        <div class="modal-card" onclick={(e) => e.stopPropagation()} role="presentation">
+      <Dialog bind:open={catalogOpen} label="Catalogue note">
           <div class="modal-header">
             <h3>CATALOGUE NOTE (REVEAL.MD)</h3>
-            <button class="close-btn" onclick={() => (catalogOpen = false)}>✕</button>
+            <button class="close-btn" onclick={() => (catalogOpen = false)} aria-label="Close catalogue note">✕</button>
           </div>
           <div class="modal-body">
             <textarea
               bind:value={catalogContent}
+              aria-label="Catalogue note"
               placeholder="Write global notes for this library…"
             ></textarea>
           </div>
@@ -3612,8 +3870,7 @@
             <button onclick={async () => { await saveCatalogNote(); catalogOpen = false; }}>Save</button>
             <button class="secondary" onclick={() => (catalogOpen = false)}>Close</button>
           </div>
-        </div>
-      </div>
+      </Dialog>
     {/if}
 
     {#if queueOpen}
@@ -3628,6 +3885,7 @@
 {:else}
   <div
     class="app"
+    role="presentation"
     style="grid-template-columns: {(layouts.dev.devPanel && !isTauri) ? '1fr 19.5rem' : '1fr'};"
     onmousedown={startWindowDrag}
   >
@@ -3862,6 +4120,9 @@
     onClose={() => (settingsOpen = false)}
     onChooseFolder={choosePreferenceFolder}
     onSave={saveSettings}
+    cacheAvailable={applePhotosSupported}
+    onCacheStatus={readApplePhotosCache}
+    onCacheClear={clearApplePhotosCache}
   />
 {/if}
 
@@ -3891,6 +4152,19 @@
 {/if}
 
 <style>
+  .photos-transfer {
+    position: fixed;
+    bottom: var(--space);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    gap: var(--space);
+    max-width: 80vw;
+    font-family: var(--font-monospace);
+    font-size: 12px;
+  }
   .render-badge {
     position: absolute;
     top: 20px;
@@ -4018,117 +4292,6 @@
     color: var(--color-accent);
     font-size: 12px;
     letter-spacing: 0.08em;
-  }
-  .settings-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 900;
-    display: grid;
-    place-items: center;
-    background: rgb(0 0 0 / 22%);
-    backdrop-filter: blur(8px);
-  }
-  .settings-panel {
-    display: flex;
-    flex-direction: column;
-    width: min(620px, calc(100vw - 48px));
-    height: min(720px, calc(100vh - 48px));
-    overflow: hidden;
-    border: 1px solid var(--color-border);
-    border-radius: 14px;
-    background: var(--color-surface-high);
-    box-shadow: var(--shadow-xl);
-  }
-  .settings-header,
-  .settings-footer {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 16px 20px;
-    border-color: var(--color-border);
-  }
-  .settings-header {
-    border-bottom: 1px solid var(--color-border);
-  }
-  .settings-header h2 {
-    flex: 1;
-    margin: 0;
-    font-family: var(--font-header, sans-serif);
-    font-size: 11px;
-    letter-spacing: 0.12em;
-  }
-  .settings-header button,
-  .settings-footer button,
-  .settings-picker button {
-    all: unset;
-    cursor: pointer;
-  }
-  .settings-scroll {
-    flex: 1;
-    overflow: auto;
-    padding: 22px;
-  }
-  .settings-scroll fieldset {
-    display: grid;
-    gap: 16px;
-    margin: 0 0 28px;
-    padding: 0;
-    border: 0;
-  }
-  .settings-scroll legend,
-  .settings-scroll label > span {
-    font-family: var(--font-header, sans-serif);
-    font-size: 10px;
-    letter-spacing: 0.12em;
-  }
-  .settings-scroll legend {
-    width: 100%;
-    margin-bottom: 2px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--color-border);
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-  }
-  .settings-scroll label {
-    display: grid;
-    gap: 6px;
-  }
-  .settings-scroll input {
-    box-sizing: border-box;
-    width: 100%;
-    min-width: 0;
-    padding: 7px 9px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    background: color-mix(in srgb, var(--color-muted) 5%, transparent);
-    color: var(--color-muted);
-    font-family: var(--font-monospace, monospace);
-    font-size: 11px;
-  }
-  .settings-scroll small {
-    color: color-mix(in srgb, var(--color-foreground) 50%, transparent);
-    font-size: 10px;
-  }
-  .settings-picker {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 8px;
-  }
-  .settings-picker button,
-  .settings-footer button {
-    padding: 6px 10px;
-    border: 1px solid var(--color-border);
-    border-radius: 999px;
-    font-family: var(--font-header, sans-serif);
-    font-size: 10px;
-    letter-spacing: 0.1em;
-  }
-  .settings-footer {
-    justify-content: flex-end;
-    border-top: 1px solid var(--color-border);
-  }
-  .settings-footer .primary {
-    background: var(--color-foreground);
-    color: var(--color-background);
   }
   .cull > .body {
     flex: 1;
@@ -4287,12 +4450,7 @@
     color: var(--color-foreground);
   }
 
-  .rail-menu {
-    position: relative;
-    display: inline-flex;
-    flex-shrink: 0;
-  }
-  .rail-btn {
+  .rail :global(.rail-btn) {
     all: unset;
     cursor: pointer;
     display: inline-flex;
@@ -4302,10 +4460,10 @@
     height: 16px;
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
   }
-  .rail-btn:hover {
+  .rail :global(.rail-btn:hover) {
     color: var(--color-foreground);
   }
-  .rail-btn.star-filter-btn {
+  .rail :global(.rail-btn.star-filter-btn) {
     width: auto;
     gap: 3px;
     padding: 1px 4px;
@@ -4352,168 +4510,12 @@
     cursor: default;
   }
 
-  /* The rail menus — small elevated panels under their icon. */
-  /* Below the rail (z 20) so the open menu stays clickable; above the grid. */
-  .pop-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 10;
-  }
-  /* Surface, row and separator styling now come from Standard's
-     .std-menu-content/.std-menu-item/.std-menu-separator (see
-     packages/styles/_standard-13-components.scss) — only positioning and
-     the genuinely app-specific bits (column/aspect chip grids, margin
-     slider) stay local. */
-  .popover {
-    position: absolute;
-    top: calc(100% + 8px);
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 40;
-    min-width: 168px;
-    gap: 2px;
-  }
-  .layout-pop {
-    left: auto;
-    right: 0;
-    transform: none;
+  /* Only photo-grid geometry controls remain app-owned; Popover owns the shell. */
+  .layout-controls {
     min-width: 208px;
+    display: flex;
+    flex-direction: column;
     gap: 6px;
-  }
-  .context-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 70;
-  }
-  .photo-context-menu,
-  .context-submenu-panel {
-    position: fixed;
-    z-index: 71;
-    min-width: 220px;
-    padding: 4px;
-    border: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--color-surface-high) 88%, transparent);
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35), 0 0 0 0.5px rgba(0, 0, 0, 0.15);
-    backdrop-filter: blur(24px) saturate(180%);
-    -webkit-backdrop-filter: blur(24px) saturate(180%);
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
-  }
-  .context-header {
-    padding: 4px 8px 5px;
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    color: color-mix(in srgb, var(--color-foreground) 50%, transparent);
-    text-transform: uppercase;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .photo-context-menu button,
-  .context-submenu-panel button {
-    all: unset;
-    box-sizing: border-box;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
-    padding: 4px 8px;
-    border-radius: var(--radius-sm);
-    color: var(--color-foreground);
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
-    font-size: 12px;
-    line-height: 1.4;
-    cursor: default;
-  }
-  .photo-context-menu button:hover,
-  .context-submenu-panel button:hover {
-    background: #007aff;
-    color: #ffffff;
-  }
-  .photo-context-menu button.disabled,
-  .context-submenu-panel button.disabled {
-    opacity: 0.4;
-    pointer-events: none;
-  }
-  .photo-context-menu kbd {
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
-    font-size: 11px;
-    opacity: 0.6;
-    margin-left: 12px;
-  }
-  .photo-context-menu button:hover kbd {
-    color: #ffffff;
-    opacity: 0.9;
-  }
-  .context-divider {
-    height: 1px;
-    margin: 3px 4px;
-    background: color-mix(in srgb, var(--color-border) 40%, transparent);
-  }
-  .context-rating-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 3px 8px;
-  }
-  .context-rating-label {
-    font-size: 12px;
-    color: color-mix(in srgb, var(--color-foreground) 75%, transparent);
-  }
-  .context-stars {
-    display: flex;
-    align-items: center;
-    gap: 1px;
-  }
-  .context-stars .star-btn {
-    all: unset;
-    padding: 1px 3px;
-    font-size: 12px;
-    color: color-mix(in srgb, var(--color-foreground) 30%, transparent);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-  }
-  .context-stars .star-btn.active {
-    color: #ffcc00;
-  }
-  .context-stars .star-btn:hover {
-    background: color-mix(in srgb, var(--color-foreground) 10%, transparent);
-    color: #ffcc00;
-  }
-  .context-stars .star-clear {
-    all: unset;
-    padding: 1px 4px;
-    font-size: 9px;
-    color: color-mix(in srgb, var(--color-foreground) 40%, transparent);
-    margin-left: 2px;
-    cursor: pointer;
-  }
-  .context-stars .star-clear:hover {
-    background: rgba(255, 59, 48, 0.2);
-    color: #ff3b30;
-  }
-  .submenu-arrow {
-    font-size: 12px;
-    opacity: 0.6;
-    margin-left: 8px;
-  }
-  .context-submenu {
-    position: relative;
-  }
-  .context-submenu-panel {
-    display: none;
-    position: absolute;
-    top: -5px;
-    left: calc(100% - 2px);
-  }
-  .context-submenu-panel.submenu-left {
-    right: calc(100% - 2px);
-    left: auto;
-  }
-  .context-submenu:hover .context-submenu-panel,
-  .context-submenu:focus-within .context-submenu-panel {
-    display: block;
   }
   .pop-divider {
     height: 1px;
@@ -4620,21 +4622,6 @@
     justify-content: center;
     text-align: center;
   }
-  .empty h1 {
-    font-family: var(--font-header, sans-serif);
-    font-size: 2.4rem;
-    letter-spacing: 0.24em;
-    color: var(--color-accent);
-    margin: 0 0 0.3rem;
-  }
-  .empty p {
-    font-family: var(--font-monospace, monospace);
-    font-size: 0.72rem;
-    opacity: 0.6;
-  }
-  .empty p + p {
-    margin-top: 0.5rem;
-  }
 
   /* ================= develop ================= */
   .app {
@@ -4643,22 +4630,6 @@
     height: 100vh;
     position: relative;
     z-index: 1;
-  }
-  main {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 1.6rem;
-    overflow: hidden;
-  }
-  figure {
-    margin: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    height: 100%;
-    position: relative;
   }
   .photo-mat {
     box-sizing: border-box;
@@ -4685,18 +4656,6 @@
     padding: 0;
     background: transparent;
     box-shadow: none;
-  }
-  .photo-mat img {
-    box-sizing: border-box;
-    display: block;
-    max-width: 100%;
-    max-height: 100%;
-    border-radius: var(--radius);
-    box-shadow: var(--shadow-ring), var(--shadow-inset);
-    transition: opacity var(--duration-instant);
-  }
-  .photo-mat img.dimmed {
-    opacity: 0.75;
   }
   /* Graceful stand-in when the loupe image can't decode/load (NAS drop, a junk
      file that slipped in, a moved original) — a quiet glyph + the name, never
@@ -4726,48 +4685,6 @@
     letter-spacing: 0.05em;
     text-transform: uppercase;
     opacity: 0.7;
-  }
-  /* Zoom "fill" — the framed look, just larger: we only drop the
-     developPhotoPercent cap (via the empty inline style), so the photo grows to
-     the mat's own max (calc(100% - space*2)). The mat, its breathing white
-     space and the raised shadow all stay. Nothing to override here. */
-  /* Zoom "actual" — 1:1 native pixels; pan by scrolling when it overflows.
-     `safe` centering keeps the top-left reachable instead of clipping it. */
-  main.zoom-actual {
-    padding: 0;
-    overflow: auto;
-    justify-content: safe center;
-    align-items: safe center;
-    cursor: grab;
-  }
-  main.zoom-actual.panning {
-    cursor: grabbing;
-  }
-  main.zoom-actual img {
-    user-select: none;
-    -webkit-user-drag: none;
-  }
-  main.zoom-actual figure {
-    /* Grow with the image so `main` can scroll to its edges, but never shrink
-       below the viewport so a small photo still centers. */
-    width: max-content;
-    height: max-content;
-    min-width: 100%;
-    min-height: 100%;
-  }
-  main.zoom-actual .photo-mat {
-    max-width: none;
-    max-height: none;
-    padding: 0;
-    background: none;
-    border-radius: 0;
-    box-shadow: none;
-  }
-  main.zoom-actual img {
-    max-width: none;
-    max-height: none;
-    border-radius: 0;
-    box-shadow: none;
   }
   .preview-status {
     position: absolute;
@@ -4891,13 +4808,6 @@
     border-bottom: 1px solid var(--color-border);
     background: var(--color-surface-high);
   }
-  .composer-header h2 {
-    font-family: var(--font-header, sans-serif);
-    font-size: 1rem;
-    letter-spacing: 0.12em;
-    margin: 0;
-    color: var(--color-foreground);
-  }
   .composer-actions {
     display: flex;
     align-items: center;
@@ -4972,119 +4882,7 @@
     gap: 0.75rem;
   }
 
-  /* Shortcuts Overlay Panel */
-  .shortcuts-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 100;
-    background: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(12px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 2rem;
-  }
-  .shortcuts-panel {
-    background: var(--color-surface-high);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-lg);
-    width: 100%;
-    max-width: 38rem;
-    padding: 1.5rem;
-    display: flex;
-    flex-direction: column;
-    gap: 1.25rem;
-  }
-  .panel-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-bottom: 1px solid var(--color-border);
-    padding-bottom: 0.75rem;
-  }
-  .panel-header h2 {
-    font-family: var(--font-header, sans-serif);
-    font-size: 1rem;
-    letter-spacing: 0.12em;
-    margin: 0;
-    color: var(--color-accent);
-  }
-  .close-btn {
-    all: unset;
-    cursor: pointer;
-    font-size: 0.85rem;
-    opacity: 0.5;
-    padding: 0.2rem;
-  }
-  .close-btn:hover {
-    opacity: 0.9;
-  }
-  .shortcuts-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-    max-height: 28rem;
-    overflow-y: auto;
-  }
-  .shortcut-group {
-    display: flex;
-    flex-direction: column;
-    gap: 0.55rem;
-  }
-  .shortcut-group h3 {
-    font-family: var(--font-header, sans-serif);
-    font-size: 0.68rem;
-    letter-spacing: 0.1em;
-    opacity: 0.45;
-    margin: 0 0 0.15rem 0;
-  }
-  .shortcut-row {
-    display: flex;
-    align-items: center;
-    gap: 0.8rem;
-    font-size: 0.72rem;
-  }
-  .shortcut-row kbd {
-    font-family: var(--font-monospace, monospace);
-    background: var(--color-surface-low);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    padding: 0.15rem 0.4rem;
-    font-size: 0.65rem;
-    color: var(--color-accent);
-    min-width: 1.8rem;
-    text-align: center;
-  }
-  .shortcut-row span {
-    opacity: 0.85;
-  }
-
-  /* Overlays & Modals */
-  .overlay-modal {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    background: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(8px);
-    z-index: 1000;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-  }
-  .modal-card {
-    background: var(--color-surface-high);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    width: 32rem;
-    max-width: 90vw;
-    display: flex;
-    flex-direction: column;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-    overflow: hidden;
-  }
+  /* Catalogue-note content; Dialog supplies the shared modal shell. */
   .modal-header {
     display: flex;
     justify-content: space-between;

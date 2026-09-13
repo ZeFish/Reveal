@@ -160,13 +160,19 @@
                 class:sub-param={isSubParam(control.id)}
                 class:disabled={isControlDisabled(group, control) || (isSubParam(control.id) && !recipe.glare)}
               >
-                <span
-                  class="din frow-label"
-                  title={`${control.label} (Double-clic : réinitialiser)`}
+                <button
+                  type="button"
+                  class="din frow-label reset-label"
+                  aria-label={`Reset ${control.label} to default`}
+                  title={`${control.label} — double-click or press Enter/Space to reset`}
+                  disabled={isControlDisabled(group, control) || (isSubParam(control.id) && !recipe.glare)}
+                  onclick={(event) => { if (event.detail === 0) resetControl(control.id); }}
                   ondblclick={() => resetControl(control.id)}
-                >{control.label}</span>
+                >{control.label}</button>
                 <input
                   type="range"
+                  aria-label={control.label}
+                  disabled={isControlDisabled(group, control) || (isSubParam(control.id) && !recipe.glare)}
                   min={control.min}
                   max={control.max}
                   step={control.step}
@@ -187,13 +193,19 @@
 
             {:else if control.kind === "indexed_slider"}
               <div class="frow" class:disabled={isControlDisabled(group, control)}>
-                <span
-                  class="din frow-label"
-                  title={`${control.label} (Double-clic : réinitialiser)`}
+                <button
+                  type="button"
+                  class="din frow-label reset-label"
+                  aria-label={`Reset ${control.label} to default`}
+                  title={`${control.label} — double-click or press Enter/Space to reset`}
+                  disabled={isControlDisabled(group, control)}
+                  onclick={(event) => { if (event.detail === 0) resetControl(control.id, control.index); }}
                   ondblclick={() => resetControl(control.id, control.index)}
-                >{control.label}</span>
+                >{control.label}</button>
                 <input
                   type="range"
+                  aria-label={control.label}
+                  disabled={isControlDisabled(group, control)}
                   min={control.min}
                   max={control.max}
                   step={control.step}
@@ -400,6 +412,18 @@
     color: color-mix(in srgb, var(--color-foreground) 60%, transparent);
     transition: color var(--duration-fast);
     cursor: default;
+  }
+  .reset-label {
+    appearance: none;
+    background: none;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    text-align: left;
+  }
+  .reset-label:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
   }
   .frow:hover .frow-label {
     color: var(--color-foreground);

@@ -51,6 +51,10 @@
   },
   "bundle": {
     "active": true,
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "infoPlist": "Info.plist"
+    },
     "targets": ["app", "dmg"],
     "resources": ["data"],
     "fileAssociations": [

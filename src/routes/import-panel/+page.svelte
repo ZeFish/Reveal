@@ -239,7 +239,7 @@
 </script>
 
 <div class="panel-wrapper">
-  <div class="panel" onpointerdown={startDrag}>
+  <div class="panel" role="presentation" onpointerdown={startDrag}>
     {#if importingCard}
       <div class="content import-row">
         {#if progress?.path}
@@ -529,13 +529,13 @@
   }
 
   /* Outcome icon tints — success green, failure red, stopped neutral. */
-  .icon-ok {
+  .panel :global(.icon-ok) {
     color: #4CAF50;
   }
-  .icon-warn {
+  .panel :global(.icon-warn) {
     color: #E57373;
   }
-  .icon-stopped {
+  .panel :global(.icon-stopped) {
     color: #e5e5e5;
     opacity: 0.7;
   }

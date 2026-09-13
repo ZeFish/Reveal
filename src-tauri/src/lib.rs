@@ -5,7 +5,9 @@ use tauri::http::Response as HttpResponse;
 use tauri::ipc::Response as IpcResponse;
 use tauri::{Emitter, Manager};
 
+mod apple_photos;
 mod daily_note;
+mod photo_cache;
 mod preset;
 mod story;
 
@@ -354,8 +356,10 @@ fn save_preferences(
     for (key, value) in incoming {
         current_object.insert(key.clone(), value.clone());
     }
+    let cache_limit = apple_photos::cache_limit(&current)?;
     let raw = serde_json::to_string_pretty(&current).map_err(|e| e.to_string())?;
-    std::fs::write(path, raw).map_err(|e| e.to_string())
+    std::fs::write(path, raw).map_err(|e| e.to_string())?;
+    apple_photos::set_cache_limit(cache_limit)
 }
 
 fn setup_main_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
@@ -792,6 +796,7 @@ async fn notify_user(title: String, body: String) -> Result<(), String> {
 /// Open a path in Finder.
 #[tauri::command]
 async fn open_path(path: String) -> Result<(), String> {
+    apple_photos::require_file(&path)?;
     #[cfg(target_os = "macos")]
     {
         std::process::Command::new("/usr/bin/open")
@@ -805,6 +810,7 @@ async fn open_path(path: String) -> Result<(), String> {
 /// Reveal a file in Finder with the file selected.
 #[tauri::command]
 async fn reveal_in_finder(path: String) -> Result<(), String> {
+    apple_photos::require_file(&path)?;
     #[cfg(target_os = "macos")]
     {
         std::process::Command::new("/usr/bin/open")
@@ -1081,6 +1087,7 @@ async fn list_external_editors() -> Vec<(String, String)> {
 
 #[tauri::command]
 async fn open_in_editor(file_path: String, app_path: String) -> Result<(), String> {
+    apple_photos::require_file(&file_path)?;
     std::process::Command::new("open")
         .args(&["-a", &app_path, &file_path])
         .status()
@@ -1143,6 +1150,15 @@ fn developed_preview_cache_dir(app: &tauri::AppHandle) -> Result<std::path::Path
 /// truth: a 2048px developed JPEG that doubles as a web-ready export. The
 /// app-cache variants under DevelopPreviews/ are only a speed layer.
 fn preview_sidecar_path(source: &std::path::Path) -> Option<std::path::PathBuf> {
+    if apple_photos::is_asset(&source.to_string_lossy()) {
+        return match apple_photos::metadata_path(&source.to_string_lossy()) {
+            Ok(path) => preview_sidecar_path(&path),
+            Err(error) => {
+                eprintln!("Apple Photos preview path: {error}");
+                None
+            }
+        };
+    }
     source
         .file_stem()
         .map(|stem| source.with_file_name(format!("{}.preview.jpg", stem.to_string_lossy())))
@@ -1461,7 +1477,8 @@ async fn developed_preview_jpeg(
     let path_owned = path.to_string();
     let recipe_owned = recipe.clone();
     let out = tauri::async_runtime::spawn_blocking(move || {
-        engine.develop_jpeg(std::path::Path::new(&path_owned), &recipe_owned, max_px)
+        let source = apple_photos::source(&path_owned)?;
+        engine.develop_jpeg(&source, &recipe_owned, max_px).map_err(|e| format!("{e:#}"))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1533,7 +1550,15 @@ async fn copy_developed_preview_to_clipboard(
 /// 2026-08-02) — a pre-existing bug in the browser-side clipboard path, not
 /// specific to blob: URLs.
 #[tauri::command]
-fn copy_photo_preview_to_clipboard(path: String) -> Result<(), String> {
+async fn copy_photo_preview_to_clipboard(path: String) -> Result<(), String> {
+    if apple_photos::is_asset(&path) {
+        let jpeg = tauri::async_runtime::spawn_blocking(move || apple_photos::thumbnail(&path, 2560))
+            .await.map_err(|e| e.to_string())??;
+        #[cfg(target_os = "macos")]
+        return macos::clipboard::write_jpeg_image(&jpeg);
+        #[cfg(not(target_os = "macos"))]
+        { let _ = jpeg; return Err("Apple Photos requires macOS".to_string()); }
+    }
     let source = std::path::Path::new(&path);
     let jpeg = preview_sidecar_path(source)
         .filter(|candidate| candidate.is_file())
@@ -1596,7 +1621,8 @@ async fn develop_preview_rgba(
         let path = path.clone();
         let recipe = recipe.clone();
         tauri::async_runtime::spawn_blocking(move || {
-            engine.develop_rgba8(std::path::Path::new(&path), &recipe, max_px)
+            let source = apple_photos::source(&path)?;
+            engine.develop_rgba8(&source, &recipe, max_px).map_err(|e| format!("{e:#}"))
         })
         .await
         .map_err(|e| e.to_string())?
@@ -1649,7 +1675,8 @@ async fn write_preview_sidecar(
         let path_owned = path.to_string();
         let recipe_owned = recipe.clone();
         let rendered = tauri::async_runtime::spawn_blocking(move || {
-            engine.develop_jpeg(std::path::Path::new(&path_owned), &recipe_owned, max_px)
+            let source = apple_photos::source(&path_owned)?;
+            engine.develop_jpeg(&source, &recipe_owned, max_px).map_err(|e| format!("{e:#}"))
         })
         .await
         .map_err(|e| e.to_string())?
@@ -1748,10 +1775,11 @@ async fn set_rating(
     path: String,
     rating: u8,
 ) -> Result<(), String> {
-    let p = std::path::Path::new(&path);
-    let mut sidecar = reveal_meta::read(p).map_err(|e| e.to_string())?.unwrap_or_default();
-    sidecar.rating = Some(rating.min(5));
-    reveal_meta::write(p, &sidecar).map_err(|e| e.to_string())?;
+    apple_photos::update_metadata(&path, |sidecar| {
+        sidecar.rating = Some(rating.min(5));
+        Ok(())
+    })?;
+    if apple_photos::is_asset(&path) { return Ok(()); }
     index.0.set_rating(&path, rating.min(5)).map_err(|e| e.to_string())
 }
 
@@ -1833,6 +1861,8 @@ async fn scan_folder(
 /// rescans both folders to reconcile the index.
 #[tauri::command]
 async fn move_photo(path: String, dest_dir: String) -> Result<String, String> {
+    apple_photos::require_file(&path)?;
+    apple_photos::require_file(&dest_dir)?;
     tauri::async_runtime::spawn_blocking(move || {
         let src = std::path::PathBuf::from(&path);
         let dest_dir = std::path::PathBuf::from(&dest_dir);
@@ -2112,6 +2142,12 @@ impl Default for CullCancelState {
 #[tauri::command]
 fn vault_attachment_dir(app: tauri::AppHandle) -> Result<String, String> {
     let vault = vault_path(&app);
+    if !vault.exists() {
+        return Err(format!(
+            "Obsidian vault path does not exist: '{}'. Please configure a valid vault in Settings.",
+            vault.display()
+        ));
+    }
     let rel = std::fs::read_to_string(vault.join(".obsidian/app.json"))
         .ok()
         .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
@@ -2128,7 +2164,8 @@ fn vault_attachment_dir(app: tauri::AppHandle) -> Result<String, String> {
     } else {
         vault.join(rel.trim_start_matches('/'))
     };
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Could not create attachment directory '{}': {e}", dir.display()))?;
     Ok(dir.to_string_lossy().into_owned())
 }
 
@@ -2142,16 +2179,26 @@ fn vault_path(app: &tauri::AppHandle) -> std::path::PathBuf {
     if let Some(p) = prefs {
         if let Ok(raw) = std::fs::read_to_string(&p) {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) {
-                if let Some(vault) = v.get("vault").and_then(|x| x.as_str()) {
+                if let Some(vault) = v
+                    .get("vault")
+                    .and_then(|x| x.as_str())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                {
                     return std::path::PathBuf::from(vault);
                 }
             }
         }
     }
-    dirs_home().join("Documents/Atelier")
+    dirs_home(Some(app)).join("Documents/Atelier")
 }
 
-fn dirs_home() -> std::path::PathBuf {
+fn dirs_home(app: Option<&tauri::AppHandle>) -> std::path::PathBuf {
+    if let Some(app) = app {
+        if let Ok(home) = app.path().home_dir() {
+            return home;
+        }
+    }
     std::env::var("HOME").map(std::path::PathBuf::from).unwrap_or_default()
 }
 
@@ -2621,14 +2668,14 @@ async fn publish_photo(
         };
 
         emit("développement");
-        let sidecar = reveal_meta::read(&raw).ok().flatten();
+        let sidecar = reveal_meta::read(&apple_photos::metadata_path(&path)?).map_err(|e| e.to_string())?;
         let recipe = sidecar
             .as_ref()
             .and_then(|s| s.engine_settings.clone())
             .and_then(|v| serde_json::from_value(v).ok())
             .unwrap_or_default();
         let (jpeg, _, _) = engine
-            .export_jpeg(&raw, &recipe, 2048, 0.0)
+            .export_jpeg(&apple_photos::source(&path)?, &recipe, 2048, 0.0)
             .map_err(|e| format!("développement {stem}: {e:#}"))?;
 
         emit("envoi");
@@ -2637,7 +2684,11 @@ async fn publish_photo(
             .map_err(|e| e.to_string())?;
 
         emit("note");
-        let slug = reveal_publish::slugify(&stem);
+        let slug = if apple_photos::is_asset(&path) {
+            format!("{}-{:016x}", reveal_publish::slugify(&stem), developed_preview_source_key(&raw))
+        } else {
+            reveal_publish::slugify(&stem)
+        };
         let caption = sidecar.and_then(|s| s.description).unwrap_or_default();
         let now = chrono::Utc::now().to_rfc3339();
         let content = format!(
@@ -2657,14 +2708,10 @@ async fn publish_photo(
 /// Caption (dc:description) editing — sidecar field, everything else kept.
 #[tauri::command]
 async fn save_caption(path: String, description: String) -> Result<(), String> {
-    let p = std::path::Path::new(&path);
-    let mut sidecar = reveal_meta::read(p).map_err(|e| e.to_string())?.unwrap_or_default();
-    sidecar.description = if description.trim().is_empty() {
-        None
-    } else {
-        Some(description)
-    };
-    reveal_meta::write(p, &sidecar).map_err(|e| e.to_string())
+    apple_photos::update_metadata(&path, |sidecar| {
+        sidecar.description = if description.trim().is_empty() { None } else { Some(description) };
+        Ok(())
+    })
 }
 
 /// Cards (removable volumes with a DCIM of RAWs) currently mounted.
@@ -2843,7 +2890,7 @@ async fn export_photo(
     tauri::async_runtime::spawn_blocking(move || {
         let src = std::path::Path::new(&path);
         let (jpeg, w, h) = engine
-            .export_jpeg(src, &recipe, long_edge, border_frac)
+            .export_jpeg(&apple_photos::source(&path)?, &recipe, long_edge, border_frac)
             .map_err(|e| format!("{e:#}"))?;
         // Empty destination = the Swift default: the Desktop.
         let dest_dir = if dest_dir.is_empty() {
@@ -2854,8 +2901,7 @@ async fn export_photo(
         };
         let stem = src.file_stem().unwrap_or_default().to_string_lossy();
         let out = std::path::Path::new(&dest_dir).join(format!("{stem}.jpg"));
-        std::fs::create_dir_all(&dest_dir).map_err(|e| e.to_string())?;
-        std::fs::write(&out, &jpeg).map_err(|e| e.to_string())?;
+        let out = write_photo_export(&path, &out, &jpeg)?;
         eprintln!("export: {} ({}x{})", out.display(), w, h);
         Ok(out.to_string_lossy().into_owned())
     })
@@ -2876,6 +2922,8 @@ async fn export_to_daily_note(
     let engine = state.0.clone();
     let app_handle = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
+        let metadata = apple_photos::metadata_path(&path)?;
+        let source = apple_photos::source(&path)?;
         let src = std::path::Path::new(&path);
         let stem = src.file_stem().unwrap_or_default().to_string_lossy();
         let attachment_filename = format!("{stem}.jpg");
@@ -2885,21 +2933,20 @@ async fn export_to_daily_note(
 
         let final_recipe = match recipe {
             Some(r) => r,
-            None => reveal_meta::read(src)
-                .ok()
-                .flatten()
+            None => reveal_meta::read(&metadata)
+                .map_err(|e| e.to_string())?
                 .and_then(|s| s.engine_settings)
                 .and_then(|v| serde_json::from_value(v).ok())
                 .unwrap_or_default(),
         };
 
         let (jpeg, _, _) = engine
-            .export_jpeg(src, &final_recipe, long_edge, border_frac)
+            .export_jpeg(&source, &final_recipe, long_edge, border_frac)
             .map_err(|e| format!("{e:#}"))?;
-        std::fs::create_dir_all(&dest_dir).map_err(|e| e.to_string())?;
-        std::fs::write(&out, &jpeg).map_err(|e| e.to_string())?;
+        let out = write_photo_export(&path, &out, &jpeg)?;
+        let attachment_filename = out.file_name().ok_or("Export filename is missing")?.to_string_lossy().into_owned();
 
-        let capture_dt: chrono::DateTime<chrono::Local> = if let Some(ts) = reveal_decode::capture_timestamp(src) {
+        let capture_dt: chrono::DateTime<chrono::Local> = if let Some(ts) = photo_capture_timestamp(&path)? {
             chrono::DateTime::from_timestamp(ts, 0)
                 .map(|utc| utc.with_timezone(&chrono::Local))
                 .unwrap_or_else(chrono::Local::now)
@@ -2913,9 +2960,8 @@ async fn export_to_daily_note(
             chrono::Local::now()
         };
 
-        let caption = reveal_meta::read(src)
-            .ok()
-            .flatten()
+        let caption = reveal_meta::read(&metadata)
+            .map_err(|e| e.to_string())?
             .and_then(|s| s.description);
 
         let vault = vault_path(&app_handle);
@@ -2952,45 +2998,46 @@ async fn export_batch_to_daily_note(
         let mut last_note = String::new();
 
         for path in &paths {
+            let metadata = apple_photos::metadata_path(path)?;
+            let source = apple_photos::source(path)?;
             let src = std::path::Path::new(path);
             let stem = src.file_stem().unwrap_or_default().to_string_lossy();
             let attachment_filename = format!("{stem}.jpg");
             let out = std::path::Path::new(&dest_dir).join(&attachment_filename);
 
-            let recipe = reveal_meta::read(src)
-                .ok()
-                .flatten()
+            let recipe = reveal_meta::read(&metadata)
+                .map_err(|e| e.to_string())?
                 .and_then(|s| s.engine_settings)
                 .and_then(|v| serde_json::from_value(v).ok())
                 .unwrap_or_default();
 
-            if let Ok((jpeg, _, _)) = engine.export_jpeg(src, &recipe, long_edge, border_frac) {
-                if std::fs::write(&out, &jpeg).is_ok() {
-                    let capture_dt: chrono::DateTime<chrono::Local> = if let Some(ts) = reveal_decode::capture_timestamp(src) {
-                        chrono::DateTime::from_timestamp(ts, 0)
-                            .map(|utc| utc.with_timezone(&chrono::Local))
-                            .unwrap_or_else(chrono::Local::now)
-                    } else if let Ok(meta) = std::fs::metadata(src) {
-                        if let Ok(mtime) = meta.modified() {
-                            chrono::DateTime::from(mtime)
-                        } else {
-                            chrono::Local::now()
-                        }
-                    } else {
-                        chrono::Local::now()
-                    };
-
-                    let caption = reveal_meta::read(src)
-                        .ok()
-                        .flatten()
-                        .and_then(|s| s.description);
-
-                    if let Ok(np) = daily.append_photos(&[attachment_filename], caption.as_deref(), capture_dt) {
-                        last_note = np.to_string_lossy().into_owned();
-                        count += 1;
-                    }
+            let (jpeg, _, _) = engine
+                .export_jpeg(&source, &recipe, long_edge, border_frac)
+                .map_err(|e| format!("Could not export {}: {e:#}", src.display()))?;
+            let out = write_photo_export(path, &out, &jpeg)?;
+            let attachment_filename = out.file_name()
+                .ok_or("Export filename is missing")?.to_string_lossy().into_owned();
+            let capture_dt: chrono::DateTime<chrono::Local> = if let Some(ts) = photo_capture_timestamp(path)? {
+                chrono::DateTime::from_timestamp(ts, 0)
+                    .map(|utc| utc.with_timezone(&chrono::Local))
+                    .unwrap_or_else(chrono::Local::now)
+            } else if let Ok(meta) = std::fs::metadata(src) {
+                if let Ok(mtime) = meta.modified() {
+                    chrono::DateTime::from(mtime)
+                } else {
+                    chrono::Local::now()
                 }
-            }
+            } else {
+                chrono::Local::now()
+            };
+
+            let caption = reveal_meta::read(&metadata)
+                .map_err(|e| e.to_string())?
+                .and_then(|s| s.description);
+
+            let np = daily.append_photos(&[attachment_filename], caption.as_deref(), capture_dt)?;
+            last_note = np.to_string_lossy().into_owned();
+            count += 1;
         }
 
         if count == 0 {
@@ -3003,11 +3050,53 @@ async fn export_batch_to_daily_note(
     .map_err(|e| e.to_string())?
 }
 
-/// Develop-and-write one batch of photos using each photo's SAVED recipe
-/// (engine defaults when none), emitting `event_name` progress. Shared by
-/// `export_photos` (manual grid/selection export) and `ai_cull` (the
-/// automatic post-cull export) so there's exactly one place that knows how a
-/// batch export actually runs.
+fn photo_capture_timestamp(path: &str) -> Result<Option<i64>, String> {
+    if apple_photos::is_asset(path) {
+        Ok(apple_photos::info(path)?.capture_at)
+    } else {
+        Ok(reveal_decode::capture_timestamp(std::path::Path::new(path)))
+    }
+}
+
+/// Photos can contain many distinct assets named IMG_0001. Preserve the name
+/// when available, otherwise number the export instead of overwriting another.
+fn write_photo_export(
+    path: &str,
+    requested: &std::path::Path,
+    jpeg: &[u8],
+) -> Result<std::path::PathBuf, String> {
+    use std::io::Write;
+    let parent = requested.parent().ok_or("Export destination has no parent")?;
+    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    if !apple_photos::is_asset(path) {
+        std::fs::write(requested, jpeg).map_err(|e| e.to_string())?;
+        return Ok(requested.to_path_buf());
+    }
+    let stem = requested.file_stem().ok_or("Export filename is missing")?.to_string_lossy();
+    for number in 0..10_000 {
+        let out = if number == 0 {
+            requested.to_path_buf()
+        } else {
+            parent.join(format!("{stem}-{number}.jpg"))
+        };
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&out) {
+            Ok(mut file) => {
+                if let Err(error) = file.write_all(jpeg) {
+                    if let Err(cleanup) = std::fs::remove_file(&out) {
+                        eprintln!("Could not remove incomplete export {}: {cleanup}", out.display());
+                    }
+                    return Err(error.to_string());
+                }
+                return Ok(out);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    Err("Too many exports with this name; choose another destination".to_string())
+}
+
+/// Develop and export a batch using each photo's saved recipe and one progress stream.
 fn export_batch(
     engine: &reveal_engine::Engine,
     app: &tauri::AppHandle,
@@ -3017,12 +3106,10 @@ fn export_batch(
     long_edge: u32,
     border_frac: f32,
     event_name: &str,
-) -> usize {
+) -> Result<usize, String> {
     let total = paths.len();
     let mut done = 0usize;
-    if std::fs::create_dir_all(dest_dir).is_err() {
-        return 0;
-    }
+    std::fs::create_dir_all(dest_dir).map_err(|e| e.to_string())?;
     for (i, path) in paths.iter().enumerate() {
         if cancelled.load(std::sync::atomic::Ordering::Acquire) {
             let _ = app.emit(
@@ -3035,7 +3122,7 @@ fn export_batch(
                     "cancelled": true
                 }),
             );
-            return done;
+            return Ok(done);
         }
         let src = std::path::Path::new(path);
         let name = src.file_name().unwrap_or_default().to_string_lossy();
@@ -3043,28 +3130,25 @@ fn export_batch(
             event_name,
             serde_json::json!({ "done": i, "total": total, "current": name }),
         );
-        let recipe = reveal_meta::read(src)
-            .ok()
-            .flatten()
+        let recipe = reveal_meta::read(&apple_photos::metadata_path(path)?)
+            .map_err(|e| e.to_string())?
             .and_then(|s| s.engine_settings)
             .and_then(|v| serde_json::from_value(v).ok())
             .unwrap_or_default();
-        match engine.export_jpeg(src, &recipe, long_edge, border_frac) {
-            Ok((jpeg, _, _)) => {
-                let stem = src.file_stem().unwrap_or_default().to_string_lossy();
-                let out = std::path::Path::new(dest_dir).join(format!("{stem}.jpg"));
-                if std::fs::write(&out, &jpeg).is_ok() {
-                    done += 1;
-                }
-            }
-            Err(e) => eprintln!("export {name}: {e:#}"),
-        }
+        let source = apple_photos::source(path)?;
+        let (jpeg, _, _) = engine
+            .export_jpeg(&source, &recipe, long_edge, border_frac)
+            .map_err(|e| format!("Could not export {name}: {e:#}"))?;
+        let stem = src.file_stem().unwrap_or_default().to_string_lossy();
+        let out = std::path::Path::new(dest_dir).join(format!("{stem}.jpg"));
+        write_photo_export(path, &out, &jpeg)?;
+        done += 1;
     }
     let _ = app.emit(
         event_name,
         serde_json::json!({ "done": total, "total": total, "current": "" }),
     );
-    done
+    Ok(done)
 }
 
 /// Batch-export every frame of `paths` using each photo's SAVED recipe
@@ -3092,7 +3176,7 @@ async fn export_photos(
             dest_dir
         };
         let total = paths.len();
-        let done = export_batch(&engine, &app, &cancelled, &paths, &dest_dir, long_edge, border_frac, "export-progress");
+        let done = export_batch(&engine, &app, &cancelled, &paths, &dest_dir, long_edge, border_frac, "export-progress")?;
         eprintln!("export batch: {done}/{total} → {dest_dir}");
         Ok(done)
     })
@@ -3311,7 +3395,7 @@ async fn ai_cull(
             .unwrap_or_else(|| "culled".to_string());
         let dest_dir = format!("{home}/Desktop/{folder_name}");
 
-        let exported = export_batch(&engine, &app_for_worker, &cancel, &picked, &dest_dir, 2048, 0.04, "cull-progress");
+        let exported = export_batch(&engine, &app_for_worker, &cancel, &picked, &dest_dir, 2048, 0.04, "cull-progress")?;
 
         Ok(CullResult {
             dir: dir_key,
@@ -3443,6 +3527,16 @@ struct ExifInfo {
 #[tauri::command]
 async fn frame_info(path: String) -> Result<ExifInfo, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        if apple_photos::is_asset(&path) {
+            let asset = apple_photos::info(&path)?;
+            return Ok(ExifInfo {
+                aperture: None, shutter: None, iso: None, focal_mm: None,
+                captured_at: asset.capture_at.and_then(|ts| chrono::DateTime::from_timestamp(ts, 0))
+                    .map(|date| date.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string()),
+                make: String::new(), model: String::new(),
+                width: Some(asset.width), height: Some(asset.height),
+            });
+        }
         let src = rawler::rawsource::RawSource::new(std::path::Path::new(&path))
             .map_err(|e| format!("open: {e}"))?;
         let dec = rawler::get_decoder(&src).map_err(|e| format!("decoder: {e:?}"))?;
@@ -3548,7 +3642,7 @@ fn delete_preset(app: tauri::AppHandle, name: String) -> Result<(), String> {
 /// Read the photo's sidecar (rating, tags, saved recipe). Null when none.
 #[tauri::command]
 async fn load_sidecar(path: String) -> Result<Option<reveal_meta::Sidecar>, String> {
-    reveal_meta::read(std::path::Path::new(&path)).map_err(|e| e.to_string())
+    reveal_meta::read(&apple_photos::metadata_path(&path)?).map_err(|e| e.to_string())
 }
 
 /// Persist the recipe into the photo's sidecar, preserving the standard
@@ -3556,10 +3650,11 @@ async fn load_sidecar(path: String) -> Result<Option<reveal_meta::Sidecar>, Stri
 /// default-import-preset path in `import_card` — same write, same
 /// "preserve whatever's already in the sidecar" behavior.
 fn write_recipe_to_sidecar(path: &std::path::Path, recipe: &reveal_engine::Recipe) -> Result<(), String> {
-    let mut sidecar = reveal_meta::read(path).map_err(|e| e.to_string())?.unwrap_or_default();
-    sidecar.engine = Some(recipe.engine.clone());
-    sidecar.engine_settings = Some(serde_json::to_value(recipe).map_err(|e| e.to_string())?);
-    reveal_meta::write(path, &sidecar).map_err(|e| e.to_string())
+    apple_photos::update_metadata(&path.to_string_lossy(), |sidecar| {
+        sidecar.engine = Some(recipe.engine.clone());
+        sidecar.engine_settings = Some(serde_json::to_value(recipe).map_err(|e| e.to_string())?);
+        Ok(())
+    })
 }
 
 #[tauri::command]
@@ -3569,11 +3664,13 @@ async fn save_recipe(path: String, recipe: reveal_engine::Recipe) -> Result<(), 
 
 #[tauri::command]
 async fn clear_recipe(path: String) -> Result<(), String> {
-    let p = std::path::Path::new(&path);
-    let mut sidecar = reveal_meta::read(p).map_err(|e| e.to_string())?.unwrap_or_default();
-    sidecar.engine = None;
-    sidecar.engine_settings = None;
-    reveal_meta::write(p, &sidecar).map_err(|e| e.to_string())?;
+    let metadata = apple_photos::metadata_path(&path)?;
+    let p = metadata.as_path();
+    apple_photos::update_metadata(&path, |sidecar| {
+        sidecar.engine = None;
+        sidecar.engine_settings = None;
+        Ok(())
+    })?;
     // Reverting to "no engine" removes our own developed sidecar so the grid
     // and loupe fall back to the as-shot look. The Swift-era `.reveal.jpg` is
     // left untouched (manual cleanup later) — it stays a read-only fallback.
@@ -3672,6 +3769,7 @@ pub fn run() {
         }).build())
         .plugin(tauri_plugin_window_state::Builder::default().with_denylist(&["import-panel"]).build())
         .setup(|app| {
+            apple_photos::init(app.handle())?;
             setup_main_menu(app).map_err(|e| e.to_string())?;
             setup_tray(app).map_err(|e| e.to_string())?;
 
@@ -3796,6 +3894,10 @@ pub fn run() {
                 // lazy-loading paces the requests.
                 "thumb" => {
                     let app = _ctx.app_handle().clone();
+                    let size = request.uri().query()
+                        .and_then(|query| query.split('&').find_map(|pair| pair.strip_prefix("size=")))
+                        .and_then(|value| value.parse::<u32>().ok())
+                        .unwrap_or(768).clamp(256, 2560);
                     let path = request
                         .uri()
                         .query()
@@ -3812,6 +3914,20 @@ pub fn run() {
                         // Bounds how many of these run at once — see
                         // `ThumbSemaphore`'s doc comment for why this exists.
                         let _permit = ThumbPermit::acquire(&sem);
+                        if apple_photos::is_asset(&path) {
+                            let response = match apple_photos::thumbnail(&path, size) {
+                                Ok(bytes) => HttpResponse::builder()
+                                    .header("Content-Type", "image/jpeg")
+                                    .header("Cache-Control", "no-cache")
+                                    .body(if size <= 768 { downscale_grid_thumb(bytes) } else { bytes }).unwrap(),
+                                Err(error) => {
+                                    eprintln!("Apple Photos thumbnail: {error}");
+                                    HttpResponse::builder().status(503).body(error.into_bytes()).unwrap()
+                                }
+                            };
+                            responder.respond(response);
+                            return;
+                        }
                         let t = std::time::Instant::now();
                         let source = std::path::Path::new(&path);
                         // File over app: the developed `.preview.jpg` sibling of
@@ -3948,6 +4064,12 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            apple_photos::apple_photos_status,
+            apple_photos::apple_photos_albums,
+            apple_photos::apple_photos_list,
+            apple_photos::apple_photos_cancel,
+            apple_photos::apple_photos_cache_status,
+            apple_photos::apple_photos_cache_clear,
             load_shell_prefs,
             load_preferences,
             save_preferences,

@@ -9,6 +9,7 @@ license.workspace = true
 rawler.workspace = true
 rayon.workspace = true
 thiserror.workspace = true
+image.workspace = true
 
 [build-dependencies]
 bindgen = "0.71"
