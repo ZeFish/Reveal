@@ -33,17 +33,48 @@ const NS_WINDOW_COLLECTION_STATIONARY: u64 = 1 << 4;
 const NS_WINDOW_COLLECTION_IGNORES_CYCLE: u64 = 1 << 6;
 const NS_WINDOW_COLLECTION_FULL_SCREEN_AUXILIARY: u64 = 1 << 8;
 
-pub fn show_below(ns_window: *mut Object) -> Result<(), String> {
-    if ns_window.is_null() {
-        return Err("main NSWindow unavailable".into());
+/// Find the lowest visible Reveal window in AppKit's front-to-back Z-order.
+/// Ordering the focus panel below this window ensures all Reveal windows
+/// (main window, develop panel, floating palettes) remain above the backdrop.
+unsafe fn find_bottom_app_window(panel: *mut Object, fallback_window: *mut Object) -> i64 {
+    let app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
+    if !app.is_null() {
+        let windows: *mut Object = msg_send![app, orderedWindows];
+        if !windows.is_null() {
+            let count: usize = msg_send![windows, count];
+            for i in (0..count).rev() {
+                let win: *mut Object = msg_send![windows, objectAtIndex: i];
+                if win.is_null() || win == panel {
+                    continue;
+                }
+                let is_visible: bool = msg_send![win, isVisible];
+                if is_visible {
+                    let win_num: i64 = msg_send![win, windowNumber];
+                    if win_num > 0 {
+                        return win_num;
+                    }
+                }
+            }
+        }
     }
+    if !fallback_window.is_null() {
+        let win_num: i64 = msg_send![fallback_window, windowNumber];
+        return win_num;
+    }
+    0
+}
 
+pub fn show_below(ns_window: *mut Object) -> Result<(), String> {
     unsafe {
         let panel = ensure_panel()?;
         let frame = all_screens_frame();
         let _: () = msg_send![panel, setFrame: frame display: YES];
 
-        let window_number: i64 = msg_send![ns_window, windowNumber];
+        let window_number = find_bottom_app_window(panel, ns_window);
+        if window_number == 0 {
+            return Err("no app window available to order below".into());
+        }
+
         let is_visible: bool = msg_send![panel, isVisible];
         if is_visible {
             let _: () = msg_send![panel, orderWindow: NS_WINDOW_BELOW relativeTo: window_number];

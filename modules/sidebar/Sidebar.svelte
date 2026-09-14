@@ -880,15 +880,31 @@
         <div class="theme-inner">
           <StoryThemePanel dir={curDir} />
           <div class="story-actions">
-            <button class="action-btn" onclick={() => onDevelopStory()}>Développer</button>
-            <button class="action-btn" onclick={() => onExportLocalStory()} disabled={publishing}>Exporter</button>
-            <button class="action-btn primary" onclick={() => onPublishStory()} disabled={publishing}>
-              {publishing ? "…" : "Publier"}
+            <button class="publish-hero-btn" onclick={() => onPublishStory()} disabled={publishing}>
+              {#if publishing}
+                <Icon name="arrows-clockwise" size="11px" class="spin" />
+                <span>Publication…</span>
+              {:else}
+                <Icon name="arrow-square-out" size="11px" />
+                <span>Publier sur Garden</span>
+              {/if}
             </button>
+            <div class="secondary-actions">
+              <button class="action-btn secondary" onclick={() => onDevelopStory()} title="Développer toutes les photos de l'histoire">
+                <Icon name="sliders-horizontal" size="10px" />
+                <span>Développer</span>
+              </button>
+              <button class="action-btn secondary" onclick={() => onExportLocalStory()} disabled={publishing} title="Exporter les photos localement">
+                <Icon name="export" size="10px" />
+                <span>Exporter</span>
+              </button>
+            </div>
           </div>
           {#if gardenUrl}
-            <button class="action-btn open-page" onclick={() => onOpenUrl(gardenUrl)}>
-              <span>OUVRIR LA PAGE ↗</span>
+            <button class="open-page-banner" onclick={() => onOpenUrl(gardenUrl)}>
+              <Icon name="check-circle" size="12px" class="banner-check" />
+              <span class="banner-text">En ligne sur Garden</span>
+              <Icon name="arrow-square-out" size="10px" class="banner-arrow" />
             </button>
           {/if}
           {#if publishStatus}
@@ -1624,30 +1640,94 @@
   }
   .story-actions {
     display: flex;
+    flex-direction: column;
     gap: 6px;
-    flex-wrap: wrap;
   }
-  .action-btn {
-    flex: 1;
-    min-width: 70px;
-    padding: 6px 8px;
+  .publish-hero-btn {
+    all: unset;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    width: 100%;
+    padding: 7px 12px;
+    font-family: var(--font-header, sans-serif);
     font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    border-radius: var(--radius-sm, 6px);
+    cursor: pointer;
+    background: var(--color-accent, #d6202c);
+    color: #ffffff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    transition: all 0.15s var(--ease-standard);
+  }
+  .publish-hero-btn:hover:not(:disabled) {
+    filter: brightness(1.1);
+    box-shadow: 0 4px 12px rgba(214, 32, 44, 0.35);
+  }
+  .publish-hero-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+  .secondary-actions {
+    display: flex;
+    gap: 6px;
+  }
+  .action-btn.secondary {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 5px 8px;
+    font-size: 9.5px;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    border-radius: 999px;
+    border-radius: var(--radius-sm, 6px);
     cursor: pointer;
-    border: 1px solid var(--border, rgba(255, 255, 255, 0.3));
-    background: transparent;
-    color: inherit;
+    border: 1px solid var(--color-border, rgba(255, 255, 255, 0.12));
+    background: var(--color-surface-low, rgba(255, 255, 255, 0.04));
+    color: var(--color-foreground);
+    transition: all 0.15s ease;
   }
-  .action-btn.primary {
-    background: var(--color-accent);
-    color: #fff;
-    border-color: transparent;
+  .action-btn.secondary:hover:not(:disabled) {
+    background: var(--color-surface-high, rgba(255, 255, 255, 0.1));
+    border-color: rgba(255, 255, 255, 0.25);
   }
   .action-btn:disabled {
     opacity: 0.5;
     cursor: default;
+  }
+  .open-page-banner {
+    all: unset;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: color-mix(in srgb, #4caf50 12%, transparent);
+    border: 1px solid color-mix(in srgb, #4caf50 35%, transparent);
+    border-radius: var(--radius-sm, 6px);
+    cursor: pointer;
+    font-size: 10px;
+    color: #4caf50;
+    font-weight: 500;
+    transition: all 0.15s ease;
+  }
+  .open-page-banner:hover {
+    background: color-mix(in srgb, #4caf50 20%, transparent);
+    border-color: #4caf50;
+  }
+  :global(.banner-check) {
+    color: #4caf50;
+  }
+  :global(.banner-arrow) {
+    margin-left: auto;
+    opacity: 0.8;
   }
   .publish-status {
     font-size: 10px;

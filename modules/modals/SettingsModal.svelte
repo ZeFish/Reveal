@@ -165,7 +165,7 @@
 </script>
 
 <Dialog open label="Reveal settings" onclose={onClose} onkeydown={handleKeyDown}
-  style="--dialog-width: min(94vw, 580px); --dialog-max-height: min(88vh, 720px)">
+  style="--dialog-width: min(94vw, 640px); --dialog-height: min(85vh, 680px); --dialog-max-height: 88vh; min-height: min(480px, 85vh);">
     <!-- Modal Header -->
     <header class="settings-header">
       <div class="header-left">
@@ -578,6 +578,7 @@
     padding: 1.25rem;
     overflow-y: auto;
     flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     gap: 1.25rem;

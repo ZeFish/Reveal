@@ -7,12 +7,14 @@ import arrowsDownUp from "../../../../packages/icon/icons/ph/arrows-down-up.svg?
 import arrowsInSimple from "../../../../packages/icon/icons/ph/arrows-in-simple.svg?raw";
 import caretDown from "../../../../packages/icon/icons/ph/caret-down.svg?raw";
 import caretRight from "../../../../packages/icon/icons/ph/caret-right.svg?raw";
+import caretUp from "../../../../packages/icon/icons/ph/caret-up.svg?raw";
 import check from "../../../../packages/icon/icons/ph/check.svg?raw";
 import checkCircle from "../../../../packages/icon/icons/ph/check-circle.svg?raw";
 import copy from "../../../../packages/icon/icons/ph/copy.svg?raw";
 import circleHalf from "../../../../packages/icon/icons/ph/circle-half.svg?raw";
 import crop from "../../../../packages/icon/icons/ph/crop.svg?raw";
 import downloadSimple from "../../../../packages/icon/icons/ph/download-simple.svg?raw";
+import dotsSixVertical from "../../../../packages/icon/icons/ph/dots-six-vertical.svg?raw";
 import arrowSquareOut from "../../../../packages/icon/icons/ph/arrow-square-out.svg?raw";
 import exportIcon from "../../../../packages/icon/icons/ph/export.svg?raw";
 import eyeSlash from "../../../../packages/icon/icons/ph/eye-slash.svg?raw";
@@ -42,11 +44,13 @@ export const icons = {
   "arrow-square-out": arrowSquareOut,
   "caret-down": caretDown,
   "caret-right": caretRight,
+  "caret-up": caretUp,
   check,
   "check-circle": checkCircle,
   copy,
   "circle-half": circleHalf,
   crop,
+  "dots-six-vertical": dotsSixVertical,
   "download-simple": downloadSimple,
   export: exportIcon,
   "eye-slash": eyeSlash,

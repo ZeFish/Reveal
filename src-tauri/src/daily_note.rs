@@ -1,5 +1,5 @@
 use chrono::{DateTime, Datelike, Local};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Appends Obsidian embeds and captions into the vault's daily note (`Logs/yymmdd.md`).
 ///

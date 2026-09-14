@@ -202,14 +202,21 @@
       pointerInside = inside;
       invoke("set_focus_window_presence", { windowId: "dev-panel", inside }).catch(() => {});
     };
-    const onFocus = () => {
-      if (pointerInside) setPresence(true);
+    const onFocus = () => setPresence(true);
+    const onBlur = () => {
+      if (!pointerInside) setPresence(false);
     };
-    const onBlur = () => setPresence(false);
     const onPointerEnter = () => setPresence(true);
-    const onPointerLeave = () => setPresence(false);
+    const onPointerLeave = () => {
+      pointerInside = false;
+      if (!document.hasFocus()) setPresence(false);
+    };
+    const onPointerMove = () => {
+      if (!pointerInside) setPresence(true);
+    };
     window.addEventListener("pointerenter", onPointerEnter);
     window.addEventListener("pointerleave", onPointerLeave);
+    window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("focus", onFocus);
     window.addEventListener("blur", onBlur);
 
@@ -220,6 +227,7 @@
     const FORWARD_KEYS = new Set([
       "g", "s", "d", "z", "Escape", " ", "r", "f", "q",
       "0", "1", "2", "3", "4", "5",
+      "o", "l", "b", "m",
       "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown",
     ]);
     /** @param {KeyboardEvent} e */
@@ -245,6 +253,7 @@
       unlisten.then(callUnlisten);
       window.removeEventListener("pointerenter", onPointerEnter);
       window.removeEventListener("pointerleave", onPointerLeave);
+      window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("blur", onBlur);
       window.removeEventListener("keydown", forwardKey);

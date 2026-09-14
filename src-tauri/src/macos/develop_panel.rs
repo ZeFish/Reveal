@@ -28,6 +28,10 @@ pub fn configure(ns_window: *mut Object) -> Result<(), String> {
         // AppKit hides this window only when Reveal itself deactivates, not
         // when focus moves between the main window and the Develop panel.
         let _: () = msg_send![ns_window, setHidesOnDeactivate: YES];
+        // Float as a macOS utility panel above normal windows so the
+        // focus backdrop stays behind both the main window and this panel.
+        const NS_FLOATING_WINDOW_LEVEL: i64 = 3;
+        let _: () = msg_send![ns_window, setLevel: NS_FLOATING_WINDOW_LEVEL];
     }
 
     Ok(())

@@ -4,6 +4,8 @@
   // drag-reorderable; the reorder callback rewrites `pinned-at` ordering.
   // RÉCENTES is read-only, sorted by mtime (top 12, sliced in the parent).
 
+  import Icon from "$lib/components/Icon.svelte";
+
   let {
     pinned = [],
     recent = [],
@@ -39,109 +41,247 @@
   /** @param {number} mtime */
   function relMtime(mtime) {
     const diff = Date.now() / 1000 - mtime;
-    if (diff < 3600) return "just now";
-    if (diff < 86400) return `${Math.floor(diff / 3600)} h ago`;
-    if (diff < 604800) return `${Math.floor(diff / 86400)} d ago`;
-    return new Date(mtime * 1000).toLocaleDateString("en-CA");
+    if (diff < 60) return "à l'instant";
+    if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`;
+    if (diff < 86400) return `il y a ${Math.floor(diff / 3600)} h`;
+    if (diff < 172800) return "hier";
+    if (diff < 604800) return `il y a ${Math.floor(diff / 86400)} j`;
+    return new Date(mtime * 1000).toLocaleDateString("fr-CA", { month: "short", day: "numeric" });
   }
 </script>
 
 <div class="notes-list">
   <section class="group">
-    <h3 class="group-title">Pinned</h3>
+    <div class="group-header">
+      <span class="group-title">Épinglées</span>
+      {#if pinned.length > 0}
+        <span class="badge">{pinned.length}</span>
+      {/if}
+    </div>
     {#if pinned.length === 0}
-      <p class="empty">No pinned stories</p>
+      <p class="empty">Aucun récit épinglé</p>
     {:else}
-      <ul>
+      <div class="notes-items" role="list">
         {#each pinned as note, i (note.notePath)}
-          <li
+          <div
             class="note-row pinned"
             class:current={note.folderPath === curDir}
             class:dragging={dragIndex === i}
             draggable="true"
+            role="listitem"
             ondragstart={(e) => onDragStart(e, i)}
             ondragover={(e) => onDragOver(e, i)}
             ondrop={(e) => onDrop(e, i)}
             ondragend={onDragEnd}
           >
-            <span class="grip" title="Drag to reorder" aria-hidden="true">⠿</span>
-            <button type="button" class="note-open" aria-label={`Open ${note.folderName}`} onclick={() => onOpen(note.folderPath)}>
-              <span class="folder-name">{note.folderName}</span>
-              <span class="thumbs">{note.thumbStems.length} photos</span>
+            <span class="grip" title="Glisser pour réordonner" aria-hidden="true">
+              <Icon name="dots-six-vertical" size="12px" />
+            </span>
+            <button type="button" class="note-open" aria-label={`Ouvrir ${note.folderName}`} onclick={() => onOpen(note.folderPath)}>
+              <div class="note-meta">
+                <span class="folder-name">{note.folderName}</span>
+                <span class="thumbs">{note.thumbStems.length} cliché{note.thumbStems.length > 1 ? "s" : ""}</span>
+              </div>
             </button>
             <button
               type="button"
-              class="unpin"
-              aria-label={`Unpin ${note.folderName}`}
-              title="Unpin"
+              class="action-btn unpin"
+              aria-label={`Détacher ${note.folderName}`}
+              title="Détacher des épingles"
               onclick={() => onUnpin(note.notePath)}
-            >×</button>
-          </li>
+            >
+              <Icon name="x" size="10px" />
+            </button>
+          </div>
         {/each}
-      </ul>
+      </div>
     {/if}
   </section>
 
   <section class="group">
-    <h3 class="group-title">Recent</h3>
+    <div class="group-header">
+      <span class="group-title">Récents</span>
+      {#if recent.length > 0}
+        <span class="badge">{recent.length}</span>
+      {/if}
+    </div>
     {#if recent.length === 0}
-      <p class="empty">No recent stories</p>
+      <p class="empty">Aucun récit récent</p>
     {:else}
-      <ul>
+      <div class="notes-items" role="list">
         {#each recent as note (note.notePath)}
-          <li
+          <div
             class="note-row"
             class:current={note.folderPath === curDir}
+            role="listitem"
           >
-            <button type="button" class="note-open" aria-label={`Open ${note.folderName}`} onclick={() => onOpen(note.folderPath)}>
-              <span class="folder-name">{note.folderName}</span>
-              <span class="mtime">{relMtime(note.mtime)}</span>
+            <button type="button" class="note-open" aria-label={`Ouvrir ${note.folderName}`} onclick={() => onOpen(note.folderPath)}>
+              <div class="note-meta">
+                <span class="folder-name">{note.folderName}</span>
+                <span class="mtime">{relMtime(note.mtime)}</span>
+              </div>
             </button>
             {#if !note.pinned}
               <button
-                class="pin"
+                class="action-btn pin"
                 type="button"
-                aria-label={`Pin ${note.folderName}`}
-                title="Pin"
+                aria-label={`Épingler ${note.folderName}`}
+                title="Épingler"
                 onclick={() => onPin(note.notePath)}
-              >＋</button>
+              >
+                <Icon name="plus" size="10px" />
+              </button>
             {/if}
-          </li>
+          </div>
         {/each}
-      </ul>
+      </div>
     {/if}
   </section>
 </div>
 
 <style>
-  .notes-list { display: flex; flex-direction: column; gap: 14px; }
+  .notes-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .group-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 4px;
+  }
   .group-title {
-    font-size: 10px; letter-spacing: 0.08em; opacity: 0.5; margin: 0 0 6px;
-    text-transform: uppercase; font-weight: 500;
+    font-family: var(--font-header, sans-serif);
+    font-size: 0.65rem;
+    letter-spacing: 0.12em;
+    color: var(--color-muted);
+    text-transform: uppercase;
+    font-weight: 600;
   }
-  ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .badge {
+    font-family: var(--font-monospace, monospace);
+    font-size: 0.62rem;
+    color: var(--color-muted);
+    background: var(--color-surface-high);
+    padding: 1px 5px;
+    border-radius: 999px;
+    border: 1px solid var(--color-border);
+  }
+  .notes-items {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+  }
   .note-row {
-    display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: var(--radius-sm);
-    cursor: pointer; font-size: 12px; border: 1px solid transparent;
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-low);
+    border: 1px solid var(--color-border);
+    transition: all 0.15s var(--ease-soft);
   }
-  .note-row:hover { background: var(--color-surface-high); }
-  .note-row.current { border-color: var(--border, rgba(255,255,255,0.15)); }
-  .note-row.dragging { opacity: 0.4; }
+  .note-row:hover {
+    background: var(--color-surface-high);
+    border-color: color-mix(in srgb, var(--color-foreground) 25%, transparent);
+  }
+  .note-row.current {
+    background: var(--color-surface-high);
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 1px var(--color-accent);
+  }
+  .note-row.dragging {
+    opacity: 0.35;
+  }
   .note-open {
-    all: unset; display: flex; align-items: center; gap: 8px; flex: 1;
-    min-width: 0; cursor: pointer;
+    all: unset;
+    display: flex;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+    cursor: pointer;
   }
-  .note-open:focus-visible, .pin:focus-visible, .unpin:focus-visible {
-    outline: 2px solid var(--color-accent); outline-offset: 2px;
+  .note-open:focus-visible,
+  .action-btn:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
   }
-  .note-row.pinned .grip { opacity: 0.3; cursor: grab; font-size: 11px; }
-  .note-row.pinned:hover .grip { opacity: 0.7; }
-  .folder-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .thumbs, .mtime { font-size: 10px; opacity: 0.5; flex-shrink: 0; }
-  .unpin, .pin {
-    background: none; border: none; color: inherit; cursor: pointer; opacity: 0.3;
-    font-size: 13px; line-height: 1; padding: 0 2px; flex-shrink: 0;
+  .note-row.pinned .grip {
+    opacity: 0.25;
+    cursor: grab;
+    font-size: 11px;
+    user-select: none;
+    transition: opacity 0.15s var(--ease-soft);
   }
-  .unpin:hover, .pin:hover { opacity: 1; }
-  .empty { font-size: 11px; opacity: 0.35; margin: 0; font-style: italic; }
+  .note-row.pinned:hover .grip {
+    opacity: 0.7;
+  }
+  .note-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+  }
+  .folder-name {
+    font-family: var(--font-header, sans-serif);
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--color-foreground);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .thumbs,
+  .mtime {
+    font-family: var(--font-monospace, monospace);
+    font-size: 0.65rem;
+    color: var(--color-muted);
+  }
+  .action-btn {
+    all: unset;
+    box-sizing: border-box;
+    cursor: pointer;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-muted);
+    opacity: 0;
+    transition: all 0.15s var(--ease-soft);
+  }
+  .note-row:hover .action-btn {
+    opacity: 0.7;
+  }
+  .action-btn:hover {
+    opacity: 1;
+    background: var(--color-surface-higher, var(--color-surface-high));
+    color: var(--color-foreground);
+  }
+  .action-btn.unpin:hover {
+    color: #ef4444;
+  }
+  .action-btn.pin:hover {
+    color: var(--color-accent);
+  }
+  .empty {
+    font-family: var(--font-text, sans-serif);
+    font-size: 0.75rem;
+    color: var(--color-muted);
+    opacity: 0.5;
+    margin: 4px 6px;
+    font-style: italic;
+  }
 </style>

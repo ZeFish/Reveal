@@ -550,18 +550,7 @@ fn emit_focus_mode(app: &tauri::AppHandle, enabled: bool) {
 }
 
 fn apply_focus_mode(app: &tauri::AppHandle, enabled: bool) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        if enabled {
-            let window = app
-                .get_webview_window("main")
-                .ok_or_else(|| "main window unavailable".to_string())?;
-            let ns_window = window.ns_window().map_err(|e| e.to_string())? as *mut objc::runtime::Object;
-            macos::focus_backdrop::show_below(ns_window)?;
-        } else {
-            macos::focus_backdrop::hide();
-        }
-    }
+    apply_focus_backdrop(app, enabled)?;
 
     if let Some(state) = app.try_state::<TrayMenuState>() {
         let _ = state.focus_item.set_checked(enabled);
@@ -574,14 +563,28 @@ fn apply_focus_mode(app: &tauri::AppHandle, enabled: bool) -> Result<(), String>
 fn apply_focus_backdrop(app: &tauri::AppHandle, enabled: bool) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        if enabled {
-            let window = app
-                .get_webview_window("main")
-                .ok_or_else(|| "main window unavailable".to_string())?;
-            let ns_window = window.ns_window().map_err(|e| e.to_string())? as *mut objc::runtime::Object;
-            macos::focus_backdrop::show_below(ns_window)?;
-        } else {
-            macos::focus_backdrop::hide();
+        let app_handle = app.clone();
+        let run = move || {
+            if enabled {
+                let ns_win = app_handle
+                    .get_webview_window("main")
+                    .and_then(|w| w.ns_window().ok())
+                    .map(|w| w as *mut objc::runtime::Object)
+                    .unwrap_or(std::ptr::null_mut());
+                let _ = macos::focus_backdrop::show_below(ns_win);
+            } else {
+                macos::focus_backdrop::hide();
+            }
+        };
+
+        unsafe {
+            use objc::{class, msg_send, sel, sel_impl};
+            let is_main: bool = msg_send![class!(NSThread), isMainThread];
+            if is_main {
+                run();
+            } else {
+                let _ = app.run_on_main_thread(run);
+            }
         }
     }
     Ok(())
@@ -939,12 +942,6 @@ fn focus_state(state: tauri::State<'_, FocusState>) -> bool {
     *state.0.lock().unwrap()
 }
 
-// The main window's frame before entering simple-fullscreen, so exit can put it
-// back. Only the main window uses this, so a single slot is enough.
-#[cfg(target_os = "macos")]
-static SAVED_WINDOW_FRAME: std::sync::Mutex<Option<(i32, i32, u32, u32)>> =
-    std::sync::Mutex::new(None);
-
 /// Lightroom-style borderless fullscreen for the main window: cover the whole
 /// display in place (menu bar + Dock hidden) rather than the macOS native
 /// Spaces fullscreen. On exit, restore the pre-fullscreen frame.
@@ -953,39 +950,12 @@ fn set_simple_fullscreen(window: tauri::WebviewWindow, enabled: bool) -> Result<
     #[cfg(target_os = "macos")]
     {
         let ns_window = window.ns_window().map_err(|e| e.to_string())? as *mut objc::runtime::Object;
-
         if enabled {
-            // Remember where the window was so exit can put it back.
-            let pos = window.outer_position().map_err(|e| e.to_string())?;
-            let size = window.outer_size().map_err(|e| e.to_string())?;
-            *SAVED_WINDOW_FRAME.lock().unwrap() = Some((pos.x, pos.y, size.width, size.height));
-
-            macos::simple_fullscreen::enter()?;
-            macos::simple_fullscreen::strip_chrome(ns_window);
-
-            // Grow to fill whichever monitor the window is currently on.
-            if let Some(monitor) = window.current_monitor().map_err(|e| e.to_string())? {
-                let mp = monitor.position();
-                let ms = monitor.size();
-                window
-                    .set_position(tauri::PhysicalPosition::new(mp.x, mp.y))
-                    .map_err(|e| e.to_string())?;
-                window
-                    .set_size(tauri::PhysicalSize::new(ms.width, ms.height))
-                    .map_err(|e| e.to_string())?;
-            }
+            macos::simple_fullscreen::enter(ns_window)?;
         } else {
-            macos::simple_fullscreen::exit()?;
-            if let Some((x, y, w, h)) = SAVED_WINDOW_FRAME.lock().unwrap().take() {
-                window
-                    .set_position(tauri::PhysicalPosition::new(x, y))
-                    .map_err(|e| e.to_string())?;
-                window
-                    .set_size(tauri::PhysicalSize::new(w, h))
-                    .map_err(|e| e.to_string())?;
-            }
-            macos::simple_fullscreen::restore_chrome(ns_window);
+            macos::simple_fullscreen::exit(ns_window)?;
         }
+        let _ = window.set_focus();
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -2922,6 +2892,15 @@ async fn export_to_daily_note(
     let engine = state.0.clone();
     let app_handle = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
+        let prefs = load_preferences(app_handle.clone());
+        let obsidian_enabled = prefs
+            .get("obsidian_enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if !obsidian_enabled {
+            return Err("Obsidian integration is disabled in Settings.".to_string());
+        }
+
         let metadata = apple_photos::metadata_path(&path)?;
         let source = apple_photos::source(&path)?;
         let src = std::path::Path::new(&path);
@@ -2988,9 +2967,17 @@ async fn export_batch_to_daily_note(
     let engine = state.0.clone();
     let app_handle = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
+        let prefs = load_preferences(app_handle.clone());
+        let obsidian_enabled = prefs
+            .get("obsidian_enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if !obsidian_enabled {
+            return Err("Obsidian integration is disabled in Settings.".to_string());
+        }
+
         let dest_dir = vault_attachment_dir(app_handle.clone())?;
         let vault = vault_path(&app_handle);
-        let prefs = load_preferences(app_handle.clone());
         let logs_folder = prefs.get("logs_folder").and_then(|v| v.as_str()).map(str::to_string);
         let daily = daily_note::DailyNote::new(vault, logs_folder);
 
@@ -4174,10 +4161,23 @@ pub fn run() {
                         macos::traffic_lights::style(ns_window as *mut objc::runtime::Object);
                 }
             }
+            #[cfg(target_os = "macos")]
+            if matches!(event, tauri::WindowEvent::Focused(true)) {
+                let focus_enabled = window
+                    .app_handle()
+                    .try_state::<FocusState>()
+                    .map(|state| *state.0.lock().unwrap())
+                    .unwrap_or(false);
+                if focus_enabled {
+                    let _ = apply_focus_backdrop(&window.app_handle(), true);
+                }
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 #[cfg(target_os = "macos")]
-                macos::focus_backdrop::hide();
+                if matches!(window.label(), "main") {
+                    macos::focus_backdrop::hide();
+                }
                 let _ = window.hide();
             }
         })

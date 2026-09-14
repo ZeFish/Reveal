@@ -950,8 +950,10 @@
           applyRecipeToFrames(presetRecipe, targets);
         });
         listen("toggle-render-queue-requested", () => (queueOpen = !queueOpen));
-        listen("toggle-shortcuts-requested", () => (shortcutsOpen = !shortcutsOpen));
-        listen("menu-export-requested", () => exportCurrent());
+        listen("menu-export-requested", () => {
+          if (currentMode === "dev" && photoPath && recipe) exportCurrent();
+          else exportSelection();
+        });
         listen("menu-reset-develop-requested", async () => {
           if (recipe) {
             recipe = await invoke("default_recipe");
@@ -1103,12 +1105,15 @@
       pointerInside = inside;
       invoke("set_focus_window_presence", { windowId: "main", inside }).catch(() => {});
     };
-    const onFocus = () => {
-      if (pointerInside) setPresence(true);
+    const onFocus = () => setPresence(true);
+    const onBlur = () => {
+      if (!pointerInside) setPresence(false);
     };
-    const onBlur = () => setPresence(false);
     const onPointerEnter = () => setPresence(true);
-    const onPointerLeave = () => setPresence(false);
+    const onPointerLeave = () => {
+      pointerInside = false;
+      if (!document.hasFocus()) setPresence(false);
+    };
     // pointerenter only fires on a boundary CROSSING — if the mouse was
     // already resting inside the window when this effect (re)subscribed
     // (e.g. switching into dev/fullscreen mode without moving the mouse),
@@ -1643,7 +1648,6 @@
   async function enterFullscreen() {
       const frame = view[sel];
       if (!frame || fullscreen) return;
-      fullscreen = true;
       prepareFullscreenFrame(frame.path);
       if (isTauri) {
         const panel = await WebviewWindow.getByLabel("develop-panel");
@@ -1651,7 +1655,12 @@
         // Lightroom-style borderless fullscreen (fill the display in place, no
         // Spaces animation) — NOT the macOS native setFullscreen.
         await invoke("set_simple_fullscreen", { enabled: true });
+        try {
+          await getCurrentWindow().setFocus();
+        } catch {}
       }
+      fullscreen = true;
+      window.focus();
   }
 
   async function exitFullscreen() {
@@ -1664,8 +1673,12 @@
       fullscreenUrl = null;
       if (isTauri) {
         await invoke("set_simple_fullscreen", { enabled: false });
+        try {
+          await getCurrentWindow().setFocus();
+        } catch {}
         if (currentMode === "dev" && layouts.dev.devPanel) await syncDevPanelWindow();
       }
+      window.focus();
   }
 
   function toggleFullscreen() {
@@ -3334,17 +3347,20 @@
 
 <svelte:window onkeydown={onKey} />
 
-{#if isTauri}
+{#if isTauri && !fullscreen}
   <div
-    class="window-controls"
-    class:fullscreen
+    class="window-controls-zone"
     class:dev={currentMode === "dev"}
-    class:away={(fullscreen || currentMode === "dev") && !pointerInside}
-    aria-label="Window controls"
   >
-    <button class="window-close" onclick={closeMainWindow} aria-label="Close window"></button>
-    <button class="window-minimize" onclick={minimizeMainWindow} aria-label="Minimize window"></button>
-    <button class="window-zoom" onclick={zoomMainWindow} aria-label="Zoom window"></button>
+    <div
+      class="window-controls"
+      class:dev={currentMode === "dev"}
+      aria-label="Window controls"
+    >
+      <button class="window-close" onclick={closeMainWindow} aria-label="Close window"></button>
+      <button class="window-minimize" onclick={minimizeMainWindow} aria-label="Minimize window"></button>
+      <button class="window-zoom" onclick={zoomMainWindow} aria-label="Zoom window"></button>
+    </div>
   </div>
 {/if}
 
@@ -3652,9 +3668,9 @@
           {#if (curDir || folder) && view.length}
             <button
               class="rail-btn"
-              onclick={exportGrid}
+              onclick={exportSelection}
               disabled={!!progress}
-              title="Exporter la sélection ou le dossier (r)"
+              title={selectedPaths.size > 1 ? (selectedPaths.size === view.length ? `Exporter toutes les photos (${view.length}) (r)` : `Exporter les ${selectedPaths.size} photos sélectionnées (r)`) : `Exporter la photo sélectionnée (r)`}
             >
               <Icon name="export" size="12px" />
             </button>
@@ -4207,23 +4223,33 @@
     z-index: 1;
     overflow: hidden;
   }
-  .window-controls {
+  .window-controls-zone {
     position: fixed;
-    top: 15px;
-    left: 18px;
+    top: 0;
+    left: 0;
+    padding: 15px 18px 24px 18px;
     z-index: 100;
+    display: inline-flex;
+  }
+  .window-controls-zone.dev {
+    z-index: 1001;
+  }
+  .window-controls-zone.fullscreen {
+    display: none !important;
+  }
+  .window-controls {
     display: flex;
     gap: 8px;
     transition: opacity var(--duration-standard) var(--ease-soft);
   }
-  .window-controls.dev,
-  .window-controls.fullscreen {
-    z-index: 1001;
-  }
-  /* Auto-hide in Develop/Fullscreen mode when mouse leaves app window */
-  .window-controls.away {
+  /* In develop mode: hide traffic lights unless hovering the corner area */
+  .window-controls.dev {
     opacity: 0;
     pointer-events: none;
+  }
+  .window-controls-zone:hover .window-controls.dev {
+    opacity: 1;
+    pointer-events: auto;
   }
 
   /* Default resting state across all modes: subtle, muted dots */
@@ -4274,6 +4300,14 @@
   .window-controls:has(button:hover) .window-zoom::after {
     content: "+";
   }
+  @keyframes fullscreen-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
   .fullscreen-photo {
     position: fixed;
     inset: 0;
@@ -4281,8 +4315,9 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    background: var(--color-background);
+    background: var(--color-background, #0e0e0e);
     cursor: zoom-out;
+    animation: fullscreen-fade-in 180ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
   }
   .fullscreen-rating {
     position: fixed;
