@@ -17,7 +17,7 @@
   "dependencies": {
     "@stnd/fonts": "^0.5.0",
     "@stnd/styles": "^0.5.2",
-    "@stnd/ui": "^0.5.0",
+    "@stnd/ui": "^0.5.1",
     "@tauri-apps/api": "^2.11.1"
   },
   "devDependencies": {
