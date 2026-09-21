@@ -12,7 +12,7 @@
   let containerEl = $state(null);
 
   // Click toggles RGB curves off in favor of a single luma curve in the
-  // theme's own foreground/background — Francis: "pour l'instant au moins".
+  // theme's own foreground/background — Francis: "for now at least".
   let mono = $state(false);
 
   // Fixed logical resolution (one bin = one column); CSS stretches it to the
@@ -23,6 +23,24 @@
   $effect(() => {
     draw(histogram, mono);
   });
+
+  // Canvas fillStyle parses ANY valid CSS color (hex, oklch(), whatever a
+  // theme happens to use) — cheaper and more robust than hand-parsing the
+  // custom property's raw string ourselves.
+  /** @type {HTMLCanvasElement} */
+  let probe;
+  /** @param {string} colorStr @returns {[number, number, number]} */
+  function resolveRGB(colorStr) {
+    probe ??= document.createElement("canvas");
+    probe.width = 1;
+    probe.height = 1;
+    const pctx = /** @type {CanvasRenderingContext2D} */ (probe.getContext("2d"));
+    pctx.clearRect(0, 0, 1, 1);
+    pctx.fillStyle = colorStr;
+    pctx.fillRect(0, 0, 1, 1);
+    const [r, g, b] = pctx.getImageData(0, 0, 1, 1).data;
+    return [r, g, b];
+  }
 
   /**
    * @param {{r: Uint32Array, g: Uint32Array, b: Uint32Array, luma: Uint32Array} | null} hist
@@ -38,8 +56,7 @@
     if (!hist) return;
 
     // Theme colors, not hardcoded ones — read off the container so each
-    // theme's own --color-red/-green/-blue (and fg/bg for mono) apply. Canvas
-    // fillStyle needs a resolved value, not the custom property itself.
+    // theme's own --color-red/-green/-blue (and fg/bg for mono) apply.
     const style = getComputedStyle(containerEl ?? canvasEl);
     /** @param {string} name @param {string} fallback */
     const read = (name, fallback) => style.getPropertyValue(name).trim() || fallback;
@@ -48,31 +65,42 @@
     const maxOf = (channel) => channel.reduce((m, v) => (v > m ? v : m), 1);
 
     ctx.globalCompositeOperation = "lighter";
-    /** @param {Uint32Array} channel @param {string} color @param {number} max */
-    const plot = (channel, color, max) => {
+    /** @param {Uint32Array} channel @param {[number, number, number]} rgb @param {number} max */
+    const plot = (channel, [r, g, b], max) => {
       const scale = H / Math.log1p(max);
-      ctx.fillStyle = color;
+      /** @param {number} x */
+      const y = (x) => H - Math.log1p(channel[x]) * scale;
+
+      // A flat fill opacity lets pure white/saturated highlights dominate the
+      // eye even when every channel is present — a bottom-heavy gradient (75%
+      // near the baseline, 25% near the peak) keeps the shape legible without
+      // that glare, and the stroke on top still marks exactly where peaks are.
+      const gradient = ctx.createLinearGradient(0, 0, 0, H);
+      gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.25)`);
+      gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0.75)`);
+      ctx.fillStyle = gradient;
       ctx.beginPath();
       ctx.moveTo(0, H);
-      for (let x = 0; x < W; x++) {
-        ctx.lineTo(x, H - Math.log1p(channel[x]) * scale);
-      }
+      for (let x = 0; x < W; x++) ctx.lineTo(x, y(x));
       ctx.lineTo(W - 1, H);
       ctx.closePath();
       ctx.fill();
+
+      ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.9)`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, y(0));
+      for (let x = 1; x < W; x++) ctx.lineTo(x, y(x));
+      ctx.stroke();
     };
 
     if (isMono) {
-      ctx.globalAlpha = 0.85;
-      plot(hist.luma, read("--color-foreground", "#fff"), maxOf(hist.luma));
-      ctx.globalAlpha = 1;
+      plot(hist.luma, resolveRGB(read("--color-foreground", "#fff")), maxOf(hist.luma));
     } else {
       const max = Math.max(maxOf(hist.r), maxOf(hist.g), maxOf(hist.b));
-      ctx.globalAlpha = 0.8;
-      plot(hist.r, read("--color-red", "#ff3232"), max);
-      plot(hist.g, read("--color-green", "#32ff32"), max);
-      plot(hist.b, read("--color-blue", "#326eff"), max);
-      ctx.globalAlpha = 1;
+      plot(hist.r, resolveRGB(read("--color-red", "#ff3232")), max);
+      plot(hist.g, resolveRGB(read("--color-green", "#32ff32")), max);
+      plot(hist.b, resolveRGB(read("--color-blue", "#326eff")), max);
     }
   }
 </script>
@@ -82,7 +110,7 @@
   class:mono
   bind:this={containerEl}
   onclick={() => (mono = !mono)}
-  title={mono ? "Histogramme luminance — clic pour RVB" : "Histogramme RVB — clic pour luminance"}
+  title={mono ? "Luminance histogram — click for RGB" : "RGB histogram — click for luminance"}
   role="button"
   tabindex="0"
   onkeydown={(e) => (e.key === "Enter" || e.key === " ") && (mono = !mono)}
