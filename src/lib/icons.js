@@ -25,14 +25,19 @@ import gridFour from "../../../../packages/icon/icons/ph/grid-four.svg?raw";
 import image from "../../../../packages/icon/icons/ph/image.svg?raw";
 import imageBroken from "../../../../packages/icon/icons/ph/image-broken.svg?raw";
 import lightning from "../../../../packages/icon/icons/ph/lightning.svg?raw";
+import newspaper from "../../../../packages/icon/icons/ph/newspaper.svg?raw";
 import notePencil from "../../../../packages/icon/icons/ph/note-pencil.svg?raw";
 import plus from "../../../../packages/icon/icons/ph/plus.svg?raw";
 import rows from "../../../../packages/icon/icons/ph/rows.svg?raw";
 import sidebarSimple from "../../../../packages/icon/icons/ph/sidebar-simple.svg?raw";
 import slidersHorizontal from "../../../../packages/icon/icons/ph/sliders-horizontal.svg?raw";
+import sparkle from "../../../../packages/icon/icons/ph/sparkle.svg?raw";
 import stackSimple from "../../../../packages/icon/icons/ph/stack-simple.svg?raw";
 import star from "../../../../packages/icon/icons/ph/star.svg?raw";
 import stopCircle from "../../../../packages/icon/icons/ph/stop-circle.svg?raw";
+import subtitles from "../../../../packages/icon/icons/ph/subtitles.svg?raw";
+import textB from "../../../../packages/icon/icons/ph/text-b.svg?raw";
+import textItalic from "../../../../packages/icon/icons/ph/text-italic.svg?raw";
 import userCircle from "../../../../packages/icon/icons/ph/user-circle.svg?raw";
 import warning from "../../../../packages/icon/icons/ph/warning.svg?raw";
 import x from "../../../../packages/icon/icons/ph/x.svg?raw";
@@ -61,14 +66,19 @@ export const icons = {
   image,
   "image-broken": imageBroken,
   lightning,
+  newspaper,
   "note-pencil": notePencil,
   plus,
   rows,
   "sidebar-simple": sidebarSimple,
   "sliders-horizontal": slidersHorizontal,
+  sparkle,
   "stack-simple": stackSimple,
   star,
   "stop-circle": stopCircle,
+  subtitles,
+  "text-b": textB,
+  "text-italic": textItalic,
   "user-circle": userCircle,
   warning,
   x,

@@ -28,6 +28,7 @@
   import Alert from "@stnd/ui/Alert.svelte";
   import { AppController } from "$lib/controllers/AppController.js";
   import { extractGardenUrl } from "$lib/story.js";
+  import { storyTheme, updateStoryTheme, contrastInk, getFontFamilyWithFallback } from "$lib/story-theme.svelte.js";
 
   // ---- shared shapes (plain-JS JSDoc typing — no runtime effect) ----------
   /** A catalogue frame row, as returned by `index_frames` / `list_dir`. */
@@ -427,6 +428,38 @@
   /** @type {string | null} */ let importDir = $state(null); // chosen import folder (null → fall back to root)
   /** @type {Dir[]} */ let dirs = $state([]);
   /** @type {string | null} */ let curDir = $state(null);
+
+  // Folder mood — the SAME story-theme tokens the Editorial/Garden preview
+  // already reads from `<folder>/<folder-name>.md` frontmatter (StoryThemePanel
+  // writes them via story_set_theme), now also driving Reveal's own working
+  // chrome, not just the exported-preview canvas. A wedding folder and a
+  // corporate-shoot folder can carry their own theme note and the app itself
+  // shifts mood while you're in them — reusing the existing per-folder file
+  // rather than inventing a second theming mechanism.
+  $effect(() => {
+    const dir = curDir;
+    if (!isTauri || !dir) {
+      updateStoryTheme({ darkBackground: null, darkAccent: null, fontHeader: null, fontText: null });
+      return;
+    }
+    invoke("story_load_theme", { dir }).then((t) => {
+      if (curDir !== dir) return; // folder changed again before this resolved
+      updateStoryTheme({
+        darkBackground: t.darkBackground,
+        darkAccent: t.darkAccent,
+        fontHeader: t.fontHeader,
+        fontText: t.fontText,
+      });
+    });
+  });
+
+  let appThemed = $derived(!!storyTheme.darkBackground);
+  let appBg = $derived(storyTheme.darkBackground ?? undefined);
+  let appFg = $derived(storyTheme.darkBackground ? contrastInk(storyTheme.darkBackground) : undefined);
+  let appAccent = $derived(storyTheme.darkAccent ?? undefined);
+  let appFontHeader = $derived(storyTheme.fontHeader ? getFontFamilyWithFallback(storyTheme.fontHeader, true) : undefined);
+  let appFontText = $derived(storyTheme.fontText ? getFontFamilyWithFallback(storyTheme.fontText, false) : undefined);
+
   let minRating = $state(0);
   let scanning = $state(false);
   /** @type {Card[]} */ let cards = $state([]);
@@ -3885,7 +3918,16 @@
 {/if}
 
 {#if currentMode === "cull"}
-  <div class="cull" role="presentation">
+  <div
+    class="cull"
+    class:themed={appThemed}
+    role="presentation"
+    style:--color-background={appBg}
+    style:--color-foreground={appFg}
+    style:--color-accent={appAccent}
+    style:--font-header={appFontHeader}
+    style:--font-text={appFontText}
+  >
     <div class="body">
       {#if sidebarVisible}
         <Sidebar
@@ -4404,8 +4446,14 @@
   {@const showDockedPanel = isTauri && recipe && layouts.dev.devPanel && !layouts.dev.detached}
   <div
     class="app"
+    class:themed={appThemed}
     role="presentation"
     style="grid-template-columns: {showDockedPanel ? '1fr 17rem' : (layouts.dev.devPanel && !isTauri) ? '1fr 19.5rem' : '1fr'};"
+    style:--color-background={appBg}
+    style:--color-foreground={appFg}
+    style:--color-accent={appAccent}
+    style:--font-header={appFontHeader}
+    style:--font-text={appFontText}
     onmousedown={startWindowDrag}
   >
     <DevelopView
@@ -4782,6 +4830,22 @@
     position: relative;
     z-index: 1;
     overflow: hidden;
+  }
+  /* Folder mood (.cull and .app, dev mode further below) — re-derives the
+     surface/border scale from the SAME --color-background/--color-foreground
+     the framework's own dark-mode block computes them from
+     (packages/styles/_standard-02-color.scss), just off our per-folder
+     override instead of the theme default. Gated behind :global(.themed) so
+     an unthemed folder's surfaces stay byte-identical to before this existed
+     — only folders with an actual story-theme note shift. */
+  .cull.themed,
+  .app.themed {
+    --color-surface: color-mix(in srgb, var(--color-foreground) 6%, var(--color-background));
+    --color-border: color-mix(in srgb, var(--color-foreground) 14%, transparent);
+    --color-surface-low: color-mix(in srgb, black 3%, var(--color-surface));
+    --color-surface-lowest: color-mix(in srgb, black 7%, var(--color-surface-low));
+    --color-surface-high: color-mix(in srgb, var(--color-foreground) 3%, var(--color-surface));
+    --color-surface-highest: color-mix(in srgb, var(--color-foreground) 3%, var(--color-surface-high));
   }
   .window-controls-zone {
     position: fixed;
