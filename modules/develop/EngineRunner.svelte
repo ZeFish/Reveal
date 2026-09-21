@@ -46,6 +46,19 @@
   /** @type {(v: number | undefined, min: number, max: number) => string} */
   const pct = (v, min, max) => `${((Number(v ?? 0) - min) / (max - min)) * 100}%`;
 
+  // Francis: "le curseur tirage, on pourrait l'inverser?" — print_exposure_ev
+  // runs -3..3 in the engine (more EV = more exposure = a darker print, the
+  // real-darkroom convention), which reads backwards next to every other
+  // slider here. The range is symmetric around 0, so flipping the sign for
+  // display/input is a pure UI mirror — right still ends up "brighter" to
+  // match the rest of the panel, and the stored recipe value (what the
+  // pipeline actually consumes) never changes meaning.
+  const INVERTED_CONTROLS = new Set(["print_exposure_ev"]);
+  /** @param {string} id @param {number | undefined} v */
+  const toDisplay = (id, v) => (INVERTED_CONTROLS.has(id) ? -(v ?? 0) : (v ?? 0));
+  /** @param {string} id @param {number} v */
+  const fromDisplay = (id, v) => (INVERTED_CONTROLS.has(id) ? -v : v);
+
   let isPositive = $derived(
     films.find((f) => f.name === recipe.film)?.film_type === "positive"
   );
@@ -176,19 +189,19 @@
                   min={control.min}
                   max={control.max}
                   step={control.step}
-                  value={recipe[control.id]}
-                  style="--f: {pct(recipe[control.id], control.min, control.max)}"
+                  value={toDisplay(control.id, recipe[control.id])}
+                  style="--f: {pct(toDisplay(control.id, recipe[control.id]), control.min, control.max)}"
                   oninput={(e) => {
-                    recipe[control.id] = parseFloat(e.currentTarget.value);
+                    recipe[control.id] = fromDisplay(control.id, parseFloat(e.currentTarget.value));
                     edited(true); // live proxy
                   }}
                   onchange={(e) => {
-                    recipe[control.id] = parseFloat(e.currentTarget.value);
+                    recipe[control.id] = fromDisplay(control.id, parseFloat(e.currentTarget.value));
                     edited(false); // full render
                   }}
                   ondblclick={() => resetControl(control.id)}
                 />
-                <span class="val mono">{formatVal(control.id, recipe[control.id])}</span>
+                <span class="val mono">{formatVal(control.id, toDisplay(control.id, recipe[control.id]))}</span>
               </div>
 
             {:else if control.kind === "indexed_slider"}
@@ -412,6 +425,7 @@
     color: color-mix(in srgb, var(--color-foreground) 60%, transparent);
     transition: color var(--duration-fast);
     cursor: default;
+    text-align: right;
   }
   .reset-label {
     -webkit-appearance: none;
@@ -422,7 +436,7 @@
     padding: 0;
     outline: none;
     box-shadow: none;
-    text-align: left;
+    text-align: right;
   }
   .reset-label:focus-visible {
     outline: 2px solid var(--color-accent);
@@ -460,7 +474,7 @@
     border-radius: 1px;
     background: linear-gradient(
       to right,
-      var(--color-foreground) var(--f, 50%),
+      color-mix(in srgb, var(--color-foreground) 55%, transparent) var(--f, 50%),
       color-mix(in srgb, var(--color-foreground) 12%, transparent) var(--f, 50%)
     );
   }

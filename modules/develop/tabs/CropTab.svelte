@@ -184,9 +184,10 @@
     border-color: color-mix(in srgb, var(--color-foreground) 25%, transparent);
   }
   .chip.active {
-    background: var(--color-foreground);
-    color: var(--color-background);
-    border-color: var(--color-foreground);
+    background: var(--color-surface-high);
+    color: var(--color-foreground);
+    border-color: var(--color-surface-high);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
   }
 
   .slider-row {
@@ -231,8 +232,9 @@
     border-color: color-mix(in srgb, var(--color-foreground) 25%, transparent);
   }
   .action-btn.active {
-    background: color-mix(in srgb, var(--color-foreground) 15%, transparent);
-    border-color: var(--color-accent);
+    background: var(--color-surface-high);
+    border-color: var(--color-surface-high);
     color: var(--color-foreground);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
   }
 </style>

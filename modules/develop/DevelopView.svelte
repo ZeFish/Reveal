@@ -48,7 +48,17 @@
 
   let flipH = $derived(recipe?.flip_h ? -1 : 1);
   let flipV = $derived(recipe?.flip_v ? -1 : 1);
-  let rotate = $derived(recipe?.crop_angle || 0);
+  // Only true while the Crop tab is actually open — a persisted non-"original"
+  // crop_aspect used to keep this (and the grid overlay it drives) on in
+  // every other tab too, well after the crop itself was chosen.
+  let isCropping = $derived(showCropOverlay);
+  // crop_angle never reaches the Rust render pipeline (no such field on the
+  // engine's Recipe) — it's a live preview aid for straightening WHILE
+  // adjusting in Crop, not a real edit to keep showing afterward. Left
+  // applied unconditionally, the whole rectangular photo stayed visibly
+  // tilted inside its own frame in every other tab (Francis, reproduced
+  // 2026-09-21: "toute la photo qui tourne" after leaving Crop).
+  let rotate = $derived(isCropping ? (recipe?.crop_angle || 0) : 0);
 
   let transformStr = $derived(`rotate(${rotate}deg) scaleX(${flipH}) scaleY(${flipV})`);
 
@@ -73,10 +83,6 @@
   let dragStartPos = { x: 0, y: 0 };
   let startCropBox = { x: 0, y: 0, w: 1, h: 1 };
   let cropBox = $state({ x: 0, y: 0, w: 1, h: 1 });
-
-  let isCropping = $derived(
-    showCropOverlay || (recipe?.crop_aspect && recipe.crop_aspect !== "original")
-  );
 
   $effect(() => {
     const aspect = recipe?.crop_aspect;
@@ -544,6 +550,12 @@
     background: #ffffff;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
     z-index: 2;
+    /* A plain white line disappears over a bright sky/highlight in the
+       photo underneath it — drop-shadow (unlike box-shadow, which follows
+       the div's box, mostly transparent here) hugs the actual rendered
+       border pixels, giving the L-bracket a dark outline that keeps it
+       visible over light AND dark image content. */
+    filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 1px rgba(0, 0, 0, 0.9));
   }
   .crop-handle.handle-nw {
     top: -3px;

@@ -128,7 +128,7 @@ input[type="range"] {
     border-radius: 1px;
     background: linear-gradient(
       to right,
-      var(--color-foreground) var(--f, 50%),
+      color-mix(in srgb, var(--color-foreground) 55%, transparent) var(--f, 50%),
       color-mix(in srgb, var(--color-foreground) 12%, transparent) var(--f, 50%)
     );
   }

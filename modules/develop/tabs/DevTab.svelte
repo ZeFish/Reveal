@@ -127,9 +127,9 @@
     transition: color var(--duration-fast), background var(--duration-fast);
   }
   .seg-btn.on {
-    color: var(--color-background);
-    background: var(--color-foreground);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    color: var(--color-foreground);
+    background: var(--color-surface-high);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
   }
   .seg-btn:not(.on):hover {
     color: var(--color-foreground);
