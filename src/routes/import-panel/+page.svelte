@@ -463,7 +463,7 @@
 
   .progress-fill {
     height: 100%;
-    background: #4A90E2;
+    background: var(--color-accent);
     border-radius: var(--radius-sm);
     transition: width 0.1s linear;
   }

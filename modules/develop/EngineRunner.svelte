@@ -441,8 +441,14 @@
     padding: 1px 0;
     transition: opacity var(--duration-fast);
   }
-  .frow.sub-param {
-    padding-left: 10px;
+  /* Indent the LABEL only (10px margin eaten from its own 90px box, not
+     added on top) — padding-left on the whole row shifted the slider/value
+     columns too, breaking the right-aligned edge every other row lines up
+     on (confirmed live: Coupleurs DIR's sub-rows started 10px right of
+     everything else). */
+  .frow.sub-param .frow-label {
+    width: 80px;
+    margin-left: 10px;
   }
   .frow.disabled {
     opacity: 0.22;

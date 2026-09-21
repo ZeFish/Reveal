@@ -111,6 +111,18 @@ fn read_shell_prefs(app: &tauri::AppHandle) -> ShellPrefs {
 }
 
 pub fn show_import_panel(app: &tauri::AppHandle) {
+    // A walk-away HUD: only worth surfacing when you're not already looking
+    // at the main window (Francis: "le hud devrait s'afficher seulement
+    // quand l'app reveal n'est pas ouverte"). CloseRequested below never
+    // really closes "main" — it just hides it — so `is_visible()` is exactly
+    // the "would this float redundantly over the app you're already in" check.
+    let already_in_app = app
+        .get_webview_window("main")
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false);
+    if already_in_app {
+        return;
+    }
     // Real WKWebView transparency (the panel's CSS `rgba(30,30,30,.82)` +
     // `backdrop-filter` showing the desktop through it, not an opaque
     // backing store) requires macOS's private `drawsBackground` WKWebView
@@ -125,7 +137,12 @@ pub fn show_import_panel(app: &tauri::AppHandle) {
         if let Some(panel) = app_handle.get_webview_window("import-panel") {
             if let Ok(Some(monitor)) = app_handle.primary_monitor() {
                 let scale_factor = monitor.scale_factor();
-                let logical_size = tauri::LogicalSize::new(396.0, 108.0);
+                // Tall enough for the thumbnail row (64px thumb + its own
+                // padding) plus the progress/footer rows beneath it — the
+                // old 108px was sized before those rows existed and was
+                // clipping them (Francis: "sa hauteur devrait être celle
+                // pour fitter avec l'aperçu").
+                let logical_size = tauri::LogicalSize::new(396.0, 148.0);
                 let physical_size = logical_size.to_physical::<u32>(scale_factor);
                 let screen_size = monitor.size();
 
@@ -134,6 +151,7 @@ pub fn show_import_panel(app: &tauri::AppHandle) {
                 let y = screen_size.height.saturating_sub(physical_size.height).saturating_sub(padding);
 
                 let _ = panel.set_position(tauri::PhysicalPosition::new(x, y));
+                let _ = panel.set_size(physical_size);
             }
             let _ = panel.show();
         }
