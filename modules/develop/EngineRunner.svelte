@@ -414,11 +414,14 @@
     cursor: default;
   }
   .reset-label {
+    -webkit-appearance: none;
     appearance: none;
     background: none;
     border: 0;
     border-radius: 0;
     padding: 0;
+    outline: none;
+    box-shadow: none;
     text-align: left;
   }
   .reset-label:focus-visible {
