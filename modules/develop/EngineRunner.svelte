@@ -228,7 +228,7 @@
                   max={control.max}
                   step={control.step}
                   value={toDisplay(control.id, recipe[control.id])}
-                  style="--f: {pct(toDisplay(control.id, recipe[control.id]), control.min, control.max)}"
+                  style="--slider-value: {pct(toDisplay(control.id, recipe[control.id]), control.min, control.max)}"
                   oninput={(e) => {
                     recipe[control.id] = fromDisplay(control.id, parseFloat(e.currentTarget.value));
                     edited(true); // live proxy
@@ -261,7 +261,7 @@
                   max={control.max}
                   step={control.step}
                   value={recipe[control.id]?.[control.index] ?? 0}
-                  style="--f: {pct(recipe[control.id]?.[control.index], control.min, control.max)}"
+                  style="--slider-value: {pct(recipe[control.id]?.[control.index], control.min, control.max)}"
                   oninput={(e) => {
                     if (!Array.isArray(recipe[control.id])) recipe[control.id] = [];
                     recipe[control.id][control.index] = parseFloat(e.currentTarget.value);
@@ -280,32 +280,30 @@
             {:else if control.kind === "select"}
               <div class="frow" class:disabled={isControlDisabled(group, control)}>
                 <span class="din frow-label" title={control.label}>{control.label}</span>
-                <span class="pick">
-                  <select
-                    value={recipe[control.id]}
-                    onchange={(e) => {
-                      recipe[control.id] = e.currentTarget.value;
-                      edited();
-                    }}
-                  >
-                    {#if control.options_type === "films"}
-                      {#each films as f}
-                        <option value={f.name}>{f.label}</option>
-                      {/each}
-                    {:else if control.options_type === "papers"}
-                      {#each papers as p}
-                        <option value={p.name}>{p.label}</option>
-                      {/each}
-                    {:else if control.options_type === "agx_looks"}
-                      <option value="base">Base Contrast (Standard)</option>
-                      <option value="punchy">Punchy (Éclatant)</option>
-                      <option value="golden">Golden (Heure Dorée)</option>
-                      <option value="soft">Soft (Doux)</option>
-                      <option value="bw">Filmic B&W (Noir & Blanc)</option>
-                    {/if}
-                  </select>
-                  <Icon name="caret-down" size="7px" />
-                </span>
+                <select
+                  class="panel-select"
+                  value={recipe[control.id]}
+                  onchange={(e) => {
+                    recipe[control.id] = e.currentTarget.value;
+                    edited();
+                  }}
+                >
+                  {#if control.options_type === "films"}
+                    {#each films as f}
+                      <option value={f.name}>{f.label}</option>
+                    {/each}
+                  {:else if control.options_type === "papers"}
+                    {#each papers as p}
+                      <option value={p.name}>{p.label}</option>
+                    {/each}
+                  {:else if control.options_type === "agx_looks"}
+                    <option value="base">Base Contrast (Standard)</option>
+                    <option value="punchy">Punchy (Éclatant)</option>
+                    <option value="golden">Golden (Heure Dorée)</option>
+                    <option value="soft">Soft (Doux)</option>
+                    <option value="bw">Filmic B&W (Noir & Blanc)</option>
+                  {/if}
+                </select>
               </div>
 
             {:else if control.kind === "lut_stack"}
@@ -315,7 +313,7 @@
                     {control.stage === "pre" ? "Pre-Lut" : "Post-Lut"}
                   </span>
                   <span class="spacer"></span>
-                  <button type="button" class="pill-btn add-lut-btn" onclick={() => addLutLayer(control.stage)}>
+                  <button type="button" class="outline small add-lut-btn" onclick={() => addLutLayer(control.stage)}>
                     + LUT
                   </button>
                 </div>
@@ -324,21 +322,19 @@
                   {#each lutListFor(control.stage) as layer, idx}
                     <div class="lut-layer-card">
                       <div class="frow layer-row">
-                        <span class="pick lut-file-pick">
-                          <select
-                            value={layer.name}
-                            onchange={(e) => setLutFile(control.stage, idx, e.currentTarget.value)}
-                          >
-                            <option value="">(Aucun)</option>
-                            {#each luts as name}
-                              <option value={name}>{name}</option>
-                            {/each}
-                          </select>
-                          <Icon name="caret-down" size="7px" />
-                        </span>
+                        <select
+                          class="panel-select lut-file-pick"
+                          value={layer.name}
+                          onchange={(e) => setLutFile(control.stage, idx, e.currentTarget.value)}
+                        >
+                          <option value="">(Aucun)</option>
+                          {#each luts as name}
+                            <option value={name}>{name}</option>
+                          {/each}
+                        </select>
                         <button
                           type="button"
-                          class="icon-btn remove-lut-btn"
+                          class="ghost icon-btn remove-lut-btn"
                           onclick={() => removeLutLayer(control.stage, idx)}
                           title="Supprimer cette couche LUT"
                         >
@@ -355,7 +351,7 @@
                             max="1"
                             step="0.01"
                             value={layer.opacity}
-                            style="--f: {pct(layer.opacity, 0, 1)}"
+                            style="--slider-value: {pct(layer.opacity, 0, 1)}"
                             oninput={(e) =>
                               updateLutOpacity(control.stage, idx, parseFloat(e.currentTarget.value))}
                           />
@@ -502,80 +498,21 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Slider Styling — Precision Hairline Instrument */
-  :global(input[type="range"]) {
-    -webkit-appearance: none;
-    appearance: none;
+  /* Sizing only from here down — range-slider/select/button identity
+     (fill gradient via --slider-value, thumb, chevron, borders, hover
+     states) all come from Standard's own zero-class rules
+     (_standard-11-forms.scss, _standard-13-components.scss) plus the
+     app-wide pill shape in +layout.svelte. */
+  input[type="range"] {
     flex: 1;
     min-width: 0;
-    height: 12px;
-    background: transparent;
-    margin: 0;
-    cursor: pointer;
   }
-  :global(input[type="range"]::-webkit-slider-runnable-track) {
-    height: 1.5px;
-    border-radius: 1px;
-    background: linear-gradient(
-      to right,
-      color-mix(in srgb, var(--color-foreground) 55%, transparent) var(--f, 50%),
-      color-mix(in srgb, var(--color-foreground) 12%, transparent) var(--f, 50%)
-    );
-  }
-  :global(input[type="range"]::-webkit-slider-thumb) {
-    -webkit-appearance: none;
-    width: 6.5px;
-    height: 6.5px;
-    border-radius: 50%;
-    background: var(--color-foreground);
-    margin-top: -2.5px;
-    border: none;
-    box-shadow: 0 0.5px 2px rgba(0, 0, 0, 0.4);
-    transition: transform var(--duration-instant) ease, background var(--duration-instant) ease;
-  }
-  :global(input[type="range"]:hover::-webkit-slider-thumb) {
-    transform: scale(1.25);
-  }
-  :global(input[type="range"]:active::-webkit-slider-thumb) {
-    background: var(--color-accent, #d6202c);
-  }
-
-  /* Select Pickers */
-  .pick {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    position: relative;
-  }
-  .pick select {
+  .panel-select {
     width: 100%;
     box-sizing: border-box;
     font-family: var(--font-text, sans-serif);
     font-size: 10.5px;
-    background: color-mix(in srgb, var(--color-foreground) 3%, transparent);
-    background-image: none;
-    color: var(--color-foreground, #fff);
-    border: 1px solid color-mix(in srgb, var(--color-foreground) 12%, transparent);
-    border-radius: var(--radius-sm, 3px);
     padding: 2.5px 18px 2.5px 6px;
-    outline: none;
-    box-shadow: none;
-    appearance: none;
-    -webkit-appearance: none;
-    transition: border-color var(--duration-fast), background var(--duration-fast);
-  }
-  .pick select:hover {
-    background: color-mix(in srgb, var(--color-foreground) 6%, transparent);
-    border-color: color-mix(in srgb, var(--color-foreground) 18%, transparent);
-  }
-  .pick select:focus {
-    border-color: var(--color-accent);
-  }
-  .pick :global(.icon) {
-    position: absolute;
-    right: 6px;
-    pointer-events: none;
-    color: color-mix(in srgb, var(--color-foreground) 40%, transparent);
   }
 
   /* LUT Stacks */
@@ -597,23 +534,11 @@
     text-transform: uppercase;
     color: color-mix(in srgb, var(--color-foreground) 45%, transparent);
   }
-  .pill-btn {
-    all: unset;
-    cursor: pointer;
+  .add-lut-btn {
     font-family: var(--font-header, sans-serif);
     font-size: 9px;
     letter-spacing: 0.08em;
-    text-transform: uppercase;
     padding: 1px 6px;
-    border-radius: 999px;
-    border: 1px solid color-mix(in srgb, var(--color-foreground) 12%, transparent);
-    background: color-mix(in srgb, var(--color-foreground) 3%, transparent);
-    color: var(--color-foreground);
-    transition: background 120ms, border-color 120ms;
-  }
-  .pill-btn:hover {
-    background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
-    border-color: var(--color-accent);
   }
 
   .lut-layer-card {
@@ -631,20 +556,9 @@
     gap: 5px;
   }
   .icon-btn {
-    all: unset;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     width: 16px;
     height: 16px;
-    border-radius: 3px;
-    color: color-mix(in srgb, var(--color-foreground) 40%, transparent);
-    transition: color 120ms, background 120ms;
-  }
-  .icon-btn:hover {
-    color: var(--color-foreground);
-    background: color-mix(in srgb, var(--color-foreground) 10%, transparent);
+    padding: 0;
   }
   .opacity-label {
     font-size: 9.5px;
