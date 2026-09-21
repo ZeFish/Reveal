@@ -408,7 +408,7 @@
             <Icon name="palette" size="12px" />
             <span>THÈME</span>
           </div>
-          <div class="inset-card">
+          <div class="inset-card date-card">
             <div class="setting-row">
               <div class="row-meta">
                 <span class="row-label">IDENTITÉ VISUELLE</span>
@@ -844,6 +844,9 @@
     border-radius: var(--radius, 8px);
     overflow: hidden;
   }
+  /* .inset-card's overflow:hidden clips any Dropdown popover open inside it
+     to the card's own bounds — used on any card whose row has one (the date
+     preset picker, the theme picker), not literally date-specific anymore. */
   .date-card { overflow: visible; }
 
   .setting-row {
