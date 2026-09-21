@@ -32,6 +32,21 @@
    * @property {string} ai_api_key
    * @property {string} [ai_model]
    * @property {number} [apple_photos_cache_limit_gib]
+   * @property {string} [default_engine]
+   * @property {string} [app_theme]
+   */
+
+  /** @typedef {Object} EngineInfo
+   * @property {string} id
+   * @property {string} label
+   */
+
+  /** @typedef {Object} GardenAccount
+   * @property {boolean} signed_in
+   * @property {string} [username]
+   * @property {string} [tier]
+   * @property {number} [notes_count]
+   * @property {number} [total_views]
    */
 
   let {
@@ -49,6 +64,8 @@
         ai_api_key: "",
         ai_model: "",
         apple_photos_cache_limit_gib: 4,
+        default_engine: "",
+        app_theme: "reveal",
       })
     ),
     onClose = () => {},
@@ -60,16 +77,41 @@
     onCacheStatus = async () => ({ size_bytes: 0, limit_bytes: 0, in_use_bytes: 0 }),
     /** @type {() => Promise<{removed_bytes: number, remaining_bytes: number, protected_bytes: number}>} */
     onCacheClear = async () => ({ removed_bytes: 0, remaining_bytes: 0, protected_bytes: 0 }),
+    autoImportEnabled = false,
+    /** @type {(enabled: boolean) => Promise<void> | void} */
+    onToggleAutoImport = () => {},
+    /** @type {{name: string, recipe: any}[]} */
+    presets = [],
+    /** @type {string | null} */
+    defaultImportPreset = null,
+    /** @type {(name: string | null) => Promise<void> | void} */
+    onSetDefaultImportPreset = () => {},
+    /** @type {{id: string, label: string}[]} */
+    themes = [],
+    /** @type {(id: string) => Promise<void> | void} */
+    onSelectTheme = () => {},
+    /** @type {() => Promise<{size_bytes: number, photo_count: number, limit_photos: number}>} */
+    onPreviewCacheStatus = async () => ({ size_bytes: 0, photo_count: 0, limit_photos: 0 }),
+    /** @type {() => Promise<{removed_bytes: number}>} */
+    onPreviewCacheClear = async () => ({ removed_bytes: 0 }),
+    /** @type {GardenAccount | null} */
+    gardenAccount = null,
+    /** @type {() => Promise<void>} */
+    onGardenSignOut = async () => {},
+    /** @type {EngineInfo[]} */
+    engines = [],
   } = $props();
 
   const CATEGORIES = [
     { id: "photos", label: "Photos", icon: "image" },
+    { id: "appearance", label: "Apparence", icon: "palette" },
     { id: "locations", label: "Emplacements", icon: "folder-open" },
     { id: "obsidian", label: "Obsidian", icon: "note-pencil" },
-    { id: "apple-photos", label: "Apple Photos", icon: "image", requires: "cacheAvailable" },
+    { id: "cache", label: "Cache & Stockage", icon: "hard-drive" },
+    { id: "garden", label: "Compte Garden", icon: "user-circle" },
     { id: "ai", label: "IA & Automatisation", icon: "lightning" },
   ];
-  const visibleCategories = $derived(CATEGORIES.filter((c) => c.requires !== "cacheAvailable" || cacheAvailable));
+  const visibleCategories = $derived(CATEGORIES);
   const aiCullActive = $derived(preferences.ai_cull_mark_story || preferences.ai_cull_export_desktop);
   let activeCategory = $state("photos");
   // A category that stops being visible (e.g. Apple Photos support changing)
@@ -97,6 +139,64 @@
       loadCacheStatus();
     });
   });
+
+  let devCacheBusy = $state(false);
+  let devCacheConfirm = $state(false);
+  let devCacheError = $state("");
+  let devCacheMessage = $state("");
+  /** @type {{size_bytes: number, photo_count: number, limit_photos: number} | null} */
+  let devCacheStatus = $state(null);
+
+  $effect(() => {
+    untrack(() => loadDevCacheStatus());
+  });
+
+  async function loadDevCacheStatus() {
+    if (devCacheBusy) return;
+    devCacheBusy = true;
+    devCacheError = "";
+    try {
+      devCacheStatus = await onPreviewCacheStatus();
+    } catch (error) {
+      devCacheError = `Could not read preview cache usage: ${String(error)}`;
+    } finally {
+      devCacheBusy = false;
+    }
+  }
+
+  async function clearDevCache() {
+    devCacheConfirm = false;
+    if (devCacheBusy) return;
+    devCacheBusy = true;
+    devCacheError = "";
+    devCacheMessage = "";
+    try {
+      const result = await onPreviewCacheClear();
+      devCacheMessage = `Cleared ${formatBytes(result.removed_bytes)}. RAWs redevelop on next view.`;
+      devCacheStatus = await onPreviewCacheStatus();
+    } catch (error) {
+      devCacheError = devCacheMessage
+        ? `Cache was cleared, but usage could not be refreshed: ${String(error)}`
+        : `Could not clear preview cache: ${String(error)}`;
+    } finally {
+      devCacheBusy = false;
+    }
+  }
+
+  let gardenSigningOut = $state(false);
+  let gardenError = $state("");
+  async function signOutOfGarden() {
+    if (gardenSigningOut) return;
+    gardenSigningOut = true;
+    gardenError = "";
+    try {
+      await onGardenSignOut();
+    } catch (error) {
+      gardenError = `Could not sign out: ${String(error)}`;
+    } finally {
+      gardenSigningOut = false;
+    }
+  }
 
   async function loadCacheStatus() {
     if (cacheBusy) return;
@@ -248,6 +348,84 @@
                 </div>
               </div>
             </div>
+            <div class="setting-row">
+              <div class="row-meta">
+                <span class="row-label">IMPORT AUTOMATIQUE</span>
+                <span class="row-desc">Importe automatiquement les cartes mémoire détectées, sans confirmation.</span>
+              </div>
+              <div class="row-control">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={autoImportEnabled}
+                  onchange={(e) => onToggleAutoImport(/** @type {HTMLInputElement} */ (e.currentTarget).checked)}
+                />
+              </div>
+            </div>
+          </div>
+          <div class="inset-card">
+            <div class="setting-row">
+              <div class="row-meta">
+                <span class="row-label">MOTEUR DE DÉVELOPPEMENT PAR DÉFAUT</span>
+                <span class="row-desc">Moteur appliqué aux photos qui n'ont pas encore de réglages — un import fraîchement arrivé.</span>
+              </div>
+              <div class="row-control">
+                <Dropdown label="Default engine" triggerClass="action-pill-btn" align="end">
+                  {#snippet trigger()}
+                    <span>{engines.find((e) => e.id === preferences.default_engine)?.label ?? "Aucun"}</span>
+                    <Icon name="caret-down" size="10px" />
+                  {/snippet}
+                  <DropdownItem onclick={() => (preferences.default_engine = "")}>Aucun</DropdownItem>
+                  {#each engines as engine}
+                    <DropdownItem onclick={() => (preferences.default_engine = engine.id)}>{engine.label}</DropdownItem>
+                  {/each}
+                </Dropdown>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="row-meta">
+                <span class="row-label">PRESET PAR DÉFAUT À L'IMPORT</span>
+                <span class="row-desc">Appliqué automatiquement à chaque photo qui arrive d'une carte mémoire.</span>
+              </div>
+              <div class="row-control">
+                <Dropdown label="Default import preset" triggerClass="action-pill-btn" align="end">
+                  {#snippet trigger()}
+                    <span>{defaultImportPreset ?? "Aucun"}</span>
+                    <Icon name="caret-down" size="10px" />
+                  {/snippet}
+                  <DropdownItem onclick={() => onSetDefaultImportPreset(null)}>Aucun</DropdownItem>
+                  {#each presets as preset}
+                    <DropdownItem onclick={() => onSetDefaultImportPreset(preset.name)}>{preset.name}</DropdownItem>
+                  {/each}
+                </Dropdown>
+              </div>
+            </div>
+          </div>
+        </div>
+      {:else if activeCategory === "appearance"}
+        <div class="section-group">
+          <div class="section-heading">
+            <Icon name="palette" size="12px" />
+            <span>THÈME</span>
+          </div>
+          <div class="inset-card">
+            <div class="setting-row">
+              <div class="row-meta">
+                <span class="row-label">IDENTITÉ VISUELLE</span>
+                <span class="row-desc">S'applique tout de suite, dans toutes les fenêtres ouvertes — pas besoin d'Enregistrer.</span>
+              </div>
+              <div class="row-control">
+                <Dropdown label="Theme" triggerClass="action-pill-btn" align="end">
+                  {#snippet trigger()}
+                    <span>{themes.find((t) => t.id === preferences.app_theme)?.label ?? "Reveal"}</span>
+                    <Icon name="caret-down" size="10px" />
+                  {/snippet}
+                  {#each themes as theme}
+                    <DropdownItem onclick={() => onSelectTheme(theme.id)}>{theme.label}</DropdownItem>
+                  {/each}
+                </Dropdown>
+              </div>
+            </div>
           </div>
         </div>
       {:else if activeCategory === "locations"}
@@ -375,44 +553,115 @@
             {/if}
           </div>
         </div>
-      {:else if activeCategory === "apple-photos"}
+      {:else if activeCategory === "cache"}
         <div class="section-group">
           <div class="section-heading">
-            <Icon name="image" size="12px" />
-            <span>APPLE PHOTOS CACHE</span>
+            <Icon name="hard-drive" size="12px" />
+            <span>APERÇUS DÉVELOPPÉS</span>
           </div>
           <div class="inset-card">
             <div class="setting-row">
               <div class="row-meta">
-                <label class="row-label" for="photos-cache-limit">CACHE LIMIT (GiB)</label>
-                <span class="row-desc">1–64 GiB, applied when settings are saved. Files in use remain protected.</span>
-              </div>
-              <div class="row-control">
-                <input id="photos-cache-limit" class="mono-input" type="number" min="1" max="64" step="1"
-                  bind:value={preferences.apple_photos_cache_limit_gib} disabled={saving} />
-              </div>
-            </div>
-            <div class="setting-row">
-              <div class="row-meta">
-                <span class="row-label">CACHED WORKING COPIES</span>
-                <span class="row-desc">Clearing is safe for edits, ratings and captions. Originals and previews may need downloading again.</span>
-                <span class="row-desc" role="status" aria-label="Cache usage">
-                  {#if cacheStatus}
-                    {formatBytes(cacheStatus.size_bytes)} used / {formatBytes(cacheStatus.limit_bytes)} saved limit.
-                    {formatBytes(cacheStatus.in_use_bytes)} currently in use.
+                <span class="row-label">CACHE DE RENDU JPEG</span>
+                <span class="row-desc">Copies développées mises en cache pour un affichage instantané dans la grille — indépendant de la source (carte, Apple Photos, disque). Vider force un redéveloppement au prochain affichage.</span>
+                <span class="row-desc" role="status" aria-label="Preview cache usage">
+                  {#if devCacheStatus}
+                    {formatBytes(devCacheStatus.size_bytes)} · {devCacheStatus.photo_count.toLocaleString("en-CA")} / {devCacheStatus.limit_photos.toLocaleString("en-CA")} photos
                   {:else}
-                    {cacheBusy ? "Reading cache usage…" : "Cache usage unavailable."}
+                    {devCacheBusy ? "Lecture de l'usage du cache…" : "Usage du cache indisponible."}
                   {/if}
                 </span>
               </div>
               <div class="row-control cache-actions">
-                <button type="button" class="action-pill-btn" onclick={loadCacheStatus} disabled={cacheBusy || saving}>Refresh usage</button>
-                <button type="button" class="action-pill-btn" onclick={() => { cacheConfirm = true; }} disabled={cacheBusy || saving}>Clear cached copies…</button>
+                <button type="button" class="action-pill-btn" onclick={loadDevCacheStatus} disabled={devCacheBusy}>Rafraîchir</button>
+                <button type="button" class="action-pill-btn" onclick={() => { devCacheConfirm = true; }} disabled={devCacheBusy}>Vider le cache…</button>
               </div>
             </div>
           </div>
-          {#if cacheError}<div role="alert"><Alert class="error">{cacheError}</Alert></div>{/if}
-          {#if cacheMessage}<div role="status"><Alert class="info">{cacheMessage}</Alert></div>{/if}
+          {#if devCacheError}<div role="alert"><Alert class="error">{devCacheError}</Alert></div>{/if}
+          {#if devCacheMessage}<div role="status"><Alert class="info">{devCacheMessage}</Alert></div>{/if}
+        </div>
+        {#if cacheAvailable}
+          <div class="section-group">
+            <div class="section-heading">
+              <Icon name="image" size="12px" />
+              <span>APPLE PHOTOS CACHE</span>
+            </div>
+            <div class="inset-card">
+              <div class="setting-row">
+                <div class="row-meta">
+                  <label class="row-label" for="photos-cache-limit">CACHE LIMIT (GiB)</label>
+                  <span class="row-desc">1–64 GiB, applied when settings are saved. Files in use remain protected.</span>
+                </div>
+                <div class="row-control">
+                  <input id="photos-cache-limit" class="mono-input" type="number" min="1" max="64" step="1"
+                    bind:value={preferences.apple_photos_cache_limit_gib} disabled={saving} />
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="row-meta">
+                  <span class="row-label">CACHED WORKING COPIES</span>
+                  <span class="row-desc">Clearing is safe for edits, ratings and captions. Originals and previews may need downloading again.</span>
+                  <span class="row-desc" role="status" aria-label="Cache usage">
+                    {#if cacheStatus}
+                      {formatBytes(cacheStatus.size_bytes)} used / {formatBytes(cacheStatus.limit_bytes)} saved limit.
+                      {formatBytes(cacheStatus.in_use_bytes)} currently in use.
+                    {:else}
+                      {cacheBusy ? "Reading cache usage…" : "Cache usage unavailable."}
+                    {/if}
+                  </span>
+                </div>
+                <div class="row-control cache-actions">
+                  <button type="button" class="action-pill-btn" onclick={loadCacheStatus} disabled={cacheBusy || saving}>Refresh usage</button>
+                  <button type="button" class="action-pill-btn" onclick={() => { cacheConfirm = true; }} disabled={cacheBusy || saving}>Clear cached copies…</button>
+                </div>
+              </div>
+            </div>
+            {#if cacheError}<div role="alert"><Alert class="error">{cacheError}</Alert></div>{/if}
+            {#if cacheMessage}<div role="status"><Alert class="info">{cacheMessage}</Alert></div>{/if}
+          </div>
+        {/if}
+      {:else if activeCategory === "garden"}
+        <div class="section-group">
+          <div class="section-heading">
+            <Icon name="user-circle" size="12px" />
+            <span>COMPTE GARDEN</span>
+          </div>
+          <div class="inset-card">
+            {#if gardenAccount?.signed_in}
+              <div class="setting-row">
+                <div class="row-meta">
+                  <span class="row-label">{gardenAccount.username ?? "Connecté"}</span>
+                  <span class="row-desc">Palier : {gardenAccount.tier ?? "—"}</span>
+                </div>
+                <div class="row-control">
+                  <button type="button" class="action-pill-btn" onclick={signOutOfGarden} disabled={gardenSigningOut}>
+                    {gardenSigningOut ? "Déconnexion…" : "Se déconnecter"}
+                  </button>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="row-meta">
+                  <span class="row-label">NOTES PUBLIÉES</span>
+                </div>
+                <div class="row-control"><span class="mono">{gardenAccount.notes_count ?? 0}</span></div>
+              </div>
+              <div class="setting-row">
+                <div class="row-meta">
+                  <span class="row-label">VUES TOTALES</span>
+                </div>
+                <div class="row-control"><span class="mono">{(gardenAccount.total_views ?? 0).toLocaleString("en-CA")}</span></div>
+              </div>
+            {:else}
+              <div class="setting-row">
+                <div class="row-meta">
+                  <span class="row-label">NON CONNECTÉ</span>
+                  <span class="row-desc">Connectez-vous depuis la barre latérale (bouton Garden) pour publier vos histoires.</span>
+                </div>
+              </div>
+            {/if}
+          </div>
+          {#if gardenError}<div role="alert"><Alert class="error">{gardenError}</Alert></div>{/if}
         </div>
       {:else if activeCategory === "ai"}
         <div class="section-group">
@@ -490,6 +739,11 @@
   description="Only downloaded working copies and previews will be cleared. Your edits, ratings and captions are safe. Files currently in use will be kept; other originals may need downloading again."
   confirmLabel="Clear cached copies" cancelLabel="Keep cached copies" intent="danger"
   onconfirm={clearCache} oncancel={() => { cacheConfirm = false; }} />
+
+<AlertDialog bind:open={devCacheConfirm} title="Vider le cache des aperçus développés ?"
+  description="Les copies JPEG rendues seront supprimées. Vos réglages, notes et étoiles sont sauvegardés ailleurs et ne sont pas affectés — les photos redéveloppent simplement au prochain affichage."
+  confirmLabel="Vider le cache" cancelLabel="Garder le cache" intent="danger"
+  onconfirm={clearDevCache} oncancel={() => { devCacheConfirm = false; }} />
 
 <style>
   :global(html), :global(body) {

@@ -73,7 +73,7 @@ export default defineConfig(async () => ({
       ],
     },
     watch: {
-      ignored: ["**/src-tauri/**", "**/Sources/**", "**/engine/**", "**/.build/**"],
+      ignored: ["**/src-tauri/**"],
     },
   },
 }));

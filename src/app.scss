@@ -12,7 +12,11 @@
 //   --font-ratio      heading/modular scale (framework default is silver 1.414)
 //   --font-density    line-height (the reveal theme already sets 1.2)
 
-:root[data-theme="reveal"] {
+// Unconditional :root, not [data-theme="reveal"] — these are app-window
+// facts (fixed density, chrome not prose), true no matter which Standard
+// theme supplies the color/font seeds. Same specificity as a themed :root
+// selector still wins the clamp() below since this file imports last.
+:root {
   /* Fixed UI scale. Wins over the fluid clamp() in
      _standard-03-typography.scss by specificity (:root + [data-theme]). */
   --font-text-size: 13px;

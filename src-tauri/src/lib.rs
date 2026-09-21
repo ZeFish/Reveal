@@ -1383,6 +1383,75 @@ fn prune_preview_cache(dir: &std::path::Path, limit: usize) {
     }
 }
 
+/// Rendered-JPEG speed cache, distinct from the Apple Photos cache (which
+/// holds downloaded RAW originals, source-availability, not a render
+/// shortcut). Count-based, not size-based — no configurable limit here,
+/// unlike Apple Photos' GiB setting, so this status has no `limit_bytes`.
+#[derive(serde::Serialize)]
+struct PreviewCacheStatus {
+    size_bytes: u64,
+    photo_count: usize,
+    limit_photos: usize,
+}
+
+#[derive(serde::Serialize)]
+struct PreviewCacheCleanup {
+    removed_bytes: u64,
+}
+
+#[tauri::command]
+async fn developed_preview_cache_status(app: tauri::AppHandle) -> Result<PreviewCacheStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let dir = developed_preview_cache_dir(&app)?;
+        let mut size_bytes = 0u64;
+        let mut keys = std::collections::HashSet::new();
+        if let Ok(read) = std::fs::read_dir(&dir) {
+            for entry in read.filter_map(|e| e.ok()) {
+                let path = entry.path();
+                if path.extension().and_then(|x| x.to_str()) != Some("jpg") {
+                    continue;
+                }
+                if let Ok(meta) = entry.metadata() {
+                    size_bytes += meta.len();
+                }
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    keys.insert(name.split('-').next().unwrap_or(name).to_string());
+                }
+            }
+        }
+        Ok(PreviewCacheStatus {
+            size_bytes,
+            photo_count: keys.len(),
+            limit_photos: PREVIEW_CACHE_PHOTO_LIMIT,
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn developed_preview_cache_clear(app: tauri::AppHandle) -> Result<PreviewCacheCleanup, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let dir = developed_preview_cache_dir(&app)?;
+        let mut removed_bytes = 0u64;
+        if let Ok(read) = std::fs::read_dir(&dir) {
+            for entry in read.filter_map(|e| e.ok()) {
+                let path = entry.path();
+                if path.extension().and_then(|x| x.to_str()) != Some("jpg") {
+                    continue;
+                }
+                if let Ok(meta) = entry.metadata() {
+                    removed_bytes += meta.len();
+                }
+                let _ = std::fs::remove_file(path);
+            }
+        }
+        Ok(PreviewCacheCleanup { removed_bytes })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 fn developed_preview_cache_path(
     app: &tauri::AppHandle,
     path: &std::path::Path,
@@ -4079,6 +4148,8 @@ pub fn run() {
             apple_photos::apple_photos_cancel,
             apple_photos::apple_photos_cache_status,
             apple_photos::apple_photos_cache_clear,
+            developed_preview_cache_status,
+            developed_preview_cache_clear,
             load_shell_prefs,
             load_preferences,
             save_preferences,

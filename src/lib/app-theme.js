@@ -1,0 +1,47 @@
+// Lets Reveal's own chrome wear any Standard theme, not just its dedicated
+// "reveal" identity. Each theme's raw color/font seeds live in
+// packages/themes/<id>/<id>.scss, scoped under [data-theme="<id>"] —
+// packages/styles/_standard-02-color.scss derives every other token
+// (surfaces, on-accent, etc.) generically from those seeds, so loading the
+// file and flipping the attribute is the whole mechanism.
+//
+// Themes are lazy-loaded (import.meta.glob, one dynamic import per pick)
+// rather than all bundled upfront — the 50+ theme files are ~1MB combined,
+// most of which a given user will never look at.
+// "reveal" is excluded here — +layout.svelte imports it statically (it's
+// the always-on default, needed before any preference load resolves), so
+// including it in the lazy set would just bundle a second, unused copy.
+const themeModules = import.meta.glob([
+  "../../../../packages/themes/*/*.scss",
+  "!../../../../packages/themes/__archives__/**",
+  "!../../../../packages/themes/reveal/reveal.scss",
+]);
+
+// Keep only <id>/<id>.scss entries. A theme's own generated/ subfolder and
+// __archives__'s renamed files never match their own dirname, so they fall
+// out here with no hardcoded exclude list to keep in sync.
+/** @type {Record<string, () => Promise<unknown>>} */
+const THEME_LOADERS = {};
+for (const [path, loader] of Object.entries(themeModules)) {
+  const m = path.match(/\/([^/]+)\/\1\.scss$/);
+  if (m) THEME_LOADERS[m[1]] = loader;
+}
+
+export const THEME_IDS = Object.keys(THEME_LOADERS);
+export const DEFAULT_THEME = "reveal";
+
+// "reveal" is imported statically by +layout.svelte already — never re-fetch it.
+const loadedThemes = new Set([DEFAULT_THEME]);
+
+/**
+ * Switches the app's active theme, loading its token file on first use.
+ * @param {string | null | undefined} id
+ */
+export async function applyTheme(id) {
+  const theme = id && THEME_LOADERS[id] ? id : DEFAULT_THEME;
+  if (!loadedThemes.has(theme)) {
+    await THEME_LOADERS[theme]();
+    loadedThemes.add(theme);
+  }
+  document.documentElement.dataset.theme = theme;
+}

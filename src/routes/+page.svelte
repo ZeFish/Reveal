@@ -478,6 +478,8 @@
     ai_api_key: "",
     ai_model: "",
     apple_photos_cache_limit_gib: 4,
+    default_engine: "",
+    app_theme: "reveal",
   });
 
   // Grid geometry + rail filters — the Swift model's columnsPref/cellAspect/
@@ -3450,10 +3452,13 @@
       caption = sidecar?.description ?? "";
       developEngine = sidecar?.engine
         ? sidecar.engine
-        : (sidecar?.engine_settings ? "spektra" : null);
+        : (sidecar?.engine_settings ? "spektra" : (preferences.default_engine || null));
       recipe = {
         ...defaults,
         ...(sidecar?.engine_settings ?? {}),
+        ...(!sidecar?.engine && !sidecar?.engine_settings && preferences.default_engine
+          ? { engine: preferences.default_engine }
+          : {}),
       };
       // A new photo starts its own undo history — edits to the last one
       // don't bleed into this one, and vice versa.
@@ -5209,7 +5214,7 @@
     max-width: calc(100% - (var(--space) * 2));
     max-height: calc(100% - (var(--space) * 2));
     padding: var(--space);
-    background: var(--color-photo-frame);
+    background: var(--color-photo-frame, var(--color-surface-high));
     border-radius: var(--radius);
     box-shadow: var(--shadow-raised);
   }

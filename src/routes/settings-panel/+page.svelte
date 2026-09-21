@@ -10,7 +10,11 @@
   import { invoke } from "@tauri-apps/api/core";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { isTauri } from "$lib/api.js";
+  import { applyTheme } from "$lib/app-theme.js";
+  import gardenThemes from "$lib/garden-themes.generated.json";
   import SettingsPanel from "@modules/settings/SettingsPanel.svelte";
+
+  const themes = gardenThemes.themes.map((t) => ({ id: String(t.id), label: t.label }));
 
   /**
    * @typedef {Object} Preferences
@@ -26,6 +30,8 @@
    * @property {string} ai_api_key
    * @property {string} [ai_model]
    * @property {number} [apple_photos_cache_limit_gib]
+   * @property {string} [default_engine]
+   * @property {string} [app_theme]
    */
 
   /** @type {Preferences} */
@@ -42,8 +48,19 @@
     ai_api_key: "",
     ai_model: "",
     apple_photos_cache_limit_gib: 4,
+    default_engine: "",
+    app_theme: "reveal",
   });
   let cacheAvailable = $state(false);
+  let autoImportEnabled = $state(false);
+  /** @type {{signed_in: boolean, username?: string, tier?: string, notes_count?: number, total_views?: number} | null} */
+  let gardenAccount = $state(null);
+  /** @type {{id: string, label: string}[]} */
+  let engines = $state([]);
+  /** @type {{name: string, recipe: any}[]} */
+  let presets = $state([]);
+  /** @type {string | null} */
+  let defaultImportPreset = $state(null);
 
   function close() {
     if (isTauri) getCurrentWindow().close();
@@ -61,12 +78,64 @@
 
   const cacheStatus = () => invoke("apple_photos_cache_status");
   const cacheClear = () => invoke("apple_photos_cache_clear");
+  const previewCacheStatus = () => invoke("developed_preview_cache_status");
+  const previewCacheClear = () => invoke("developed_preview_cache_clear");
+
+  /** @param {boolean} enabled */
+  async function toggleAutoImport(enabled) {
+    const prefs = /** @type {any} */ (await invoke("set_auto_import", { enabled }));
+    autoImportEnabled = !!prefs.auto_import;
+  }
+
+  async function gardenSignOut() {
+    gardenAccount = /** @type {any} */ (await invoke("garden_sign_out"));
+  }
+
+  /** @param {string} id */
+  async function selectTheme(id) {
+    preferences = { ...preferences, app_theme: id };
+    applyTheme(id); // instant preview in this window
+    try {
+      await invoke("save_preferences", { preferences: { app_theme: id } });
+      emit("app-theme-changed", { app_theme: id }); // sync every other open window
+    } catch (_) {
+      // preferences.app_theme still reflects the pick locally even if the
+      // write failed — next save/reload reconciles from disk.
+    }
+  }
+
+  /** @param {string | null} name */
+  async function setDefaultImportPreset(name) {
+    defaultImportPreset = name; // optimistic; shell-prefs-changed confirms
+    try {
+      await invoke("set_default_import_preset", { name });
+    } catch (_) {
+      // reverted by the next shell-prefs-changed broadcast if this failed
+    }
+  }
 
   onMount(() => {
     if (!isTauri) return;
     invoke("apple_photos_status", { authorize: false })
       .then((result) => { cacheAvailable = /** @type {any} */ (result).supported; })
       .catch(() => {});
+    invoke("load_shell_prefs")
+      .then((result) => {
+        autoImportEnabled = !!(/** @type {any} */ (result).auto_import);
+        defaultImportPreset = /** @type {any} */ (result).default_import_preset ?? null;
+      })
+      .catch(() => {});
+    invoke("garden_refresh").then((info) => (gardenAccount = /** @type {any} */ (info))).catch(() => {});
+    invoke("list_engines").then((list) => (engines = /** @type {any} */ (list))).catch(() => {});
+    invoke("list_presets").then((list) => (presets = /** @type {any} */ (list))).catch(() => {});
+    const unlistenGarden = listen("garden-account-changed", (e) => (gardenAccount = /** @type {any} */ (e.payload)));
+    const unlistenPresetsChanged = listen("presets-changed", () => {
+      invoke("list_presets").then((list) => (presets = /** @type {any} */ (list))).catch(() => {});
+    });
+    const unlistenShellPrefs = listen("shell-prefs-changed", (e) => {
+      autoImportEnabled = !!(/** @type {any} */ (e.payload).auto_import);
+      defaultImportPreset = /** @type {any} */ (e.payload).default_import_preset ?? null;
+    });
 
     const unlisten = listen("main-settings-state", (e) => {
       preferences = { ...preferences, ...(/** @type {any} */ (e.payload).preferences ?? {}) };
@@ -85,6 +154,9 @@
     return () => {
       unlisten.then((fn) => fn());
       unlistenFolder.then((fn) => fn());
+      unlistenGarden.then((fn) => fn());
+      unlistenPresetsChanged.then((fn) => fn());
+      unlistenShellPrefs.then((fn) => fn());
     };
   });
 </script>
@@ -97,4 +169,16 @@
   {cacheAvailable}
   onCacheStatus={cacheStatus}
   onCacheClear={cacheClear}
+  {autoImportEnabled}
+  onToggleAutoImport={toggleAutoImport}
+  onPreviewCacheStatus={previewCacheStatus}
+  onPreviewCacheClear={previewCacheClear}
+  {gardenAccount}
+  onGardenSignOut={gardenSignOut}
+  {engines}
+  {presets}
+  {defaultImportPreset}
+  onSetDefaultImportPreset={setDefaultImportPreset}
+  {themes}
+  onSelectTheme={selectTheme}
 />

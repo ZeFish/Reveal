@@ -1,5 +1,9 @@
 <script>
   import { onMount } from "svelte";
+  import { invoke } from "@tauri-apps/api/core";
+  import { listen } from "@tauri-apps/api/event";
+  import { isTauri } from "$lib/api.js";
+  import { applyTheme } from "$lib/app-theme.js";
   // The Standard visual identity — framework-agnostic pieces of the monorepo.
   import "@stnd/styles/standard.scss";
   // Fonts and theme are not reachable through their packages' exports maps
@@ -18,6 +22,18 @@
 
   onMount(() => {
     document.documentElement.classList.add("js-image-zoom-enabled");
+
+    // Every Reveal window (main, dev-panel, settings-panel, import-panel)
+    // loads this layout — the one place to boot the saved app theme and
+    // stay in sync when another window changes it live.
+    if (!isTauri) return;
+    invoke("load_preferences")
+      .then((prefs) => applyTheme(/** @type {any} */ (prefs)?.app_theme))
+      .catch(() => {});
+    const unlisten = listen("app-theme-changed", (e) => {
+      applyTheme(/** @type {any} */ (e.payload)?.app_theme);
+    });
+    return () => { unlisten.then((fn) => fn()); };
   });
 </script>
 
