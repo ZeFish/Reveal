@@ -4394,7 +4394,7 @@
   <div
     class="app"
     role="presentation"
-    style="grid-template-columns: {showDockedPanel ? '1fr 13.5rem' : (layouts.dev.devPanel && !isTauri) ? '1fr 19.5rem' : '1fr'};"
+    style="grid-template-columns: {showDockedPanel ? '1fr 17rem' : (layouts.dev.devPanel && !isTauri) ? '1fr 19.5rem' : '1fr'};"
     onmousedown={startWindowDrag}
   >
     <DevelopView
