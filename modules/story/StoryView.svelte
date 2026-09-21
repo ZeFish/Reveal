@@ -44,7 +44,10 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    background: var(--theme-bg, var(--color-surface));
+    /* Matches the sidebar nav's own --color-surface-high exactly (not
+       --color-surface, which is one step lighter) — anything less than an
+       exact match reads as a seam once the canvas is large and empty. */
+    background: var(--theme-bg, var(--color-surface-high));
     transition: background 0.3s var(--ease-standard);
   }
 </style>
