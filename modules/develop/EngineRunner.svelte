@@ -443,7 +443,7 @@
      on (confirmed live: Coupleurs DIR's sub-rows started 10px right of
      everything else). */
   .frow.sub-param .frow-label {
-    width: 80px;
+    width: 96px;
     margin-left: 10px;
   }
   .frow.disabled {
@@ -458,7 +458,7 @@
      again — it always clips from the text's logical end, which is the
      right for LTR, i.e. exactly where left-aligned text would want it. */
   .frow-label {
-    width: 90px;
+    width: 106px;
     flex-shrink: 0;
     white-space: nowrap;
     overflow: hidden;
@@ -474,6 +474,13 @@
     text-align: left;
   }
   .reset-label {
+    /* Standard's base :where(button) rule (packages/styles/_standard-13-
+       components.scss) makes every plain <button> display:inline-flex with
+       justify-content:center — flexbox centering its text, entirely separate
+       from (and not fixed by) text-align. That's the actual reason these
+       looked centered: not a text-align bug, a flex one. display:block
+       drops out of that flex context so text-align below can actually work. */
+    display: block;
     -webkit-appearance: none;
     appearance: none;
     background: none;
