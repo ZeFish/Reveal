@@ -518,6 +518,14 @@
     display: flex;
     justify-content: flex-end;
   }
+  /* Standard's base checkbox rule (_standard-11-forms.scss) gives every
+     checkbox/switch a margin-inline-end — meant for a checkbox with a label
+     sitting right next to it. Nothing sits after this one, so that margin
+     was just eating into the gap between the switch and the shared right
+     edge instead. */
+  .toggle-wrap input {
+    margin-inline-end: 0;
+  }
 
   /* Sizing only from here down — range-slider/select/button identity
      (fill gradient via --slider-value, thumb, chevron, borders, hover
