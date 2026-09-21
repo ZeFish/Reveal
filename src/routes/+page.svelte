@@ -586,7 +586,6 @@
   // operation, so the id created when it starts needs to survive to update
   // the same activity entry on each subsequent event.
   /** @type {string | null} */ let publishTaskId = $state(null);
-  /** @type {string | null} */ let importTaskId = $state(null);
   /** @type {string | null} */ let cullTaskId = $state(null);
   const anyActivityRunning = $derived(activityQueue.some((j) => j.status === "running"));
   let queueOpen = $state(false);
@@ -776,13 +775,6 @@
       listen("import-progress", async (e) => {
         const payload = e.payload;
         progress = { verb: "import", ...payload };
-        if (importTaskId) {
-          updateActivity(importTaskId, {
-            current: payload?.dest?.split("/").pop() || "",
-            done: payload?.done,
-            total: payload?.total,
-          });
-        }
         if (payload?.destDir && payload?.dest) {
           const list = importedByFolder.get(payload.destDir) ?? [];
           list.push(payload.dest);
@@ -811,7 +803,6 @@
       listen("import-started", (e) => {
         progress = { verb: "import", done: 0, total: 1, current: "Démarrage..." };
         importedByFolder = new Map();
-        importTaskId = startActivity("import", "Import carte mémoire", 1);
       });
       listen("import-finished", async (e) => {
         progress = null;
@@ -824,14 +815,6 @@
           await openDir(lastFolder);
         }
         setTimeout(() => (appMessage = ""), 4000);
-        if (importTaskId) {
-          updateActivity(importTaskId, {
-            done: 1, total: 1, phase: "Complete", status: "completed",
-            current: stats?.folders?.length ? `${stats.folders.length} dossier(s)` : "",
-          });
-          if (activeActivityId === importTaskId) activeActivityId = null;
-          importTaskId = null;
-        }
         // Walk-away AI cull: one folder at a time (not concurrently, so a
         // multi-day card doesn't hammer the vision API in parallel), only
         // for folders that actually received photos this run.
@@ -846,11 +829,6 @@
         progress = null;
         appMessage = `Échec de l'import : ${e.payload.message}`;
         setTimeout(() => (appMessage = ""), 6000);
-        if (importTaskId) {
-          updateActivity(importTaskId, { phase: String(e.payload.message), status: "failed" });
-          if (activeActivityId === importTaskId) activeActivityId = null;
-          importTaskId = null;
-        }
       });
       // AI cull toasts — reuses the same appMessage pattern as import/export
       // rather than a dedicated chip/modal (the flow is walk-away, no review
