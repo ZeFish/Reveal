@@ -136,9 +136,6 @@
   <!-- STICKY TOP ZONE -->
   <div class="sticky-top">
     <header data-tauri-drag-region>
-      <button class="close" onclick={() => hidePanel()} title="Fermer le panneau (⇧D)">
-        <Icon name="x" size="11px" />
-      </button>
       <span class="din title">{picked ?? "—"}</span>
       <button
         class="header-util-btn"
@@ -157,6 +154,9 @@
         {#if showClipping}
           <span class="clip-indicator"></span>
         {/if}
+      </button>
+      <button class="close" onclick={() => hidePanel()} title="Fermer le panneau (⇧D)">
+        <Icon name="x" size="11px" />
       </button>
     </header>
 
@@ -345,16 +345,19 @@
     background: color-mix(in srgb, var(--color-foreground) 3.5%, transparent);
     border-radius: var(--radius-sm, 4px);
   }
-  /* Height is 1rlh, not padding — the same vertical-rhythm unit every other
-     compact control in this dev panel now shares (the segmented engine
-     switch's .seg-btn, in DevTab.svelte), so a row of icon buttons and a
-     row of text pills read as the same size instead of each accumulating
-     its own padding-derived height. */
+  /* Height is 1 line of the app's own text (font-size × line-height), not
+     padding — the same vertical-rhythm unit every other compact control in
+     this dev panel now shares (the segmented engine switch's .seg-btn, in
+     DevTab.svelte), so a row of icon buttons and a row of text pills read
+     as the same size instead of each accumulating its own padding-derived
+     height. calc() off the app's own tokens rather than the 1rlh unit —
+     this WebView doesn't appear to support rlh, so it silently fell back
+     to intrinsic content sizing (~26px) instead of the intended ~16px. */
   .tab-btn {
     all: unset;
     cursor: pointer;
     flex: 1;
-    height: 1rlh;
+    height: calc(var(--font-text-size) * var(--line-height));
     display: inline-flex;
     align-items: center;
     justify-content: center;

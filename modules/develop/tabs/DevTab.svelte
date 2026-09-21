@@ -165,15 +165,19 @@
     overflow: hidden;
     padding: 1px;
   }
-  /* Height is 1rlh, not vertical padding — the same vertical-rhythm unit
-     the tab bar's own icon buttons use (DevelopPanel.svelte's .tab-btn), so
-     every compact control in this dev panel shares one height instead of
-     each accumulating its own padding-derived one. Horizontal padding stays
-     — that's letter-spacing room, not a height contributor. */
+  /* Height is 1 line of the app's own text (font-size × line-height), not
+     vertical padding — the same vertical-rhythm unit the tab bar's own icon
+     buttons use (DevelopPanel.svelte's .tab-btn), so every compact control
+     in this dev panel shares one height instead of each accumulating its
+     own padding-derived one. calc() off the app's own tokens rather than
+     the 1rlh unit — this WebView doesn't appear to support rlh, so it
+     silently fell back to intrinsic content sizing (~26px) instead of the
+     intended ~16px. Horizontal padding stays — that's letter-spacing room,
+     not a height contributor. */
   .seg-btn {
     all: unset;
     cursor: pointer;
-    height: 1rlh;
+    height: calc(var(--font-text-size) * var(--line-height));
     display: inline-flex;
     align-items: center;
     font-family: var(--font-header, sans-serif);
