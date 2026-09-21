@@ -102,6 +102,35 @@ pub struct Recipe {
     #[serde(default)]
     pub density_gamma: f32,
 
+    /// Pre-flash: a small fogging exposure onto the print before the main
+    /// exposure, lifting shadow density to compress contrast — a classic
+    /// darkroom technique for a high-contrast negative. 0 = off
+    /// (spektrafilm-rs's own default). Precomputed once at pipeline
+    /// construction (`compute_preflash_raw`), not re-derived on a cache hit —
+    /// same trap as the Y/M filters and development_time before it, so this
+    /// must be part of `pipeline_for`'s rebuild key in spektra.rs.
+    #[serde(default)]
+    pub preflash_exposure: f32,
+    #[serde(default)]
+    pub preflash_y_shift: f32,
+    #[serde(default)]
+    pub preflash_m_shift: f32,
+
+    /// DIR-couplers: inter-layer dye color interaction during development —
+    /// real film chemistry, not a stylistic filter. spektrafilm-rs defaults
+    /// this ON; `dir_couplers_active` is the opt-OUT, everything else here
+    /// only matters while it's on.
+    #[serde(default = "default_true")]
+    pub dir_couplers_active: bool,
+    #[serde(default = "default_dir_couplers_amount")]
+    pub dir_couplers_amount: f32,
+    #[serde(default = "default_dir_couplers_diffusion_size")]
+    pub dir_couplers_diffusion_size: f32,
+    #[serde(default = "default_dir_couplers_diffusion_tail")]
+    pub dir_couplers_diffusion_tail: f32,
+    #[serde(default = "default_dir_couplers_tail_weight")]
+    pub dir_couplers_tail_weight: f32,
+
     // Tonal controls (Chantier 5)
     pub whites: f32,
     pub highlights: f32,
@@ -217,6 +246,24 @@ fn default_grain_roughness() -> f32 {
 fn default_highlight_desat() -> f32 {
     0.4
 }
+fn default_true() -> bool {
+    true
+}
+// spektrafilm-rs's own DirCouplersParams::default() values — kept identical
+// so a fresh recipe (before anyone touches these sliders) renders exactly
+// as it always has, DIR-couplers included, since Reveal never zeroed it out.
+fn default_dir_couplers_amount() -> f32 {
+    1.0
+}
+fn default_dir_couplers_diffusion_size() -> f32 {
+    20.0
+}
+fn default_dir_couplers_diffusion_tail() -> f32 {
+    200.0
+}
+fn default_dir_couplers_tail_weight() -> f32 {
+    0.06
+}
 
 /// One layer of a LUT stack: a `.cube` file (by name, resolved against the
 /// user's LUTs folder) blended in at `opacity` (0 = no effect, 1 = full).
@@ -254,6 +301,14 @@ impl Default for Recipe {
             glare_blur: default_glare_blur(),
             development_time_min: 0.0,
             density_gamma: 0.0,
+            preflash_exposure: 0.0,
+            preflash_y_shift: 0.0,
+            preflash_m_shift: 0.0,
+            dir_couplers_active: true,
+            dir_couplers_amount: default_dir_couplers_amount(),
+            dir_couplers_diffusion_size: default_dir_couplers_diffusion_size(),
+            dir_couplers_diffusion_tail: default_dir_couplers_diffusion_tail(),
+            dir_couplers_tail_weight: default_dir_couplers_tail_weight(),
             whites: 0.0,
             highlights: 0.0,
             midtones: 0.0,
@@ -703,6 +758,16 @@ fn runtime_params(recipe: &Recipe) -> RuntimeParams {
 
     p.film_render.density_curve_gamma = 1.0 + recipe.density_gamma;
     p.print_render.density_curve_gamma = 1.0 + recipe.density_gamma;
+
+    p.enlarger.preflash_exposure = recipe.preflash_exposure;
+    p.enlarger.preflash_y_filter_shift = recipe.preflash_y_shift;
+    p.enlarger.preflash_m_filter_shift = recipe.preflash_m_shift;
+
+    p.film_render.dir_couplers.active = recipe.dir_couplers_active;
+    p.film_render.dir_couplers.amount = f64::from(recipe.dir_couplers_amount);
+    p.film_render.dir_couplers.diffusion_size_um = f64::from(recipe.dir_couplers_diffusion_size);
+    p.film_render.dir_couplers.diffusion_tail_um = f64::from(recipe.dir_couplers_diffusion_tail);
+    p.film_render.dir_couplers.diffusion_tail_weight = f64::from(recipe.dir_couplers_tail_weight);
 
     p
 }

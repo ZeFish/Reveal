@@ -86,7 +86,34 @@
    * @param {string} id
    */
   function isSubParam(id) {
-    return id === "glare_percent" || id === "glare_roughness" || id === "glare_blur";
+    return (
+      id === "glare_percent" || id === "glare_roughness" || id === "glare_blur" ||
+      id === "preflash_y_shift" || id === "preflash_m_shift" ||
+      id === "dir_couplers_amount" || id === "dir_couplers_diffusion_size" ||
+      id === "dir_couplers_diffusion_tail" || id === "dir_couplers_tail_weight"
+    );
+  }
+
+  /** A sub-param row is disabled when ITS OWN parent toggle is off — three
+   * independent families share the row-graying mechanism (glare needs
+   * recipe.glare, preflash's Y/M shifts need an actual preflash exposure,
+   * DIR-coupler tuning needs the coupler itself active).
+   * @param {string} id
+   */
+  function isSubParamDisabled(id) {
+    if (id === "glare_percent" || id === "glare_roughness" || id === "glare_blur") {
+      return !recipe.glare;
+    }
+    if (id === "preflash_y_shift" || id === "preflash_m_shift") {
+      return !(recipe.preflash_exposure > 0);
+    }
+    if (
+      id === "dir_couplers_amount" || id === "dir_couplers_diffusion_size" ||
+      id === "dir_couplers_diffusion_tail" || id === "dir_couplers_tail_weight"
+    ) {
+      return !recipe.dir_couplers_active;
+    }
+    return false;
   }
 
   /**
@@ -124,7 +151,10 @@
       id === "highlight_desat" ||
       id === "glare_percent" ||
       id === "glare_roughness" ||
-      id === "glare_blur"
+      id === "glare_blur" ||
+      id === "preflash_exposure" ||
+      id === "dir_couplers_amount" ||
+      id === "dir_couplers_tail_weight"
     ) {
       return v.toFixed(2);
     }
@@ -179,21 +209,21 @@
               <div
                 class="frow"
                 class:sub-param={isSubParam(control.id)}
-                class:disabled={isControlDisabled(group, control) || (isSubParam(control.id) && !recipe.glare)}
+                class:disabled={isControlDisabled(group, control) || isSubParamDisabled(control.id)}
               >
                 <button
                   type="button"
                   class="din frow-label reset-label"
                   aria-label={`Reset ${control.label} to default`}
                   title={`${control.label} — double-click or press Enter/Space to reset`}
-                  disabled={isControlDisabled(group, control) || (isSubParam(control.id) && !recipe.glare)}
+                  disabled={isControlDisabled(group, control) || isSubParamDisabled(control.id)}
                   onclick={(event) => { if (event.detail === 0) resetControl(control.id); }}
                   ondblclick={() => resetControl(control.id)}
                 >{control.label}</button>
                 <input
                   type="range"
                   aria-label={control.label}
-                  disabled={isControlDisabled(group, control) || (isSubParam(control.id) && !recipe.glare)}
+                  disabled={isControlDisabled(group, control) || isSubParamDisabled(control.id)}
                   min={control.min}
                   max={control.max}
                   step={control.step}

@@ -18,7 +18,8 @@ use crate::{runtime_params, Recipe};
 pub struct SpektraEngine {
     data_dir: PathBuf,
     backend: Box<dyn ComputeBackend>,
-    template: Mutex<Option<((String, String, u32, u32, u32, u32), Pipeline)>>,
+    #[allow(clippy::type_complexity)]
+    template: Mutex<Option<((String, String, u32, u32, u32, u32, u32, u32, u32), Pipeline)>>,
 }
 
 impl SpektraEngine {
@@ -48,6 +49,13 @@ impl SpektraEngine {
             // re-resolve it, so a stale cache would silently ignore the
             // slider. Must be part of the rebuild key.
             recipe.development_time_min.to_bits(),
+            // Same trap: `preflash_raw` is computed once by
+            // `compute_preflash_raw` inside `new_with_spectral` and just
+            // carried forward untouched by `with_params` on a cache hit —
+            // all three preflash sliders need to force a rebuild.
+            recipe.preflash_exposure.to_bits(),
+            recipe.preflash_y_shift.to_bits(),
+            recipe.preflash_m_shift.to_bits(),
         );
 
         let mut guard = self.template.lock().unwrap();
@@ -169,6 +177,40 @@ impl RenderEngine for SpektraEngine {
                 ],
             },
             ControlGroup {
+                // A small fogging exposure onto the print before the main one,
+                // lifting shadow density to compress contrast — a classic
+                // darkroom technique for printing a high-contrast negative.
+                // Off (0 exposure) by default; the Y/M shifts only matter once
+                // it's on.
+                label: "Pré-flashage".to_string(),
+                controls: vec![
+                    EngineControl::Slider {
+                        id: "preflash_exposure".to_string(),
+                        label: "Exposition".to_string(),
+                        min: 0.0,
+                        max: 0.5,
+                        step: 0.01,
+                        preset: false,
+                    },
+                    EngineControl::Slider {
+                        id: "preflash_y_shift".to_string(),
+                        label: "Filtre Y".to_string(),
+                        min: -50.0,
+                        max: 50.0,
+                        step: 1.0,
+                        preset: false,
+                    },
+                    EngineControl::Slider {
+                        id: "preflash_m_shift".to_string(),
+                        label: "Filtre M".to_string(),
+                        min: -50.0,
+                        max: 50.0,
+                        step: 1.0,
+                        preset: false,
+                    },
+                ],
+            },
+            ControlGroup {
                 label: "Développement".to_string(),
                 controls: vec![
                     // 0 = auto (profile's floor-middle family entry). The
@@ -188,6 +230,45 @@ impl RenderEngine for SpektraEngine {
                         label: "Contraste".to_string(),
                         min: -0.5,
                         max: 0.5,
+                        step: 0.01,
+                        preset: false,
+                    },
+                    // Inter-layer dye interaction during development — real
+                    // film chemistry, on by default (spektrafilm-rs's own
+                    // default). The three tuning params only matter while active.
+                    EngineControl::Toggle {
+                        id: "dir_couplers_active".to_string(),
+                        label: "Coupleurs DIR".to_string(),
+                    },
+                    EngineControl::Slider {
+                        id: "dir_couplers_amount".to_string(),
+                        label: "Intensité".to_string(),
+                        min: 0.0,
+                        max: 2.0,
+                        step: 0.05,
+                        preset: false,
+                    },
+                    EngineControl::Slider {
+                        id: "dir_couplers_diffusion_size".to_string(),
+                        label: "Diffusion (µm)".to_string(),
+                        min: 0.0,
+                        max: 100.0,
+                        step: 1.0,
+                        preset: false,
+                    },
+                    EngineControl::Slider {
+                        id: "dir_couplers_diffusion_tail".to_string(),
+                        label: "Traîne (µm)".to_string(),
+                        min: 0.0,
+                        max: 400.0,
+                        step: 5.0,
+                        preset: false,
+                    },
+                    EngineControl::Slider {
+                        id: "dir_couplers_tail_weight".to_string(),
+                        label: "Poids traîne".to_string(),
+                        min: 0.0,
+                        max: 1.0,
                         step: 0.01,
                         preset: false,
                     },
