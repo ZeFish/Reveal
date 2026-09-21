@@ -986,6 +986,10 @@
     height: 100%;
     object-fit: cover;
     display: block;
+    /* WebKit doesn't reliably clip an object-fit img to an ancestor's
+       overflow:hidden + border-radius — its square corners can still peek
+       past the rounded mask. Rounding the img itself too closes the gap. */
+    border-radius: inherit;
     pointer-events: none;
     -webkit-user-drag: none;
     user-select: none;
