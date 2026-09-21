@@ -451,12 +451,17 @@
     pointer-events: none;
     filter: grayscale(1);
   }
+  /* No overflow:hidden/ellipsis here on purpose — text-overflow always
+     truncates from the text's logical end (the right, for this LTR right-
+     aligned label), never respecting text-align, so a label longer than the
+     90px box got clipped from the WRONG side and visually crept past the
+     other labels' shared right edge instead of lining up with them. Letting
+     it overflow left instead (nothing else occupies that space) keeps every
+     label's right edge — where it meets the slider — pixel-identical. */
   .frow-label {
     width: 90px;
     flex-shrink: 0;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
     font-family: var(--font-header, sans-serif);
     font-size: 10px;
     font-weight: 500;
