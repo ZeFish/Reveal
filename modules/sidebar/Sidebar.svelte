@@ -15,7 +15,7 @@
   import Icon from "$lib/components/Icon.svelte";
   import StoryNotesList from "./StoryNotesList.svelte";
   import gardenThemes from "$lib/garden-themes.generated.json";
-  import { storyTheme, updateStoryTheme } from "$lib/story-theme.svelte.js";
+  import { storyTheme, updateStoryTheme, DEFAULT_DARK_BG, DEFAULT_ACCENT } from "$lib/story-theme.svelte.js";
   import { APPLE_PHOTOS_ROOT, photoCollectionAncestors } from "./applePhotosTree.js";
 
   let {
@@ -113,12 +113,14 @@
 
   const signedIn = $derived(!!garden?.signed_in);
 
-  // Folder theme — a plain dropdown (the richer specimen-card/curated-chips/
-  // customize-panel picker, StoryThemePanel.svelte, was tried and dropped —
-  // Francis: "the theme selector I hate it. Replace with a simple
-  // dropdown."). Reads/writes the same storyTheme reactive singleton
-  // +page.svelte's own curDir effect populates, so this and the app-wide
-  // chrome never disagree about which theme is active.
+  // Folder theme — a plain dropdown (the richer specimen-card/curated-chips
+  // picker, StoryThemePanel.svelte, was tried and dropped — Francis: "the
+  // theme selector I hate it. Replace with a simple dropdown."), plus a
+  // fold-out for the fine-tune override Francis asked back afterward:
+  // "the panel should offer the ability to customize the style tokens like
+  // fonts and color." Both read/write the same storyTheme reactive
+  // singleton +page.svelte's own curDir effect populates, so this and the
+  // app-wide chrome never disagree about which theme is active.
   const THEMES = gardenThemes.themes;
   const currentThemeId = $derived.by(() => {
     const match = THEMES.find(
@@ -128,28 +130,59 @@
     );
     return match ? String(match.id) : "";
   });
+  let customizeOpen = $state(false);
+  let previewBg = $derived(storyTheme.darkBackground ?? DEFAULT_DARK_BG);
+  let previewAccent = $derived(storyTheme.darkAccent ?? DEFAULT_ACCENT);
+
+  const FONTS = [
+    { label: "System", value: null },
+    { label: "Söhne", value: "Sohne" },
+    { label: "Avenir Next", value: "Avenir Next" },
+    { label: "Lexend", value: "Lexend" },
+    { label: "Instrument Sans", value: "Instrument Sans" },
+    { label: "Baskerville", value: "Baskerville" },
+    { label: "Bookerly", value: "Bookerly" },
+    { label: "Adobe Jenson Pro", value: "Adobe Jenson Pro" },
+    { label: "New Burns", value: "New Burns" },
+    { label: "National Park", value: "National Park" },
+    { label: "Wonder", value: "Wonder" },
+  ];
+
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let themeSaveTimer = null;
+  /** @param {{darkBackground?: string|null, darkAccent?: string|null, fontHeader?: string|null, fontText?: string|null}} partial */
+  function applyTheme(partial) {
+    updateStoryTheme(partial);
+    if (!curDir) return;
+    if (themeSaveTimer) clearTimeout(themeSaveTimer);
+    themeSaveTimer = setTimeout(async () => {
+      const dark_bg = storyTheme.darkBackground;
+      await invoke("story_set_theme", {
+        dir: curDir,
+        tokens: {
+          darkBackground: dark_bg,
+          darkForeground: null,
+          lightBackground: null,
+          lightForeground: null,
+          darkAccent: storyTheme.darkAccent,
+          lightAccent: null,
+          fontHeader: storyTheme.fontHeader,
+          fontText: storyTheme.fontText,
+        },
+      });
+    }, 250);
+  }
 
   /** @param {Event & { currentTarget: HTMLSelectElement }} e */
-  async function onThemePick(e) {
+  function onThemePick(e) {
     const id = e.currentTarget.value;
     const t = id ? THEMES.find((theme) => String(theme.id) === id) : null;
-    const tokens = {
+    applyTheme({
       darkBackground: t?.darkBackground ?? null,
-      darkForeground: null,
-      lightBackground: null,
-      lightForeground: null,
       darkAccent: t?.darkAccent ?? null,
-      lightAccent: null,
       fontHeader: t?.fontHeader ?? null,
       fontText: t?.fontText ?? null,
-    };
-    updateStoryTheme({
-      darkBackground: tokens.darkBackground,
-      darkAccent: tokens.darkAccent,
-      fontHeader: tokens.fontHeader,
-      fontText: tokens.fontText,
     });
-    if (curDir) await invoke("story_set_theme", { dir: curDir, tokens });
   }
 
   async function submitKey() {
@@ -941,6 +974,100 @@
           <Icon name="caret-down" size="9px" class="select-caret" />
         </div>
       </div>
+
+      <div class="customize-block">
+        <button
+          type="button"
+          class="customize-toggle"
+          onclick={() => (customizeOpen = !customizeOpen)}
+          aria-expanded={customizeOpen}
+          disabled={!curDir}
+        >
+          <span>Customize colors & fonts</span>
+          <span class="toggle-arrow" class:open={customizeOpen}>
+            <Icon name="caret-right" size="9px" />
+          </span>
+        </button>
+        {#if customizeOpen}
+          <div class="customize-fields">
+            <div class="field-row">
+              <span class="field-label">BACKGROUND</span>
+              <div class="color-picker-badge">
+                <label class="swatch-button" style="background: {previewBg};">
+                  <input
+                    type="color"
+                    value={previewBg}
+                    oninput={(e) => applyTheme({ darkBackground: e.currentTarget.value })}
+                  />
+                </label>
+                <span class="hex-text">{previewBg.toUpperCase()}</span>
+                {#if storyTheme.darkBackground}
+                  <button
+                    type="button"
+                    class="field-reset"
+                    title="Reset to default background"
+                    onclick={() => applyTheme({ darkBackground: null })}
+                  >
+                    <Icon name="x" size="10px" />
+                  </button>
+                {/if}
+              </div>
+            </div>
+            <div class="field-row">
+              <span class="field-label">ACCENT</span>
+              <div class="color-picker-badge">
+                <label class="swatch-button" style="background: {previewAccent};">
+                  <input
+                    type="color"
+                    value={previewAccent}
+                    oninput={(e) => applyTheme({ darkAccent: e.currentTarget.value })}
+                  />
+                </label>
+                <span class="hex-text">{previewAccent.toUpperCase()}</span>
+                {#if storyTheme.darkAccent}
+                  <button
+                    type="button"
+                    class="field-reset"
+                    title="Reset to default accent"
+                    onclick={() => applyTheme({ darkAccent: null })}
+                  >
+                    <Icon name="x" size="10px" />
+                  </button>
+                {/if}
+              </div>
+            </div>
+            <div class="field-row">
+              <span class="field-label">HEADERS</span>
+              <div class="custom-select-wrap">
+                <select
+                  value={storyTheme.fontHeader ?? ""}
+                  onchange={(e) => applyTheme({ fontHeader: e.currentTarget.value || null })}
+                >
+                  {#each FONTS as f}
+                    <option value={f.value ?? ""}>{f.label}</option>
+                  {/each}
+                </select>
+                <Icon name="caret-down" size="9px" class="select-caret" />
+              </div>
+            </div>
+            <div class="field-row">
+              <span class="field-label">BODY</span>
+              <div class="custom-select-wrap">
+                <select
+                  value={storyTheme.fontText ?? ""}
+                  onchange={(e) => applyTheme({ fontText: e.currentTarget.value || null })}
+                >
+                  {#each FONTS as f}
+                    <option value={f.value ?? ""}>{f.label}</option>
+                  {/each}
+                </select>
+                <Icon name="caret-down" size="9px" class="select-caret" />
+              </div>
+            </div>
+          </div>
+        {/if}
+      </div>
+
       <StoryNotesList
         pinned={pinnedStories}
         recent={recentStories}
@@ -1717,7 +1844,13 @@
     flex: 1;
     max-width: 60%;
   }
-  .theme-select-wrap select {
+  .custom-select-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+  }
+  .theme-select-wrap select,
+  .custom-select-wrap select {
     appearance: none;
     -webkit-appearance: none;
     width: 100%;
@@ -1732,18 +1865,121 @@
     font-family: inherit;
     transition: border-color 0.15s ease;
   }
-  .theme-select-wrap select:hover {
+  .custom-select-wrap select {
+    width: 120px;
+  }
+  .theme-select-wrap select:hover,
+  .custom-select-wrap select:hover {
     border-color: rgba(255, 255, 255, 0.25);
   }
   .theme-select-wrap select:disabled {
     opacity: 0.4;
     cursor: default;
   }
-  :global(.theme-select-wrap .select-caret) {
+  :global(.theme-select-wrap .select-caret),
+  :global(.custom-select-wrap .select-caret) {
     position: absolute;
     right: 7px;
     pointer-events: none;
     opacity: 0.6;
+  }
+
+  /* Fine-tune override toggle — Francis: "the panel should offer the
+     ability to customize the style tokens like fonts and color." Kept
+     collapsed by default so the plain dropdown stays the primary control. */
+  .customize-block {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .customize-toggle {
+    all: unset;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    opacity: 0.7;
+    transition: opacity 0.15s ease;
+    padding: 2px 0;
+  }
+  .customize-toggle:hover {
+    opacity: 1;
+  }
+  .customize-toggle:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+  .toggle-arrow {
+    margin-left: auto;
+    transition: transform 0.18s ease;
+  }
+  .toggle-arrow.open {
+    transform: rotate(90deg);
+  }
+  .customize-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 6px 0;
+  }
+  .field-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .field-label {
+    font-size: 9.5px;
+    letter-spacing: 0.08em;
+    opacity: 0.6;
+    font-weight: 500;
+  }
+  .color-picker-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--color-surface-high, #222);
+    border: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
+    border-radius: var(--radius-sm, 6px);
+    padding: 2px 6px 2px 3px;
+  }
+  .swatch-button {
+    position: relative;
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    cursor: pointer;
+    overflow: hidden;
+    display: inline-block;
+  }
+  .swatch-button input[type="color"] {
+    position: absolute;
+    top: -20px;
+    left: -20px;
+    width: 60px;
+    height: 60px;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .hex-text {
+    font-family: var(--font-monospace, monospace);
+    font-size: 9.5px;
+    opacity: 0.85;
+  }
+  .field-reset {
+    all: unset;
+    cursor: pointer;
+    opacity: 0.5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1px;
+  }
+  .field-reset:hover {
+    opacity: 1;
+    color: var(--color-accent);
   }
   .theme-inner {
     display: flex;
