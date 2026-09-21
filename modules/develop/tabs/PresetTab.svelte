@@ -317,7 +317,7 @@
   }
   .capsule.fill {
     color: var(--color-background);
-    background: var(--color-foreground);
+    background: var(--color-accent);
   }
   .capsule:disabled {
     opacity: 0.25;

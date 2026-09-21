@@ -257,7 +257,7 @@
   }
   .capsule.fill {
     color: var(--color-background);
-    background: var(--color-foreground);
+    background: var(--color-accent);
   }
   .capsule.secondary {
     color: var(--color-foreground);
