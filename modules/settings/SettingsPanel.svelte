@@ -333,7 +333,7 @@
                     placeholder="%Y/%Y-%m-%d"
                     spellcheck="false"
                   />
-                  <Dropdown label="Date folder presets" triggerClass="preset-toggle-btn" align="end">
+                  <Dropdown label="Date folder presets" triggerClass="ghost icon preset-toggle-btn" align="end">
                     {#snippet trigger()}<Icon name="caret-down" size="10px" />{/snippet}
                     {#each datePresets as preset}
                       <DropdownItem onclick={() => selectDatePattern(preset.pattern)}>
@@ -370,7 +370,7 @@
                 <span class="row-desc">Moteur appliqué aux photos qui n'ont pas encore de réglages — un import fraîchement arrivé.</span>
               </div>
               <div class="row-control">
-                <Dropdown label="Default engine" triggerClass="action-pill-btn" align="end">
+                <Dropdown label="Default engine" triggerClass="outline small action-pill-btn" align="end">
                   {#snippet trigger()}
                     <span>{engines.find((e) => e.id === preferences.default_engine)?.label ?? "Aucun"}</span>
                     <Icon name="caret-down" size="10px" />
@@ -388,7 +388,7 @@
                 <span class="row-desc">Appliqué automatiquement à chaque photo qui arrive d'une carte mémoire.</span>
               </div>
               <div class="row-control">
-                <Dropdown label="Default import preset" triggerClass="action-pill-btn" align="end">
+                <Dropdown label="Default import preset" triggerClass="outline small action-pill-btn" align="end">
                   {#snippet trigger()}
                     <span>{defaultImportPreset ?? "Aucun"}</span>
                     <Icon name="caret-down" size="10px" />
@@ -415,7 +415,7 @@
                 <span class="row-desc">S'applique tout de suite, dans toutes les fenêtres ouvertes — pas besoin d'Enregistrer.</span>
               </div>
               <div class="row-control">
-                <Dropdown label="Theme" triggerClass="action-pill-btn" align="end">
+                <Dropdown label="Theme" triggerClass="outline small action-pill-btn" align="end">
                   {#snippet trigger()}
                     <span>{themes.find((t) => t.id === preferences.app_theme)?.label ?? "Reveal"}</span>
                     <Icon name="caret-down" size="10px" />
@@ -450,7 +450,7 @@
                     {#if preferences.export_folder}
                       <button
                         type="button"
-                        class="clear-path-btn"
+                        class="ghost icon clear-path-btn"
                         onclick={() => (preferences.export_folder = "")}
                         title="Réinitialiser au Bureau"
                       >
@@ -458,7 +458,7 @@
                       </button>
                     {/if}
                   </div>
-                  <button type="button" class="action-pill-btn" onclick={() => onChooseFolder("export_folder")}>
+                  <button type="button" class="outline small action-pill-btn" onclick={() => onChooseFolder("export_folder")}>
                     CHOISIR…
                   </button>
                 </div>
@@ -479,7 +479,7 @@
                     {#if preferences.lut_folder}
                       <button
                         type="button"
-                        class="clear-path-btn"
+                        class="ghost icon clear-path-btn"
                         onclick={() => (preferences.lut_folder = "")}
                         title="Effacer"
                       >
@@ -487,7 +487,7 @@
                       </button>
                     {/if}
                   </div>
-                  <button type="button" class="action-pill-btn" onclick={() => onChooseFolder("lut_folder")}>
+                  <button type="button" class="outline small action-pill-btn" onclick={() => onChooseFolder("lut_folder")}>
                     CHOISIR…
                   </button>
                 </div>
@@ -527,7 +527,7 @@
                       {#if preferences.vault}
                         <button
                           type="button"
-                          class="clear-path-btn"
+                          class="ghost icon clear-path-btn"
                           onclick={() => (preferences.vault = "")}
                           title="Réinitialiser par défaut"
                         >
@@ -535,7 +535,7 @@
                         </button>
                       {/if}
                     </div>
-                    <button type="button" class="action-pill-btn" onclick={() => onChooseFolder("vault")}>
+                    <button type="button" class="outline small action-pill-btn" onclick={() => onChooseFolder("vault")}>
                       CHOISIR…
                     </button>
                   </div>
@@ -573,8 +573,8 @@
                 </span>
               </div>
               <div class="row-control cache-actions">
-                <button type="button" class="action-pill-btn" onclick={loadDevCacheStatus} disabled={devCacheBusy}>Rafraîchir</button>
-                <button type="button" class="action-pill-btn" onclick={() => { devCacheConfirm = true; }} disabled={devCacheBusy}>Vider le cache…</button>
+                <button type="button" class="outline small action-pill-btn" onclick={loadDevCacheStatus} disabled={devCacheBusy}>Rafraîchir</button>
+                <button type="button" class="outline small action-pill-btn" onclick={() => { devCacheConfirm = true; }} disabled={devCacheBusy}>Vider le cache…</button>
               </div>
             </div>
           </div>
@@ -612,8 +612,8 @@
                   </span>
                 </div>
                 <div class="row-control cache-actions">
-                  <button type="button" class="action-pill-btn" onclick={loadCacheStatus} disabled={cacheBusy || saving}>Refresh usage</button>
-                  <button type="button" class="action-pill-btn" onclick={() => { cacheConfirm = true; }} disabled={cacheBusy || saving}>Clear cached copies…</button>
+                  <button type="button" class="outline small action-pill-btn" onclick={loadCacheStatus} disabled={cacheBusy || saving}>Refresh usage</button>
+                  <button type="button" class="outline small action-pill-btn" onclick={() => { cacheConfirm = true; }} disabled={cacheBusy || saving}>Clear cached copies…</button>
                 </div>
               </div>
             </div>
@@ -635,7 +635,7 @@
                   <span class="row-desc">Palier : {gardenAccount.tier ?? "—"}</span>
                 </div>
                 <div class="row-control">
-                  <button type="button" class="action-pill-btn" onclick={signOutOfGarden} disabled={gardenSigningOut}>
+                  <button type="button" class="outline small action-pill-btn" onclick={signOutOfGarden} disabled={gardenSigningOut}>
                     {gardenSigningOut ? "Déconnexion…" : "Se déconnecter"}
                   </button>
                 </div>
@@ -728,8 +728,8 @@
     <footer class="settings-footer">
       <span class="shortcut-tip"><kbd>⌘</kbd><kbd>Entrée</kbd> Enregistrer · <kbd>Échap</kbd> Fermer</span>
       <div class="footer-actions">
-        <button type="button" class="btn-cancel" onclick={() => onClose()}>ANNULER</button>
-        <button type="button" class="btn-save" onclick={save} disabled={saving || cacheBusy}>ENREGISTRER</button>
+        <button type="button" class="outline small btn-cancel" onclick={() => onClose()}>ANNULER</button>
+        <button type="button" class="secondary small btn-save" onclick={save} disabled={saving || cacheBusy}>ENREGISTRER</button>
       </div>
     </footer>
   </div>
@@ -895,26 +895,16 @@
     justify-content: flex-end;
   }
 
+  /* Sizing only — border/background/focus ring come from Standard's own
+     zero-class input rules (_standard-11-forms.scss); this panel just needs
+     a narrower, monospace-set field than the 1em default. */
   .mono-input {
     box-sizing: border-box;
     padding: 0.35rem 0.65rem;
     width: 190px;
     max-width: 100%;
-    background: color-mix(in srgb, var(--color-foreground, #fff) 4%, var(--color-surface-low, #18181b));
-    border: 1px solid color-mix(in srgb, var(--color-foreground, #fff) 12%, transparent);
-    border-radius: var(--radius-sm, 4px);
-    color: var(--color-foreground, #fff);
     font-family: var(--font-monospace, monospace);
     font-size: 11px;
-    outline: none;
-    transition: border-color 150ms ease, box-shadow 150ms ease;
-  }
-  .mono-input:focus {
-    border-color: var(--color-accent, #d6202c);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent, #d6202c) 25%, transparent);
-  }
-  .mono-input::placeholder {
-    color: color-mix(in srgb, var(--color-foreground, #fff) 25%, transparent);
   }
 
   .date-control-col {
@@ -930,20 +920,9 @@
     width: 190px;
   }
   .input-with-presets :global(.preset-toggle-btn) {
-    all: unset;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     width: 20px;
     height: 20px;
-    cursor: pointer;
-    border-radius: 3px;
-    color: color-mix(in srgb, var(--color-foreground, #fff) 50%, transparent);
-    transition: color 120ms ease, background 120ms ease;
-  }
-  .input-with-presets :global(.preset-toggle-btn:hover) {
-    color: var(--color-foreground, #fff);
-    background: color-mix(in srgb, var(--color-foreground, #fff) 10%, transparent);
+    padding: 0;
   }
 
   .preset-option {
@@ -991,37 +970,21 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  /* Sizing only from here down — colors, borders, hover/active states, and
+     the pill shape all come from Standard's button rules
+     (_standard-13-components.scss: plain button, .outline, .secondary,
+     .small, .icon) plus the app-wide pill shape in +layout.svelte. */
   .clear-path-btn {
-    all: unset;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: color-mix(in srgb, var(--color-foreground, #fff) 40%, transparent);
-    padding: 1px;
-    border-radius: 2px;
-  }
-  .clear-path-btn:hover {
-    color: var(--color-foreground, #fff);
-    background: color-mix(in srgb, var(--color-foreground, #fff) 15%, transparent);
+    width: 18px;
+    height: 18px;
+    padding: 0;
   }
 
   .action-pill-btn {
-    padding: 0.32rem 0.65rem;
-    border: 1px solid color-mix(in srgb, var(--color-foreground, #fff) 14%, transparent);
-    border-radius: 999px;
     font-family: var(--font-header, sans-serif);
     font-size: 10px;
     letter-spacing: 0.08em;
-    background: color-mix(in srgb, var(--color-foreground, #fff) 6%, transparent);
-    color: var(--color-foreground, #fff);
-    cursor: pointer;
-    transition: background 120ms ease, border-color 120ms ease;
     white-space: nowrap;
-  }
-  .action-pill-btn:hover {
-    background: color-mix(in srgb, var(--color-foreground, #fff) 12%, transparent);
-    border-color: color-mix(in srgb, var(--color-foreground, #fff) 25%, transparent);
   }
 
   .stepper-group {
@@ -1106,41 +1069,11 @@
     align-items: center;
     gap: 0.5rem;
   }
-  .btn-cancel {
-    padding: 0.38rem 0.9rem;
-    border: 1px solid color-mix(in srgb, var(--color-foreground, #fff) 15%, transparent);
-    border-radius: 999px;
-    font-family: var(--font-header, sans-serif);
-    font-size: 11px;
-    letter-spacing: 0.08em;
-    background: transparent;
-    color: color-mix(in srgb, var(--color-foreground, #fff) 80%, transparent);
-    cursor: pointer;
-    transition: background 120ms ease, color 120ms ease;
-  }
-  .btn-cancel:hover {
-    background: color-mix(in srgb, var(--color-foreground, #fff) 8%, transparent);
-    color: var(--color-foreground, #fff);
-  }
+  .btn-cancel,
   .btn-save {
-    padding: 0.38rem 1.1rem;
-    border: 1px solid var(--color-accent, #d6202c);
-    border-radius: 999px;
     font-family: var(--font-header, sans-serif);
     font-size: 11px;
     letter-spacing: 0.08em;
-    font-weight: 600;
-    background: var(--color-accent, #d6202c);
-    color: #fff;
-    cursor: pointer;
-    box-shadow: 0 2px 8px color-mix(in srgb, var(--color-accent, #d6202c) 35%, transparent);
-    transition: filter 120ms ease, transform 100ms ease;
-  }
-  .btn-save:hover {
-    filter: brightness(1.1);
-  }
-  .btn-save:active {
-    transform: scale(0.98);
   }
   .mono {
     font-family: var(--font-monospace, monospace);

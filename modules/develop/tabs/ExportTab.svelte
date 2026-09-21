@@ -53,25 +53,23 @@
       <div class="frow">
         <span class="din frow-label">Éditeur</span>
         <span class="spacer"></span>
-        <span class="pick">
-          <select
-            onchange={(e) => openInEditor(e.currentTarget.value)}
-            value=""
-          >
-            <option value="" disabled selected>Ouvrir dans…</option>
-            {#each installedEditors as [name, path]}
-              <option value={path}>{name}</option>
-            {/each}
-          </select>
-          <Icon name="caret-down" size="8px" />
-        </span>
+        <select
+          class="panel-select"
+          onchange={(e) => openInEditor(e.currentTarget.value)}
+          value=""
+        >
+          <option value="" disabled selected>Ouvrir dans…</option>
+          {#each installedEditors as [name, path]}
+            <option value={path}>{name}</option>
+          {/each}
+        </select>
       </div>
     {/if}
     <div class="frow">
       <span class="din frow-label">Dossier</span>
       <span class="spacer"></span>
       <button
-        class="folder-pick"
+        class="ghost folder-pick"
         onclick={() => onChooseExportFolder()}
         title="Choisir le dossier d'export"
       >
@@ -82,35 +80,31 @@
     <div class="frow">
       <span class="din frow-label">Taille</span>
       <span class="spacer"></span>
-      <span class="pick">
-        <select bind:value={exportEdge} onchange={exportSettingsChanged}>
-          <option value={0}>Plein</option>
-          <option value={4096}>4096</option>
-          <option value={2048}>2048</option>
-          <option value={1600}>1600</option>
-          <option value={1024}>1024</option>
-        </select>
-        <Icon name="caret-down" size="8px" />
-      </span>
+      <select class="panel-select" bind:value={exportEdge} onchange={exportSettingsChanged}>
+        <option value={0}>Plein</option>
+        <option value={4096}>4096</option>
+        <option value={2048}>2048</option>
+        <option value={1600}>1600</option>
+        <option value={1024}>1024</option>
+      </select>
     </div>
     <div class="frow">
       <span class="din frow-label">White border</span>
       <span class="spacer"></span>
-      <button
-        class="toggle"
-        class:on={exportBorder}
+      <input
+        type="checkbox"
         role="switch"
         aria-label="White border"
-        aria-checked={exportBorder}
-        onclick={() => {
+        checked={exportBorder}
+        onchange={() => {
           exportBorder = !exportBorder;
           exportSettingsChanged();
         }}
-      ><span class="knob"></span></button>
+      />
     </div>
-    <button class="capsule fill" onclick={() => onExport()} disabled={!photoPath}>Export</button>
-    <button class="capsule secondary" onclick={() => onExportDaily()} disabled={!photoPath}>Note du jour (Obsidian)</button>
-    <button class="capsule accent" onclick={publishPhoto} disabled={!photoPath || publishing}>
+    <button class="secondary panel-btn" onclick={() => onExport()} disabled={!photoPath}>Export</button>
+    <button class="outline panel-btn" onclick={() => onExportDaily()} disabled={!photoPath}>Note du jour (Obsidian)</button>
+    <button class="secondary panel-btn" onclick={publishPhoto} disabled={!photoPath || publishing}>
       {publishing ? "Publishing…" : "Publish (Garden)"}
     </button>
     {#if publishStatus}
@@ -166,113 +160,36 @@
     flex: 1;
   }
 
-  .pick {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    padding: 2px 8px;
+  /* Sizing only — select/button/switch identity (chevron, borders, hover,
+     checked-state fill) all come from Standard's own zero-class rules
+     (packages/styles/_standard-11-forms.scss, _standard-13-components.scss)
+     plus the app-wide pill shape in +layout.svelte. This panel just needs
+     everything smaller and right-aligned than either provides by default. */
+  .panel-select {
+    width: auto;
     max-width: 170px;
-    color: color-mix(in srgb, var(--color-foreground) 85%, transparent);
-  }
-  .pick select {
-    all: unset;
-    -webkit-appearance: none;
-    appearance: none;
-    display: block;
     font-family: var(--font-monospace, monospace);
     font-size: 10.8px;
-    color: inherit;
-    width: 100%;
-    max-width: 140px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    cursor: pointer;
-  }
-  .pick :global(.icon) {
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-    pointer-events: none;
-    flex-shrink: 0;
+    padding: 2px 22px 2px 8px;
   }
 
   .folder-pick {
-    all: unset;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
+    font-family: var(--font-monospace, monospace);
+    font-size: 10.8px;
+    padding: 2px 8px;
     gap: 4px;
-    color: color-mix(in srgb, var(--color-foreground) 85%, transparent);
-  }
-  .folder-pick:hover {
-    color: var(--color-foreground);
   }
   .folder-pick :global(.icon) {
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
   }
 
-  .toggle {
-    all: unset;
-    cursor: pointer;
-    width: 28px;
-    height: 16px;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--color-foreground) 15%, transparent);
-    position: relative;
-    transition: background var(--duration-fast) var(--ease-soft);
-    flex-shrink: 0;
-  }
-  .toggle.on {
-    background: var(--color-accent);
-  }
-  .knob {
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: var(--color-surface-high);
-    transition: transform var(--duration-fast) var(--ease-soft);
-  }
-  .toggle.on .knob {
-    transform: translateX(12px);
-  }
-
-  .capsule {
-    all: unset;
+  .panel-btn {
     display: block;
     width: 100%;
-    box-sizing: border-box;
-    cursor: pointer;
-    text-align: center;
     padding: 8px 0;
-    border-radius: 999px;
-    font-family: var(--font-header, sans-serif);
     font-size: 10.8px;
     letter-spacing: 0.12em;
-    text-transform: uppercase;
     margin-top: 4px;
-  }
-  .capsule.fill {
-    color: var(--color-background);
-    background: var(--color-accent);
-  }
-  .capsule.secondary {
-    color: var(--color-foreground);
-    border: 1px solid var(--color-border);
-  }
-  .capsule.secondary:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
-  }
-  .capsule.accent {
-    color: #fff;
-    background: var(--color-accent);
-  }
-  .capsule:disabled {
-    opacity: 0.25;
-    cursor: default;
   }
 
   .hint {

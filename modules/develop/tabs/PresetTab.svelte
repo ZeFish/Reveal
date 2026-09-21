@@ -132,12 +132,12 @@
   <section>
     <div class="save-row">
       <input
-        class="name-input"
+        class="panel-input name-input"
         placeholder="Nom du preset"
         bind:value={newName}
         onkeydown={(e) => e.key === "Enter" && saveCurrent()}
       />
-      <button class="capsule fill save-btn" onclick={saveCurrent} disabled={!newName.trim() || !recipe || busy}>
+      <button class="secondary save-btn" onclick={saveCurrent} disabled={!newName.trim() || !recipe || busy}>
         Enregistrer
       </button>
     </div>
@@ -162,7 +162,7 @@
             {entry.name}
           </button>
           <button
-            class="default-btn"
+            class="ghost icon default-btn"
             class:active={defaultPresetName === entry.name}
             title={defaultPresetName === entry.name
               ? "Preset par défaut à l'import — clic pour retirer"
@@ -171,7 +171,7 @@
           >
             <Icon name="star" size="11px" />
           </button>
-          <button class="del" title="Supprimer" onclick={() => deletePreset(entry)}>×</button>
+          <button class="ghost icon" title="Supprimer" onclick={() => deletePreset(entry)}>×</button>
         </div>
       {/each}
     {/if}
@@ -205,17 +205,16 @@
     gap: 6px;
     align-items: center;
   }
-  .name-input {
+  /* Sizing only — border/background/focus ring on inputs and buttons come
+     from Standard's own zero-class rules (_standard-11-forms.scss,
+     _standard-13-components.scss) plus the app-wide pill shape in
+     +layout.svelte. */
+  .panel-input {
     flex: 1;
     min-width: 0;
     font-family: var(--font-text, sans-serif);
     font-size: 10.8px;
-    background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
-    color: var(--color-foreground);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
     padding: 6px 8px;
-    outline: none;
   }
   .save-btn {
     flex-shrink: 0;
@@ -267,60 +266,17 @@
     border-color: color-mix(in srgb, var(--color-foreground) 50%, transparent);
     background: color-mix(in srgb, var(--color-foreground) 10%, transparent);
   }
-  .del {
-    all: unset;
-    cursor: pointer;
-    display: grid;
-    place-items: center;
+  .preset-row button.icon {
     width: 26px;
     height: 26px;
-    border-radius: var(--radius);
-    border: 1px solid var(--color-border);
-    background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-    transition: color var(--duration-instant) var(--ease-soft);
-  }
-  .del:hover {
-    color: var(--color-foreground);
+    padding: 0;
   }
   .default-btn {
-    all: unset;
-    cursor: pointer;
-    display: grid;
-    place-items: center;
     flex-shrink: 0;
-    width: 26px;
-    height: 26px;
-    border-radius: var(--radius);
-    border: 1px solid var(--color-border);
-    background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
     color: color-mix(in srgb, var(--color-foreground) 35%, transparent);
-    transition: color var(--duration-instant) var(--ease-soft), border-color var(--duration-instant) var(--ease-soft);
-  }
-  .default-btn:hover {
-    color: var(--color-foreground);
   }
   .default-btn.active {
     color: var(--color-accent);
     border-color: var(--color-accent);
-  }
-
-  .capsule {
-    all: unset;
-    cursor: pointer;
-    text-align: center;
-    border-radius: 999px;
-    font-family: var(--font-header, sans-serif);
-    font-size: 10.8px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-  }
-  .capsule.fill {
-    color: var(--color-background);
-    background: var(--color-accent);
-  }
-  .capsule:disabled {
-    opacity: 0.25;
-    cursor: default;
   }
 </style>

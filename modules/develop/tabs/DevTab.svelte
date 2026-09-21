@@ -60,8 +60,8 @@
       />
 
       <div class="btn-row mt">
-        <button class="capsule outline half" onclick={resetRecipe}>Réinitialiser</button>
-        <button class="capsule fill half" onclick={() => onExport()} disabled={!photoPath}>Export</button>
+        <button class="outline panel-btn half" onclick={resetRecipe}>Réinitialiser</button>
+        <button class="secondary panel-btn half" onclick={() => onExport()} disabled={!photoPath}>Export</button>
       </div>
     {/if}
     </div>
@@ -147,38 +147,15 @@
     pointer-events: none;
   }
 
-  .capsule {
-    all: unset;
-    display: block;
-    width: 100%;
-    box-sizing: border-box;
-    cursor: pointer;
-    text-align: center;
+  /* Sizing only — color/shape/identity come from Standard's own button
+     rules (packages/styles/_standard-13-components.scss: plain button,
+     .secondary, .outline) plus the app-wide pill shape in +layout.svelte.
+     This panel is dense enough to need a smaller footprint than either
+     provides by default. */
+  .panel-btn {
     padding: 6px 0;
-    border-radius: var(--radius-sm, 4px);
-    font-family: var(--font-header, sans-serif);
     font-size: 10px;
     letter-spacing: 0.1em;
-    text-transform: uppercase;
-    transition: background var(--duration-fast), border-color var(--duration-fast);
-  }
-  .capsule.outline {
-    border: 1px solid color-mix(in srgb, var(--color-foreground) 12%, transparent);
-    background: color-mix(in srgb, var(--color-foreground) 3%, transparent);
-    color: color-mix(in srgb, var(--color-foreground) 75%, transparent);
-  }
-  .capsule.outline:hover {
-    background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
-    border-color: color-mix(in srgb, var(--color-foreground) 25%, transparent);
-    color: var(--color-foreground);
-  }
-  .capsule.fill {
-    color: var(--color-background);
-    background: var(--color-accent);
-  }
-  .capsule:disabled {
-    opacity: 0.25;
-    cursor: default;
   }
   .btn-row {
     display: flex;
