@@ -5305,16 +5305,17 @@
   .open {
     align-self: flex-start;
   }
-  /* Same floating-card treatment as the sidebar `aside` above — DevelopPanel's
-     own .panel is edge-to-edge on purpose (it also fills a whole DETACHED OS
-     window, where the window chrome itself already supplies the rounding),
-     so docking it inline needs this wrapper to match the sidebar rather than
-     sitting flush against the window edge. */
+  /* Same floating-card treatment as the real sidebar (modules/sidebar/
+     Sidebar.svelte's `nav`: margin 8px, --radius-lg, that exact shadow) —
+     DevelopPanel's own .panel is edge-to-edge on purpose (it also fills a
+     whole DETACHED OS window, where the window chrome itself already
+     supplies the rounding), so docking it inline needs this wrapper to
+     match rather than sitting flush against the window edge. */
   .docked-panel-frame {
-    margin: 2.2rem 0.9rem 0.9rem 0;
+    margin: 8px;
     border: 1px solid var(--color-border);
-    border-radius: 10px;
-    box-shadow: var(--shadow-lg);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
     overflow: hidden;
     min-height: 0;
   }
