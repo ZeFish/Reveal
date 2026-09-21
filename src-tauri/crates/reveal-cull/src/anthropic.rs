@@ -5,7 +5,7 @@
 use base64::Engine as _;
 use serde_json::json;
 
-use crate::rank::{RankCandidate, RankedResult, VisionRanker};
+use crate::rank::{RankCandidate, RankedResult, TagSuggester, VisionRanker};
 use crate::CullError;
 
 pub struct AnthropicRanker {
@@ -96,6 +96,74 @@ impl VisionRanker for AnthropicRanker {
             .map_err(|e| CullError::Http(e.to_string()))?;
 
         Ok(parse_scores(&response, candidates))
+    }
+}
+
+const TAGS_PROMPT: &str = "Suggest 3 to 8 short keyword tags for this photo, the kind a photographer \
+would use to find it later in a library search: subject, setting, mood, notable technique. Lowercase, \
+one or two words each, no hashtags or punctuation. Call the suggest_tags tool with the list.";
+
+impl TagSuggester for AnthropicRanker {
+    fn suggest_tags(&self, jpeg_bytes: &[u8]) -> Result<Vec<String>, CullError> {
+        if self.api_key.is_empty() {
+            return Err(CullError::MissingApiKey);
+        }
+
+        let content = vec![
+            json!({ "type": "text", "text": TAGS_PROMPT }),
+            json!({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/jpeg",
+                    "data": base64::engine::general_purpose::STANDARD.encode(jpeg_bytes),
+                }
+            }),
+        ];
+
+        let tool = json!({
+            "name": "suggest_tags",
+            "description": "Report the suggested keyword tags for this photo.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "tags": { "type": "array", "items": { "type": "string" } }
+                },
+                "required": ["tags"]
+            }
+        });
+
+        let body = json!({
+            "model": self.model,
+            "max_tokens": 256,
+            "tools": [tool],
+            "tool_choice": { "type": "tool", "name": "suggest_tags" },
+            "messages": [{ "role": "user", "content": content }],
+        });
+
+        let response: serde_json::Value = ureq::post("https://api.anthropic.com/v1/messages")
+            .set("x-api-key", &self.api_key)
+            .set("anthropic-version", "2023-06-01")
+            .set("content-type", "application/json")
+            .timeout(std::time::Duration::from_secs(30))
+            .send_json(body)
+            .map_err(|e| CullError::Http(e.to_string()))?
+            .into_json()
+            .map_err(|e| CullError::Http(e.to_string()))?;
+
+        Ok(response
+            .get("content")
+            .and_then(|c| c.as_array())
+            .into_iter()
+            .flatten()
+            .find(|block| block.get("type").and_then(|t| t.as_str()) == Some("tool_use"))
+            .and_then(|block| block.get("input"))
+            .and_then(|input| input.get("tags"))
+            .and_then(|t| t.as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|v| v.as_str().map(str::to_string))
+            .collect())
     }
 }
 

@@ -42,6 +42,8 @@
   /** @type {EngineInfo[]} */
   let engines = $state([]);
   let caption = $state("");
+  /** @type {string[]} */
+  let tags = $state([]);
   let rating = $state(0);
   let publishing = $state(false);
   let publishStatus = $state("");
@@ -63,6 +65,10 @@
 
   function captionEdited() {
     emit("dev-panel-caption-updated", { caption });
+  }
+
+  function tagsEdited() {
+    emit("dev-panel-tags-updated", { tags });
   }
 
   // ---- LUT stacks (Rapid-only) — model matches Rust `LutLayer { name, opacity }`
@@ -156,6 +162,7 @@
       luts = state.luts ?? [];
       engines = state.engines ?? [];
       caption = state.caption;
+      tags = state.tags ?? [];
       rating = state.rating ?? 0;
       histogram = state.histogram ?? null;
       photoScale = state.photoScale ?? 90;
@@ -306,6 +313,7 @@
   {luts}
   {engines}
   bind:caption
+  bind:tags
   {rating}
   bind:publishing
   bind:publishStatus
@@ -324,6 +332,7 @@
   {resetRecipe}
   {hidePanel}
   onCaptionEdited={captionEdited}
+  onTagsEdited={tagsEdited}
   onExportSettingsChanged={() => emit("dev-panel-export-settings-changed", { exportEdge, exportBorder })}
   onExport={() => emit("dev-panel-export", {})}
   onExportDaily={() => emit("dev-panel-export-daily", {})}

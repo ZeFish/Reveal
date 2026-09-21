@@ -13,13 +13,36 @@
 //!    implementation; the trait is the seam for swapping providers later.
 
 mod anthropic;
+mod gemini;
 mod hash;
 mod prefilter;
+mod provider;
 mod rank;
 
 pub use anthropic::AnthropicRanker;
+pub use gemini::GeminiRanker;
 pub use prefilter::{prefilter, PhotoScore, PrefilterConfig};
-pub use rank::{rank_all, RankCandidate, RankedResult, VisionRanker};
+pub use provider::AiProvider;
+pub use rank::{rank_all, RankCandidate, RankedResult, TagSuggester, VisionRanker};
+
+/// Builds the configured provider's client, boxed behind the trait each
+/// caller actually needs — `score_paths` (culling) wants a `VisionRanker`,
+/// `generate_tags` wants a `TagSuggester`; both providers implement both, so
+/// one switch here is enough for the whole app rather than duplicating the
+/// provider match at each call site.
+pub fn vision_ranker(provider: AiProvider, api_key: String, model: String) -> Box<dyn VisionRanker> {
+    match provider {
+        AiProvider::Anthropic => Box::new(AnthropicRanker::with_model(api_key, model)),
+        AiProvider::Gemini => Box::new(GeminiRanker::with_model(api_key, model)),
+    }
+}
+
+pub fn tag_suggester(provider: AiProvider, api_key: String, model: String) -> Box<dyn TagSuggester> {
+    match provider {
+        AiProvider::Anthropic => Box::new(AnthropicRanker::with_model(api_key, model)),
+        AiProvider::Gemini => Box::new(GeminiRanker::with_model(api_key, model)),
+    }
+}
 
 use std::path::Path;
 

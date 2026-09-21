@@ -48,6 +48,8 @@
     /** @type {EngineInfo[]} */
     engines = [],
     caption = $bindable(""),
+    /** @type {string[]} */
+    tags = $bindable([]),
     rating = 0,
     publishing = $bindable(false),
     publishStatus = $bindable(""),
@@ -70,6 +72,7 @@
     resetRecipe = () => {},
     hidePanel = () => {},
     onCaptionEdited = () => {},
+    onTagsEdited = () => {},
     /** @param {{exportEdge: number, exportBorder: boolean}} settings */
     onExportSettingsChanged = () => {},
     onExport = () => {},
@@ -219,8 +222,10 @@
         {status}
         {rating}
         bind:caption
+        bind:tags
         {photoPath}
         {onCaptionEdited}
+        {onTagsEdited}
       />
     {:else if activeTab === 'export'}
       <ExportTab

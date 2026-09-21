@@ -27,6 +27,7 @@
    * @property {boolean} ai_cull_mark_story
    * @property {boolean} ai_cull_export_desktop
    * @property {number} ai_cull_target
+   * @property {string} [ai_provider]
    * @property {string} ai_api_key
    * @property {string} [ai_model]
    * @property {number} [apple_photos_cache_limit_gib]
@@ -45,6 +46,7 @@
     ai_cull_mark_story: false,
     ai_cull_export_desktop: false,
     ai_cull_target: 24,
+    ai_provider: "anthropic",
     ai_api_key: "",
     ai_model: "",
     apple_photos_cache_limit_gib: 4,

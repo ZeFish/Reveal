@@ -478,6 +478,7 @@
     ai_cull_mark_story: false,
     ai_cull_export_desktop: false,
     ai_cull_target: 24,
+    ai_provider: "anthropic",
     ai_api_key: "",
     ai_model: "",
     apple_photos_cache_limit_gib: 4,
@@ -547,6 +548,8 @@
   };
   let showClipping = $state(false);
   let caption = $state("");
+  /** @type {string[]} */
+  let tags = $state([]);
   // Docked Develop panel only — the detached one has its own separate copies
   // of these (its own onMount fetch, its own local publish button state).
   /** @type {Recipe | null} */
@@ -929,6 +932,10 @@
           caption = e.payload.caption;
           captionEdited();
         });
+        listen("dev-panel-tags-updated", (e) => {
+          tags = e.payload.tags;
+          tagsEdited();
+        });
         listen("dev-panel-export", () => {
           exportCurrent();
         });
@@ -1289,6 +1296,7 @@
         luts: luts,
         engines: engines,
         caption: caption,
+        tags: tags,
         showClipping: showClipping,
         photoScale: developPhotoPercent,
         // Typed arrays don't survive Tauri's JSON emit as themselves — plain
@@ -1449,7 +1457,7 @@
   $effect(() => {
     if (currentMode === "dev" && isTauri) {
       // Establish dependency on Svelte reactive variables
-      const trigger = [photoPath, picked, recipe, developEngine, renderMs, status, installedEditors, exportEdge, exportBorder, films, papers, luts, caption, currentRating, histogram, developPhotoPercent];
+      const trigger = [photoPath, picked, recipe, developEngine, renderMs, status, installedEditors, exportEdge, exportBorder, films, papers, luts, caption, tags, currentRating, histogram, developPhotoPercent];
       sendDevStateToPanel();
     }
   });
@@ -3437,6 +3445,7 @@
       ]);
       if (path !== photoPath) return;
       caption = sidecar?.description ?? "";
+      tags = sidecar?.tags ?? [];
       developEngine = sidecar?.engine
         ? sidecar.engine
         : (sidecar?.engine_settings ? "spektra" : (preferences.default_engine || null));
@@ -3488,6 +3497,13 @@
       if (path) invoke("save_caption", { path, description })
         .catch((error) => { appMessage = `Could not save caption: ${error}`; });
     }, 400);
+  }
+
+  function tagsEdited() {
+    const path = photoPath;
+    if (!path) return;
+    invoke("save_tags", { path, tags: [...tags] })
+      .catch((error) => { appMessage = `Could not save tags: ${error}`; });
   }
 
   let inflight = $state(false);
@@ -4617,6 +4633,7 @@
         {luts}
         {engines}
         bind:caption
+        bind:tags
         rating={currentRating}
         bind:publishing={devPublishing}
         bind:publishStatus={devPublishStatus}
@@ -4634,6 +4651,7 @@
         resetRecipe={applyResetRecipe}
         hidePanel={dockedHidePanel}
         onCaptionEdited={captionEdited}
+        onTagsEdited={tagsEdited}
         onExportSettingsChanged={dockedExportSettingsChanged}
         onExport={exportCurrent}
         onExportDaily={exportToDailyNote}

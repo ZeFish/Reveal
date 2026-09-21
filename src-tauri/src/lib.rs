@@ -2771,6 +2771,37 @@ async fn save_caption(path: String, description: String) -> Result<(), String> {
     })
 }
 
+/// Tags (dc:subject) editing — sidecar field, everything else kept.
+#[tauri::command]
+async fn save_tags(path: String, tags: Vec<String>) -> Result<(), String> {
+    apple_photos::update_metadata(&path, |sidecar| {
+        sidecar.tags = tags;
+        Ok(())
+    })
+}
+
+/// AI-suggested keyword tags for one photo — reuses the same `ai_api_key`/
+/// `ai_model` prefs and embedded-preview-JPEG path as AI cull, since it's the
+/// same "cheap vision call on the camera preview" shape, just a different
+/// prompt/tool. Read-only: the caller (InfoBlock) merges the suggestions into
+/// its editable tag list and still has to call `save_tags` to persist.
+#[tauri::command]
+async fn generate_tags(app: tauri::AppHandle, path: String) -> Result<Vec<String>, String> {
+    let (_, _, _, api_key, model, provider) = read_ai_cull_prefs(&app);
+    let Some(api_key) = api_key else {
+        return Err("no vision API key configured (Settings → AI & Automation)".into());
+    };
+    let model = model.unwrap_or_else(|| provider.default_model().to_string());
+    tauri::async_runtime::spawn_blocking(move || {
+        let jpeg = reveal_cull::embedded_preview_jpeg(&path, 768)
+            .ok_or_else(|| "could not read a preview image for this photo".to_string())?;
+        let suggester = reveal_cull::tag_suggester(provider, api_key, model);
+        suggester.suggest_tags(&jpeg).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Cards (removable volumes with a DCIM of RAWs) currently mounted.
 #[tauri::command]
 async fn find_cards() -> Vec<reveal_import::Card> {
@@ -3272,15 +3303,18 @@ fn cancel_exports(cancellation: tauri::State<'_, ExportState>) {
 /// (mark_story, export_desktop, target, api_key, model) — the two outcomes
 /// are independent toggles now, not one master switch: a walk-away run can
 /// mark picks into the story, export JPEGs to the Desktop, or both.
-fn read_ai_cull_prefs(app: &tauri::AppHandle) -> (bool, bool, u32, Option<String>, Option<String>) {
+fn read_ai_cull_prefs(
+    app: &tauri::AppHandle,
+) -> (bool, bool, u32, Option<String>, Option<String>, reveal_cull::AiProvider) {
+    let default_provider = reveal_cull::AiProvider::Anthropic;
     let Ok(path) = prefs_file(app) else {
-        return (false, false, 24, None, None);
+        return (false, false, 24, None, None, default_provider);
     };
     let Ok(raw) = std::fs::read_to_string(path) else {
-        return (false, false, 24, None, None);
+        return (false, false, 24, None, None, default_provider);
     };
     let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
-        return (false, false, 24, None, None);
+        return (false, false, 24, None, None, default_provider);
     };
     let mark_story = value.get("ai_cull_mark_story").and_then(|v| v.as_bool()).unwrap_or(false);
     let export_desktop = value.get("ai_cull_export_desktop").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -3299,7 +3333,12 @@ fn read_ai_cull_prefs(app: &tauri::AppHandle) -> (bool, bool, u32, Option<String
         .and_then(|v| v.as_str())
         .map(str::to_string)
         .filter(|s| !s.is_empty());
-    (mark_story, export_desktop, target, api_key, model)
+    let provider = value
+        .get("ai_provider")
+        .and_then(|v| v.as_str())
+        .map(reveal_cull::AiProvider::from_str)
+        .unwrap_or(default_provider);
+    (mark_story, export_desktop, target, api_key, model, provider)
 }
 
 /// Local prefilter + cloud vision ranking, no side effects (no rating bump,
@@ -3316,6 +3355,7 @@ fn score_paths(
     target: u32,
     api_key: &str,
     model: Option<String>,
+    provider: reveal_cull::AiProvider,
     cancel: &std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<(Vec<String>, usize, usize), String> {
     let considered = paths.len();
@@ -3342,13 +3382,11 @@ fn score_paths(
         })
         .collect();
 
-    let ranker = match model {
-        Some(m) => reveal_cull::AnthropicRanker::with_model(api_key.to_string(), m),
-        None => reveal_cull::AnthropicRanker::new(api_key.to_string()),
-    };
+    let model = model.unwrap_or_else(|| provider.default_model().to_string());
+    let ranker = reveal_cull::vision_ranker(provider, api_key.to_string(), model);
     let candidate_count = candidates.len();
     let progress_ranker = ProgressRanker {
-        inner: &ranker,
+        inner: ranker.as_ref(),
         app,
         dir,
         total: candidate_count,
@@ -3432,7 +3470,7 @@ async fn ai_cull(
     }
     cancel_state.0.store(false, std::sync::atomic::Ordering::Relaxed);
 
-    let (mark_story, export_desktop, target, api_key, model) = read_ai_cull_prefs(&app);
+    let (mark_story, export_desktop, target, api_key, model, provider) = read_ai_cull_prefs(&app);
     if !mark_story && !export_desktop {
         cull_state.0.lock().unwrap().remove(&dir);
         return Err("AI culling disabled".into());
@@ -3454,7 +3492,7 @@ async fn ai_cull(
 
     let worker = tauri::async_runtime::spawn_blocking(move || -> Result<CullResult, String> {
         let (picked, considered, survivors) =
-            score_paths(&app_for_worker, &dir_key, &paths, target, &api_key, model, &cancel)?;
+            score_paths(&app_for_worker, &dir_key, &paths, target, &api_key, model, provider, &cancel)?;
 
         // Mark the picks into the story (the same `q` quick-collection) —
         // only ADDS, never removes, same rule as the manual culling button:
@@ -3574,7 +3612,7 @@ async fn ai_cull_selection(
     }
     cancel_state.0.store(false, std::sync::atomic::Ordering::Relaxed);
 
-    let (_mark_story, _export_desktop, target, api_key, model) = read_ai_cull_prefs(&app);
+    let (_mark_story, _export_desktop, target, api_key, model, provider) = read_ai_cull_prefs(&app);
     let Some(api_key) = api_key else {
         cull_state.0.lock().unwrap().remove(&dir);
         return Err("no vision API key configured (Settings → AI & Automation)".into());
@@ -3585,7 +3623,7 @@ async fn ai_cull_selection(
     let dir_key = dir.clone();
 
     let worker = tauri::async_runtime::spawn_blocking(move || {
-        score_paths(&app_for_worker, &dir_key, &paths, target, &api_key, model, &cancel)
+        score_paths(&app_for_worker, &dir_key, &paths, target, &api_key, model, provider, &cancel)
     })
     .await;
 
@@ -4230,6 +4268,8 @@ pub fn run() {
             list_story_notes,
             export_local_story,
             save_caption,
+            save_tags,
+            generate_tags,
             develop_preview,
             copy_developed_preview_to_clipboard,
             copy_photo_preview_to_clipboard,

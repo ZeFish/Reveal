@@ -25,6 +25,14 @@ pub trait VisionRanker {
     fn rank_batch(&self, candidates: &[RankCandidate]) -> Result<Vec<RankedResult>, CullError>;
 }
 
+/// One-off keyword-tag suggestion for a single photo. Separate from
+/// `VisionRanker` (different shape: one image in, a string list out, not a
+/// per-image score) but the same "provider swappable behind a trait" idea —
+/// each provider module implements both on its own client struct.
+pub trait TagSuggester {
+    fn suggest_tags(&self, jpeg_bytes: &[u8]) -> Result<Vec<String>, CullError>;
+}
+
 /// Chunk `candidates` into request-sized batches, rank each batch, merge and
 /// sort globally, and return the best `target`. The provider only ever sees
 /// one batch at a time — this is a per-batch score, not a precise

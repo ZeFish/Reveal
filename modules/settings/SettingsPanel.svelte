@@ -29,6 +29,7 @@
    * @property {boolean} ai_cull_mark_story
    * @property {boolean} ai_cull_export_desktop
    * @property {number} ai_cull_target
+   * @property {string} [ai_provider]
    * @property {string} ai_api_key
    * @property {string} [ai_model]
    * @property {number} [apple_photos_cache_limit_gib]
@@ -61,6 +62,7 @@
         ai_cull_mark_story: false,
         ai_cull_export_desktop: false,
         ai_cull_target: 24,
+        ai_provider: "anthropic",
         ai_api_key: "",
         ai_model: "",
         apple_photos_cache_limit_gib: 4,
@@ -110,6 +112,10 @@
     { id: "cache", label: "Cache & Storage", icon: "hard-drive" },
     { id: "garden", label: "Garden Account", icon: "user-circle" },
     { id: "ai", label: "AI & Automation", icon: "lightning" },
+  ];
+  const AI_PROVIDERS = [
+    { id: "anthropic", label: "Anthropic (Claude)", modelPlaceholder: "claude-sonnet-5" },
+    { id: "gemini", label: "Google (Gemini)", modelPlaceholder: "gemini-2.5-flash" },
   ];
   const visibleCategories = $derived(CATEGORIES);
   const aiCullActive = $derived(preferences.ai_cull_mark_story || preferences.ai_cull_export_desktop);
@@ -699,20 +705,37 @@
             </div>
             <div class="setting-row" class:row-disabled={!aiCullActive}>
               <div class="row-meta">
-                <span class="row-label">VISION API KEY (ANTHROPIC)</span>
-                <span class="row-desc">Sends compressed thumbnails to Claude (Sonnet 5 by default) for ranking. Billed per API usage.</span>
+                <span class="row-label">VISION PROVIDER</span>
+                <span class="row-desc">Who scores culling candidates and suggests photo tags. Same provider for both — swap it here, not per-feature.</span>
               </div>
               <div class="row-control">
-                <input type="password" class="mono-input" disabled={!aiCullActive} bind:value={preferences.ai_api_key} placeholder="sk-ant-…" autocomplete="off" spellcheck="false" />
+                <Dropdown label="Vision provider" triggerClass="outline small action-pill-btn" align="end">
+                  {#snippet trigger()}
+                    <span>{AI_PROVIDERS.find((p) => p.id === preferences.ai_provider)?.label ?? "Anthropic (Claude)"}</span>
+                    <Icon name="caret-down" size="10px" />
+                  {/snippet}
+                  {#each AI_PROVIDERS as provider}
+                    <DropdownItem onclick={() => (preferences.ai_provider = provider.id)}>{provider.label}</DropdownItem>
+                  {/each}
+                </Dropdown>
+              </div>
+            </div>
+            <div class="setting-row" class:row-disabled={!aiCullActive}>
+              <div class="row-meta">
+                <span class="row-label">VISION API KEY</span>
+                <span class="row-desc">Sends compressed thumbnails to the provider above for ranking and tag suggestions. Billed per API usage.</span>
+              </div>
+              <div class="row-control">
+                <input type="password" class="mono-input" disabled={!aiCullActive} bind:value={preferences.ai_api_key} placeholder={preferences.ai_provider === "gemini" ? "AIza…" : "sk-ant-…"} autocomplete="off" spellcheck="false" />
               </div>
             </div>
             <div class="setting-row" class:row-disabled={!aiCullActive}>
               <div class="row-meta">
                 <span class="row-label">MODEL</span>
-                <span class="row-desc">Leave blank for the default (claude-sonnet-5). A valid Anthropic model id, or culling will fail.</span>
+                <span class="row-desc">Leave blank for the provider's default. Must be a valid model id for the selected provider, or requests will fail.</span>
               </div>
               <div class="row-control">
-                <input class="mono-input" disabled={!aiCullActive} bind:value={preferences.ai_model} placeholder="claude-sonnet-5" autocomplete="off" spellcheck="false" />
+                <input class="mono-input" disabled={!aiCullActive} bind:value={preferences.ai_model} placeholder={AI_PROVIDERS.find((p) => p.id === preferences.ai_provider)?.modelPlaceholder ?? "claude-sonnet-5"} autocomplete="off" spellcheck="false" />
               </div>
             </div>
           </div>
