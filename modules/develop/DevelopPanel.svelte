@@ -86,6 +86,10 @@
     // crop grid/rotation preview on the photo itself, in DevelopView) —
     // this panel's own tabs otherwise never leave this component.
     activeTab = $bindable("dev"),
+    // One-way down from wherever the photo canvas actually lives (docked:
+    // DevelopView in the same window; detached: relayed over main-dev-state
+    // — see routes/dev-panel/+page.svelte) straight into DevTab's histogram.
+    histogram = null,
   } = $props();
 
   // developEngine holds the Rust engine id ("spektra" | "rapid" | null).
@@ -196,6 +200,7 @@
         {resetRecipe}
         {onExport}
         {photoPath}
+        {histogram}
       />
     {:else if activeTab === 'crop'}
       <CropTab bind:recipe {edited} />

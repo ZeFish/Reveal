@@ -514,6 +514,8 @@
   let useCanvas = $state(false);
   /** @type {number | null} */ let renderAspect = $state(null); // width/height of the last canvas (rapid) render — reactive aspect for the loupe
   let imgFailed = $state(false); // loupe image couldn't decode/load (NAS drop, junk file…)
+  /** @type {{r: Uint32Array, g: Uint32Array, b: Uint32Array, luma: Uint32Array} | null} */
+  let histogram = $state(null); // computed by DevelopView off the same pixels it displays
   let status = $state("");
   /** @type {number | null} */ let renderMs = $state(null);
   /** @type {Profile[]} */ let films = $state([]);
@@ -1282,7 +1284,12 @@
         luts: luts,
         engines: engines,
         caption: caption,
-        showClipping: showClipping
+        showClipping: showClipping,
+        // Typed arrays don't survive Tauri's JSON emit as themselves — plain
+        // arrays round-trip fine and index identically in Histogram.svelte.
+        histogram: histogram
+          ? { r: Array.from(histogram.r), g: Array.from(histogram.g), b: Array.from(histogram.b), luma: Array.from(histogram.luma) }
+          : null,
       }).catch(() => {});
     }
   }
@@ -1436,7 +1443,7 @@
   $effect(() => {
     if (currentMode === "dev" && isTauri) {
       // Establish dependency on Svelte reactive variables
-      const trigger = [photoPath, picked, recipe, developEngine, renderMs, status, installedEditors, exportEdge, exportBorder, films, papers, luts, caption, currentRating];
+      const trigger = [photoPath, picked, recipe, developEngine, renderMs, status, installedEditors, exportEdge, exportBorder, films, papers, luts, caption, currentRating, histogram];
       sendDevStateToPanel();
     }
   });
@@ -4389,6 +4396,7 @@
       {renderAspect}
       bind:canvasEl={canvasEl}
       bind:imgFailed={imgFailed}
+      bind:histogram
       {status}
       {inflight}
       {pendingPx}
@@ -4623,6 +4631,7 @@
         rating={currentRating}
         bind:publishing={devPublishing}
         bind:publishStatus={devPublishStatus}
+        {histogram}
         {showClipping}
         toggleClipping={dockedToggleClipping}
         edited={dockedEdited}

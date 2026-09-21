@@ -8,6 +8,12 @@
     showClipping = false,
     canvasEl = $bindable(null),
     imgFailed = $bindable(false),
+    // {r,g,b,luma: Uint32Array(256)} bin counts for the currently displayed
+    // frame — recomputed alongside the clipping overlay, off the same pixel
+    // read, so DevTab's histogram widget (this component's sibling, docked
+    // or detached — see DevelopPanel.svelte's own docblock) always matches
+    // what's actually on screen.
+    histogram = $bindable(null),
     status = "",
     inflight = false,
     pendingPx = null,
@@ -280,39 +286,53 @@
       aspectRatio = `${target.naturalWidth} / ${target.naturalHeight}`;
     }
     if (showClipping) renderClippingOverlay();
+    updateHistogram();
   }
 
-  function renderClippingOverlay() {
-    if (!showClipping || !clipCanvasEl) return;
-    let width = 0;
-    let height = 0;
-    let sourceData = null;
+  $effect(() => {
+    // useCanvas's own pixels are written by the caller (+page.svelte's pump())
+    // straight into canvasEl, outside this component — width/height changing
+    // is the only DOM signal available that a fresh frame landed.
+    if (useCanvas && canvasEl?.width && canvasEl?.height) updateHistogram();
+  });
 
+  /** @returns {{width: number, height: number, data: ImageData} | null} */
+  function getSourcePixelData() {
     if (useCanvas && canvasEl) {
-      width = canvasEl.width;
-      height = canvasEl.height;
-      if (width <= 0 || height <= 0) return;
+      const width = canvasEl.width;
+      const height = canvasEl.height;
+      if (width <= 0 || height <= 0) return null;
       const ctx = canvasEl.getContext("2d");
-      if (ctx) {
-        try { sourceData = ctx.getImageData(0, 0, width, height); } catch (e) {}
+      if (!ctx) return null;
+      try {
+        return { width, height, data: ctx.getImageData(0, 0, width, height) };
+      } catch {
+        return null;
       }
     } else if (imgEl && loaded) {
-      width = imgEl.naturalWidth || imgEl.width;
-      height = imgEl.naturalHeight || imgEl.height;
-      if (width <= 0 || height <= 0) return;
+      const width = imgEl.naturalWidth || imgEl.width;
+      const height = imgEl.naturalHeight || imgEl.height;
+      if (width <= 0 || height <= 0) return null;
       const tmp = document.createElement("canvas");
       tmp.width = width;
       tmp.height = height;
       const tmpCtx = tmp.getContext("2d");
-      if (tmpCtx) {
-        try {
-          tmpCtx.drawImage(imgEl, 0, 0);
-          sourceData = tmpCtx.getImageData(0, 0, width, height);
-        } catch (e) {}
+      if (!tmpCtx) return null;
+      try {
+        tmpCtx.drawImage(imgEl, 0, 0);
+        return { width, height, data: tmpCtx.getImageData(0, 0, width, height) };
+      } catch {
+        return null;
       }
     }
+    return null;
+  }
 
-    if (!sourceData || width <= 0 || height <= 0) return;
+  function renderClippingOverlay() {
+    if (!showClipping || !clipCanvasEl) return;
+    const source = getSourcePixelData();
+    if (!source) return;
+    const { width, height, data: sourceData } = source;
     clipCanvasEl.width = width;
     clipCanvasEl.height = height;
     const clipCtx = clipCanvasEl.getContext("2d");
@@ -346,6 +366,25 @@
       }
     }
     clipCtx.putImageData(out, 0, 0);
+  }
+
+  function updateHistogram() {
+    const source = getSourcePixelData();
+    if (!source) return;
+    const data = source.data.data;
+    const r = new Uint32Array(256);
+    const g = new Uint32Array(256);
+    const b = new Uint32Array(256);
+    const luma = new Uint32Array(256);
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i + 3] < 10) continue;
+      const rv = data[i], gv = data[i + 1], bv = data[i + 2];
+      r[rv]++;
+      g[gv]++;
+      b[bv]++;
+      luma[(0.2126 * rv + 0.7152 * gv + 0.0722 * bv) | 0]++;
+    }
+    histogram = { r, g, b, luma };
   }
 </script>
 

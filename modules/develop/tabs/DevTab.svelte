@@ -1,5 +1,6 @@
 <script>
   import EngineRunner from "@modules/develop/EngineRunner.svelte";
+  import Histogram from "@modules/develop/Histogram.svelte";
 
   let {
     recipe = $bindable(),
@@ -19,11 +20,13 @@
     resetRecipe,
     onExport = () => {},
     photoPath = null,
+    histogram = null,
   } = $props();
 </script>
 
 <div class="pane-scroll">
   <div class="sec-body">
+    <Histogram {histogram} />
     <div class="engine-row">
       <span class="din engine-row-label">Moteur</span>
       <div class="seg">

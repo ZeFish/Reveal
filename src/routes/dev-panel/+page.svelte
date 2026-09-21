@@ -48,6 +48,8 @@
   /** @type {Recipe | null} */ // engine defaults, for double-click-to-reset
   let defaults = $state(null);
   let showClipping = $state(false);
+  /** @type {{r: number[], g: number[], b: number[], luma: number[]} | null} */
+  let histogram = $state(null);
 
   function toggleClipping() {
     showClipping = !showClipping;
@@ -150,6 +152,7 @@
       engines = state.engines ?? [];
       caption = state.caption;
       rating = state.rating ?? 0;
+      histogram = state.histogram ?? null;
     }).then(() => {
       emit("dev-panel-ready", {});
     });
@@ -300,6 +303,7 @@
   {rating}
   bind:publishing
   bind:publishStatus
+  {histogram}
   {showClipping}
   {toggleClipping}
   {edited}
