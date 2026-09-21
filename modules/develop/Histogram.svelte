@@ -8,6 +8,12 @@
 
   /** @type {HTMLCanvasElement | null} */
   let canvasEl = $state(null);
+  /** @type {HTMLDivElement | null} */
+  let containerEl = $state(null);
+
+  // Click toggles RGB curves off in favor of a single luma curve in the
+  // theme's own foreground/background — Francis: "pour l'instant au moins".
+  let mono = $state(false);
 
   // Fixed logical resolution (one bin = one column); CSS stretches it to the
   // panel's actual width, same trick the app already uses for the photo mat.
@@ -15,11 +21,14 @@
   const H = 44;
 
   $effect(() => {
-    draw(histogram);
+    draw(histogram, mono);
   });
 
-  /** @param {{r: Uint32Array, g: Uint32Array, b: Uint32Array, luma: Uint32Array} | null} hist */
-  function draw(hist) {
+  /**
+   * @param {{r: Uint32Array, g: Uint32Array, b: Uint32Array, luma: Uint32Array} | null} hist
+   * @param {boolean} isMono
+   */
+  function draw(hist, isMono) {
     if (!canvasEl) return;
     const ctx = canvasEl.getContext("2d");
     if (!ctx) return;
@@ -28,14 +37,20 @@
     ctx.clearRect(0, 0, W, H);
     if (!hist) return;
 
-    // Log scale — a handful of pure-white/pure-black pixels shouldn't flatten
-    // every midtone bar to invisible, which a linear scale does on most photos.
-    const max = Math.max(1, ...hist.r, ...hist.g, ...hist.b);
-    const scale = H / Math.log1p(max);
+    // Theme colors, not hardcoded ones — read off the container so each
+    // theme's own --color-red/-green/-blue (and fg/bg for mono) apply. Canvas
+    // fillStyle needs a resolved value, not the custom property itself.
+    const style = getComputedStyle(containerEl ?? canvasEl);
+    /** @param {string} name @param {string} fallback */
+    const read = (name, fallback) => style.getPropertyValue(name).trim() || fallback;
+
+    /** @param {Uint32Array} channel */
+    const maxOf = (channel) => channel.reduce((m, v) => (v > m ? v : m), 1);
 
     ctx.globalCompositeOperation = "lighter";
-    /** @param {Uint32Array} channel @param {string} color */
-    const plot = (channel, color) => {
+    /** @param {Uint32Array} channel @param {string} color @param {number} max */
+    const plot = (channel, color, max) => {
+      const scale = H / Math.log1p(max);
       ctx.fillStyle = color;
       ctx.beginPath();
       ctx.moveTo(0, H);
@@ -46,13 +61,32 @@
       ctx.closePath();
       ctx.fill();
     };
-    plot(hist.r, "rgba(255,50,50,0.8)");
-    plot(hist.g, "rgba(50,255,50,0.8)");
-    plot(hist.b, "rgba(50,110,255,0.8)");
+
+    if (isMono) {
+      ctx.globalAlpha = 0.85;
+      plot(hist.luma, read("--color-foreground", "#fff"), maxOf(hist.luma));
+      ctx.globalAlpha = 1;
+    } else {
+      const max = Math.max(maxOf(hist.r), maxOf(hist.g), maxOf(hist.b));
+      ctx.globalAlpha = 0.8;
+      plot(hist.r, read("--color-red", "#ff3232"), max);
+      plot(hist.g, read("--color-green", "#32ff32"), max);
+      plot(hist.b, read("--color-blue", "#326eff"), max);
+      ctx.globalAlpha = 1;
+    }
   }
 </script>
 
-<div class="histogram">
+<div
+  class="histogram"
+  class:mono
+  bind:this={containerEl}
+  onclick={() => (mono = !mono)}
+  title={mono ? "Histogramme luminance — clic pour RVB" : "Histogramme RVB — clic pour luminance"}
+  role="button"
+  tabindex="0"
+  onkeydown={(e) => (e.key === "Enter" || e.key === " ") && (mono = !mono)}
+>
   <canvas bind:this={canvasEl} width={W} height={H}></canvas>
 </div>
 
@@ -64,6 +98,10 @@
     background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-foreground) 10%, transparent);
     overflow: hidden;
+    cursor: pointer;
+  }
+  .histogram.mono {
+    background: var(--color-background);
   }
   canvas {
     width: 100%;
