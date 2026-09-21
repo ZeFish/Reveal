@@ -451,18 +451,16 @@
     pointer-events: none;
     filter: grayscale(1);
   }
-  /* Left-aligned on purpose (Francis: right-align read as "center" once
-     label lengths varied — a ragged right edge next to a fixed left one
-     reads as centered, a ragged left edge next to a shared left one
-     doesn't). Left-align also means default ellipsis truncation is correct
-     again — it always clips from the text's logical end, which is the
-     right for LTR, i.e. exactly where left-aligned text would want it. */
+  /* Right-aligned, hugging the slider. No overflow:hidden/ellipsis here on
+     purpose — text-overflow always truncates from the text's logical end
+     (the right, for LTR), never respecting text-align, so a label wider
+     than the box would clip from the wrong side and visually creep past
+     the shared right edge instead of sharing it. Nothing sits to a label's
+     left, so it can just overflow that way uninterrupted instead. */
   .frow-label {
     width: 106px;
     flex-shrink: 0;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
     font-family: var(--font-header, sans-serif);
     font-size: 10px;
     font-weight: 500;
@@ -471,7 +469,7 @@
     color: color-mix(in srgb, var(--color-foreground) 60%, transparent);
     transition: color var(--duration-fast);
     cursor: default;
-    text-align: left;
+    text-align: right;
   }
   .reset-label {
     /* Standard's base :where(button) rule (packages/styles/_standard-13-
@@ -489,7 +487,7 @@
     padding: 0;
     outline: none;
     box-shadow: none;
-    text-align: left;
+    text-align: right;
   }
   .reset-label:focus-visible {
     outline: 2px solid var(--color-accent);
