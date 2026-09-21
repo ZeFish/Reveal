@@ -345,14 +345,19 @@
     background: color-mix(in srgb, var(--color-foreground) 3.5%, transparent);
     border-radius: var(--radius-sm, 4px);
   }
+  /* Height is 1rlh, not padding — the same vertical-rhythm unit every other
+     compact control in this dev panel now shares (the segmented engine
+     switch's .seg-btn, in DevTab.svelte), so a row of icon buttons and a
+     row of text pills read as the same size instead of each accumulating
+     its own padding-derived height. */
   .tab-btn {
     all: unset;
     cursor: pointer;
     flex: 1;
+    height: 1rlh;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 6px 0;
     border-radius: 3px;
     color: color-mix(in srgb, var(--color-foreground) 50%, transparent);
     transition: color var(--duration-fast) var(--ease-soft), background var(--duration-fast) var(--ease-soft), box-shadow var(--duration-fast) var(--ease-soft);

@@ -165,15 +165,23 @@
     overflow: hidden;
     padding: 1px;
   }
+  /* Height is 1rlh, not vertical padding — the same vertical-rhythm unit
+     the tab bar's own icon buttons use (DevelopPanel.svelte's .tab-btn), so
+     every compact control in this dev panel shares one height instead of
+     each accumulating its own padding-derived one. Horizontal padding stays
+     — that's letter-spacing room, not a height contributor. */
   .seg-btn {
     all: unset;
     cursor: pointer;
+    height: 1rlh;
+    display: inline-flex;
+    align-items: center;
     font-family: var(--font-header, sans-serif);
     font-size: 10px;
     font-weight: 600;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    padding: 3px 9px;
+    padding: 0 9px;
     border-radius: 3px;
     color: color-mix(in srgb, var(--color-foreground) 50%, transparent);
     background: transparent;
