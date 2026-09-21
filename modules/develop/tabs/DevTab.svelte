@@ -17,6 +17,8 @@
     setLutFile,
     engineChanged,
     resetRecipe,
+    onExport = () => {},
+    photoPath = null,
   } = $props();
 </script>
 
@@ -57,7 +59,10 @@
         {setLutFile}
       />
 
-      <button class="capsule outline mt" onclick={resetRecipe}>Réinitialiser</button>
+      <div class="btn-row mt">
+        <button class="capsule outline half" onclick={resetRecipe}>Réinitialiser</button>
+        <button class="capsule fill half" onclick={() => onExport()} disabled={!photoPath}>Export</button>
+      </div>
     {/if}
     </div>
   </div>
@@ -166,6 +171,22 @@
     background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
     border-color: color-mix(in srgb, var(--color-foreground) 25%, transparent);
     color: var(--color-foreground);
+  }
+  .capsule.fill {
+    color: var(--color-background);
+    background: var(--color-foreground);
+  }
+  .capsule:disabled {
+    opacity: 0.25;
+    cursor: default;
+  }
+  .btn-row {
+    display: flex;
+    gap: 8px;
+  }
+  .half {
+    flex: 1;
+    width: auto;
   }
   .mt {
     margin-top: 16px;

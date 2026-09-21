@@ -495,11 +495,13 @@
     font-family: var(--font-text, sans-serif);
     font-size: 10.5px;
     background: color-mix(in srgb, var(--color-foreground) 3%, transparent);
+    background-image: none;
     color: var(--color-foreground, #fff);
-    border: 1px solid color-mix(in srgb, var(--color-foreground) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-foreground) 12%, transparent);
     border-radius: var(--radius-sm, 3px);
     padding: 2.5px 18px 2.5px 6px;
     outline: none;
+    box-shadow: none;
     appearance: none;
     -webkit-appearance: none;
     transition: border-color var(--duration-fast), background var(--duration-fast);

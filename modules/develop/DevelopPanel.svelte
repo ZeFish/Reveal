@@ -192,6 +192,8 @@
         {setLutFile}
         {engineChanged}
         {resetRecipe}
+        {onExport}
+        {photoPath}
       />
     {:else if activeTab === 'crop'}
       <CropTab bind:recipe {edited} />
