@@ -106,7 +106,7 @@ impl RenderEngine for SpektraEngine {
                     },
                     EngineControl::Slider {
                         id: "exposure_ev".to_string(),
-                        label: "Exposition".to_string(),
+                        label: "Exposure".to_string(),
                         min: -3.0,
                         max: 3.0,
                         step: 0.1,
@@ -118,7 +118,7 @@ impl RenderEngine for SpektraEngine {
             // Post-grading is for finishing passes after print, not engine-level.
             // LUTs are Rapid-only (see RapidEngine::control_groups).
             ControlGroup {
-                label: "Émulsions".to_string(),
+                label: "Emulsions".to_string(),
                 controls: vec![
                     EngineControl::Select {
                         id: "film".to_string(),
@@ -127,7 +127,7 @@ impl RenderEngine for SpektraEngine {
                     },
                     EngineControl::Select {
                         id: "paper".to_string(),
-                        label: "Papier".to_string(),
+                        label: "Paper".to_string(),
                         options_type: "papers".to_string(),
                     },
                     // Reference spektrafilm-rs GUI uses a 4–120mm log slider
@@ -144,11 +144,11 @@ impl RenderEngine for SpektraEngine {
                 ],
             },
             ControlGroup {
-                label: "Tirages".to_string(),
+                label: "Prints".to_string(),
                 controls: vec![
                     EngineControl::Slider {
                         id: "print_exposure_ev".to_string(),
-                        label: "Tirage".to_string(),
+                        label: "Print".to_string(),
                         min: -3.0,
                         max: 3.0,
                         step: 0.1,
@@ -156,7 +156,7 @@ impl RenderEngine for SpektraEngine {
                     },
                     EngineControl::Slider {
                         id: "y_shift".to_string(),
-                        label: "Filtre Y".to_string(),
+                        label: "Y Filter".to_string(),
                         min: -10.0,
                         max: 10.0,
                         step: 1.0,
@@ -164,7 +164,7 @@ impl RenderEngine for SpektraEngine {
                     },
                     EngineControl::Slider {
                         id: "m_shift".to_string(),
-                        label: "Filtre M".to_string(),
+                        label: "M Filter".to_string(),
                         min: -10.0,
                         max: 10.0,
                         step: 1.0,
@@ -182,11 +182,11 @@ impl RenderEngine for SpektraEngine {
                 // darkroom technique for printing a high-contrast negative.
                 // Off (0 exposure) by default; the Y/M shifts only matter once
                 // it's on.
-                label: "Pré-flashage".to_string(),
+                label: "Pre-flash".to_string(),
                 controls: vec![
                     EngineControl::Slider {
                         id: "preflash_exposure".to_string(),
-                        label: "Exposition".to_string(),
+                        label: "Exposure".to_string(),
                         min: 0.0,
                         max: 0.5,
                         step: 0.01,
@@ -194,7 +194,7 @@ impl RenderEngine for SpektraEngine {
                     },
                     EngineControl::Slider {
                         id: "preflash_y_shift".to_string(),
-                        label: "Filtre Y".to_string(),
+                        label: "Y Filter".to_string(),
                         min: -50.0,
                         max: 50.0,
                         step: 1.0,
@@ -202,7 +202,7 @@ impl RenderEngine for SpektraEngine {
                     },
                     EngineControl::Slider {
                         id: "preflash_m_shift".to_string(),
-                        label: "Filtre M".to_string(),
+                        label: "M Filter".to_string(),
                         min: -50.0,
                         max: 50.0,
                         step: 1.0,
@@ -211,7 +211,7 @@ impl RenderEngine for SpektraEngine {
                 ],
             },
             ControlGroup {
-                label: "Développement".to_string(),
+                label: "Development".to_string(),
                 controls: vec![
                     // 0 = auto (profile's floor-middle family entry). The
                     // pipeline snaps any value to the nearest entry in the
@@ -219,7 +219,7 @@ impl RenderEngine for SpektraEngine {
                     // though the underlying values are discrete per stock.
                     EngineControl::Slider {
                         id: "development_time_min".to_string(),
-                        label: "Durée (min)".to_string(),
+                        label: "Duration (min)".to_string(),
                         min: 0.0,
                         max: 20.0,
                         step: 0.5,
@@ -227,7 +227,7 @@ impl RenderEngine for SpektraEngine {
                     },
                     EngineControl::Slider {
                         id: "density_gamma".to_string(),
-                        label: "Contraste".to_string(),
+                        label: "Contrast".to_string(),
                         min: -0.5,
                         max: 0.5,
                         step: 0.01,
@@ -238,11 +238,11 @@ impl RenderEngine for SpektraEngine {
                     // default). The three tuning params only matter while active.
                     EngineControl::Toggle {
                         id: "dir_couplers_active".to_string(),
-                        label: "Coupleurs DIR".to_string(),
+                        label: "DIR Couplers".to_string(),
                     },
                     EngineControl::Slider {
                         id: "dir_couplers_amount".to_string(),
-                        label: "Intensité".to_string(),
+                        label: "Intensity".to_string(),
                         min: 0.0,
                         max: 2.0,
                         step: 0.05,
@@ -258,7 +258,7 @@ impl RenderEngine for SpektraEngine {
                     },
                     EngineControl::Slider {
                         id: "dir_couplers_diffusion_tail".to_string(),
-                        label: "Traîne (µm)".to_string(),
+                        label: "Tail (µm)".to_string(),
                         min: 0.0,
                         max: 400.0,
                         step: 5.0,
@@ -266,7 +266,7 @@ impl RenderEngine for SpektraEngine {
                     },
                     EngineControl::Slider {
                         id: "dir_couplers_tail_weight".to_string(),
-                        label: "Poids traîne".to_string(),
+                        label: "Tail Weight".to_string(),
                         min: 0.0,
                         max: 1.0,
                         step: 0.01,
@@ -275,7 +275,7 @@ impl RenderEngine for SpektraEngine {
                 ],
             },
             ControlGroup {
-                label: "Rendus".to_string(),
+                label: "Rendering".to_string(),
                 controls: vec![
                     EngineControl::Slider {
                         id: "halation".to_string(),
@@ -287,7 +287,7 @@ impl RenderEngine for SpektraEngine {
                     },
                     EngineControl::Slider {
                         id: "halation_size".to_string(),
-                        label: "Halo".to_string(),
+                        label: "Halation Size".to_string(),
                         min: 0.5,
                         max: 1.5,
                         step: 0.05,
@@ -311,7 +311,7 @@ impl RenderEngine for SpektraEngine {
                     },
                     EngineControl::Slider {
                         id: "sharpen".to_string(),
-                        label: "Netteté".to_string(),
+                        label: "Sharpen".to_string(),
                         min: 0.0,
                         max: 1.0,
                         step: 0.05,
@@ -319,11 +319,11 @@ impl RenderEngine for SpektraEngine {
                     },
                     EngineControl::Toggle {
                         id: "glare".to_string(),
-                        label: "Éblouissement".to_string(),
+                        label: "Glare".to_string(),
                     },
                     EngineControl::Slider {
                         id: "glare_percent".to_string(),
-                        label: "Force".to_string(),
+                        label: "Amount".to_string(),
                         min: 0.0,
                         max: 0.2,
                         step: 0.005,
@@ -331,7 +331,7 @@ impl RenderEngine for SpektraEngine {
                     },
                     EngineControl::Slider {
                         id: "glare_roughness".to_string(),
-                        label: "Texture".to_string(),
+                        label: "Roughness".to_string(),
                         min: 0.0,
                         max: 1.0,
                         step: 0.05,
@@ -339,7 +339,7 @@ impl RenderEngine for SpektraEngine {
                     },
                     EngineControl::Slider {
                         id: "glare_blur".to_string(),
-                        label: "Rayon".to_string(),
+                        label: "Blur".to_string(),
                         min: 0.0,
                         max: 2.0,
                         step: 0.05,

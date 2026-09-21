@@ -1311,7 +1311,7 @@
 
   /** @param {string} label */
   function paletteTitle(label) {
-    if (label === "develop-panel") return picked ? `${picked} — Chambre Noire` : "Chambre Noire";
+    if (label === "develop-panel") return picked ? `${picked} — Darkroom` : "Darkroom";
     if (label === "lut-panel") return "LUTs";
     if (label === "preset-panel") return "Presets";
     return "Reveal";
@@ -1680,7 +1680,7 @@
     } else {
       win = new WebviewWindow("settings-panel", {
         url: "/settings-panel",
-        title: "Réglages",
+        title: "Settings",
         width: 640,
         height: 480,
         resizable: true,

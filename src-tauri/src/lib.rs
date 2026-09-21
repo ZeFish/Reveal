@@ -264,7 +264,7 @@ fn garden_client(app: &tauri::AppHandle) -> Result<reveal_publish::GardenClient,
 async fn sign_in_with_key(app: &tauri::AppHandle, key: &str) -> Result<GardenAccountInfo, String> {
     let key = key.trim().to_string();
     if key.is_empty() {
-        return Err("clé vide".to_string());
+        return Err("empty key".to_string());
     }
     let info = {
         let key = key.clone();
@@ -1927,7 +1927,7 @@ async fn move_photo(path: String, dest_dir: String) -> Result<String, String> {
             .parent()
             .ok_or_else(|| "photo sans dossier parent".to_string())?;
         if src_dir == dest_dir {
-            return Err("la photo est déjà dans ce dossier".to_string());
+            return Err("the photo is already in this folder".to_string());
         }
         if !dest_dir.is_dir() {
             return Err(format!(
@@ -1977,7 +1977,7 @@ async fn move_photo(path: String, dest_dir: String) -> Result<String, String> {
 fn validate_dir_name(name: &str) -> Result<&str, String> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
-        return Err("le nom ne peut pas être vide".to_string());
+        return Err("the name cannot be empty".to_string());
     }
     if trimmed.contains('/') || trimmed == "." || trimmed == ".." {
         return Err("nom de dossier invalide".to_string());
@@ -2066,14 +2066,14 @@ async fn move_dir(path: String, dest_parent_dir: String) -> Result<String, Strin
         let dest = dest_parent.join(name);
 
         if dest_parent == src {
-            return Err("un dossier ne peut pas se contenir lui-même".to_string());
+            return Err("a folder cannot contain itself".to_string());
         }
         if dest_parent.starts_with(&src) {
-            return Err("impossible de déplacer un dossier dans l'un de ses propres sous-dossiers".to_string());
+            return Err("cannot move a folder into one of its own subfolders".to_string());
         }
         if let Some(current_parent) = src.parent() {
             if current_parent == dest_parent {
-                return Err("le dossier est déjà à cet endroit".to_string());
+                return Err("the folder is already there".to_string());
             }
         }
         if dest.exists() {
@@ -2791,7 +2791,7 @@ async fn import_card(
     {
         let mut running = import_state.0.lock().unwrap();
         if running.contains(&dcim) {
-            return Err("import déjà en cours pour cette carte".into());
+            return Err("import already in progress for this card".into());
         }
         running.insert(dcim.clone());
     }
@@ -3325,7 +3325,7 @@ fn score_paths(
     );
     let survivors = reveal_cull::prefilter(paths, &reveal_cull::PrefilterConfig::default());
     if cancel.load(std::sync::atomic::Ordering::Acquire) {
-        return Err("annulé".into());
+        return Err("cancelled".into());
     }
     let _ = app.emit(
         "cull-progress",
@@ -3357,7 +3357,7 @@ fn score_paths(
     let ranked = reveal_cull::rank_all(&progress_ranker, candidates, 20, target as usize)
         .map_err(|e| e.to_string())?;
     if cancel.load(std::sync::atomic::Ordering::Acquire) {
-        return Err("annulé".into());
+        return Err("cancelled".into());
     }
 
     let survivors_count = survivors.len();
@@ -3426,7 +3426,7 @@ async fn ai_cull(
     {
         let mut running = cull_state.0.lock().unwrap();
         if running.contains(&dir) {
-            return Err("culling déjà en cours pour ce dossier".into());
+            return Err("culling already in progress for this folder".into());
         }
         running.insert(dir.clone());
     }
@@ -3435,11 +3435,11 @@ async fn ai_cull(
     let (mark_story, export_desktop, target, api_key, model) = read_ai_cull_prefs(&app);
     if !mark_story && !export_desktop {
         cull_state.0.lock().unwrap().remove(&dir);
-        return Err("culling IA désactivé".into());
+        return Err("AI culling disabled".into());
     }
     let Some(api_key) = api_key else {
         cull_state.0.lock().unwrap().remove(&dir);
-        return Err("aucune clé API de vision configurée".into());
+        return Err("no vision API key configured".into());
     };
 
     let _ = app.emit(
@@ -3568,7 +3568,7 @@ async fn ai_cull_selection(
     {
         let mut running = cull_state.0.lock().unwrap();
         if running.contains(&dir) {
-            return Err("culling déjà en cours pour ce dossier".into());
+            return Err("culling already in progress for this folder".into());
         }
         running.insert(dir.clone());
     }
@@ -3577,7 +3577,7 @@ async fn ai_cull_selection(
     let (_mark_story, _export_desktop, target, api_key, model) = read_ai_cull_prefs(&app);
     let Some(api_key) = api_key else {
         cull_state.0.lock().unwrap().remove(&dir);
-        return Err("aucune clé API de vision configurée (Réglages → AI CULL)".into());
+        return Err("no vision API key configured (Settings → AI & Automation)".into());
     };
 
     let cancel = cancel_state.0.clone();

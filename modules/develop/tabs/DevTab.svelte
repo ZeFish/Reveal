@@ -49,7 +49,7 @@
       <span class="val mono">{photoScale}%</span>
     </div>
     <div class="engine-row">
-      <span class="din engine-row-label">Moteur</span>
+      <span class="din engine-row-label">Engine</span>
       <div class="seg">
         <button
           type="button"
@@ -84,7 +84,7 @@
       />
 
       <div class="btn-row mt">
-        <button class="outline panel-btn half" onclick={resetRecipe}>Réinitialiser</button>
+        <button class="outline panel-btn half" onclick={resetRecipe}>Reset</button>
         <button class="secondary panel-btn half" onclick={() => onExport()} disabled={!photoPath}>Export</button>
       </div>
     {/if}
@@ -127,6 +127,7 @@
     width: 90px;
     flex-shrink: 0;
     white-space: nowrap;
+    text-align: right;
   }
   .frow input[type="range"] {
     flex: 1;

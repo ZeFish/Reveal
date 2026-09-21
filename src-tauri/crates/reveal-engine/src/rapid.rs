@@ -28,11 +28,11 @@ impl RenderEngine for RapidEngine {
     fn control_groups(&self) -> Vec<ControlGroup> {
         vec![
             ControlGroup {
-                label: "Entrée (LUT & Encodage)".to_string(),
+                label: "Input (LUT & Encoding)".to_string(),
                 controls: vec![
                     EngineControl::Toggle {
                         id: "use_logc".to_string(),
-                        label: "LogC (cinématique)".to_string(),
+                        label: "LogC (cinematic)".to_string(),
                     },
                     EngineControl::LutStack {
                         stage: "pre".to_string(),
@@ -46,11 +46,11 @@ impl RenderEngine for RapidEngine {
                 ],
             },
             ControlGroup {
-                label: "Exposition & Contraste".to_string(),
+                label: "Exposure & Contrast".to_string(),
                 controls: vec![
                     EngineControl::Slider {
                         id: "exposure_ev".to_string(),
-                        label: "Exposition".to_string(),
+                        label: "Exposure".to_string(),
                         min: -3.0,
                         max: 3.0,
                         step: 0.05,
@@ -58,7 +58,7 @@ impl RenderEngine for RapidEngine {
                     },
                     EngineControl::Slider {
                         id: "brightness".to_string(),
-                        label: "Luminosité".to_string(),
+                        label: "Brightness".to_string(),
                         min: -50.0,
                         max: 50.0,
                         step: 0.5,
@@ -66,7 +66,7 @@ impl RenderEngine for RapidEngine {
                     },
                     EngineControl::Slider {
                         id: "contrast".to_string(),
-                        label: "Contraste".to_string(),
+                        label: "Contrast".to_string(),
                         min: -0.5,
                         max: 0.5,
                         step: 0.01,
@@ -91,11 +91,11 @@ impl RenderEngine for RapidEngine {
                 ],
             },
             ControlGroup {
-                label: "Balance des blancs".to_string(),
+                label: "White Balance".to_string(),
                 controls: vec![
                     EngineControl::Slider {
                         id: "temperature".to_string(),
-                        label: "Température".to_string(),
+                        label: "Temperature".to_string(),
                         min: -100.0,
                         max: 100.0,
                         step: 0.5,
@@ -103,7 +103,7 @@ impl RenderEngine for RapidEngine {
                     },
                     EngineControl::Slider {
                         id: "tint".to_string(),
-                        label: "Teinte".to_string(),
+                        label: "Tint".to_string(),
                         min: -50.0,
                         max: 50.0,
                         step: 0.5,
@@ -112,11 +112,11 @@ impl RenderEngine for RapidEngine {
                 ],
             },
             ControlGroup {
-                label: "Tonalités".to_string(),
+                label: "Tones".to_string(),
                 controls: vec![
                     EngineControl::Slider {
                         id: "highlights".to_string(),
-                        label: "Hautes lum.".to_string(),
+                        label: "Highlights".to_string(),
                         min: -50.0,
                         max: 50.0,
                         step: 0.5,
@@ -124,7 +124,7 @@ impl RenderEngine for RapidEngine {
                     },
                     EngineControl::Slider {
                         id: "whites".to_string(),
-                        label: "Blancs".to_string(),
+                        label: "Whites".to_string(),
                         min: -50.0,
                         max: 50.0,
                         step: 0.5,
@@ -132,7 +132,7 @@ impl RenderEngine for RapidEngine {
                     },
                     EngineControl::Slider {
                         id: "midtones".to_string(),
-                        label: "Tons moyens".to_string(),
+                        label: "Midtones".to_string(),
                         min: -50.0,
                         max: 50.0,
                         step: 0.5,
@@ -140,7 +140,7 @@ impl RenderEngine for RapidEngine {
                     },
                     EngineControl::Slider {
                         id: "shadows".to_string(),
-                        label: "Ombres".to_string(),
+                        label: "Shadows".to_string(),
                         min: -50.0,
                         max: 50.0,
                         step: 0.5,
@@ -148,7 +148,7 @@ impl RenderEngine for RapidEngine {
                     },
                     EngineControl::Slider {
                         id: "blacks".to_string(),
-                        label: "Noirs".to_string(),
+                        label: "Blacks".to_string(),
                         min: -50.0,
                         max: 50.0,
                         step: 0.5,
@@ -157,15 +157,15 @@ impl RenderEngine for RapidEngine {
                 ],
             },
             ControlGroup {
-                label: "Teinte, Saturation, Luminance".to_string(),
+                label: "Hue, Saturation, Luminance".to_string(),
                 controls: hsl_band_controls(),
             },
             ControlGroup {
-                label: "Clarté & Voile".to_string(),
+                label: "Clarity & Haze".to_string(),
                 controls: vec![
                     EngineControl::Slider {
                         id: "clarity".to_string(),
-                        label: "Clarté".to_string(),
+                        label: "Clarity".to_string(),
                         min: -40.0,
                         max: 60.0,
                         step: 0.5,
@@ -181,7 +181,7 @@ impl RenderEngine for RapidEngine {
                     },
                     EngineControl::Slider {
                         id: "dehaze".to_string(),
-                        label: "Correction voile".to_string(),
+                        label: "Dehaze".to_string(),
                         min: -30.0,
                         max: 50.0,
                         step: 0.5,
@@ -190,15 +190,15 @@ impl RenderEngine for RapidEngine {
                 ],
             },
             ControlGroup {
-                label: "Tonalité locale".to_string(),
+                label: "Local Tone".to_string(),
                 controls: zone_tone_controls(),
             },
             ControlGroup {
-                label: "Effets Numériques".to_string(),
+                label: "Digital Effects".to_string(),
                 controls: vec![
                     EngineControl::Slider {
                         id: "vignette_amount".to_string(),
-                        label: "Vignettage".to_string(),
+                        label: "Vignette".to_string(),
                         min: -0.8,
                         max: 0.4,
                         step: 0.01,
@@ -206,7 +206,7 @@ impl RenderEngine for RapidEngine {
                     },
                     EngineControl::Slider {
                         id: "vignette_midpoint".to_string(),
-                        label: "Vignette Centre".to_string(),
+                        label: "Vignette Midpoint".to_string(),
                         min: 0.1,
                         max: 0.9,
                         step: 0.01,
@@ -214,7 +214,7 @@ impl RenderEngine for RapidEngine {
                     },
                     EngineControl::Slider {
                         id: "vignette_roundness".to_string(),
-                        label: "Vignette Arrondis".to_string(),
+                        label: "Vignette Roundness".to_string(),
                         min: 0.1,
                         max: 0.9,
                         step: 0.01,
@@ -222,7 +222,7 @@ impl RenderEngine for RapidEngine {
                     },
                     EngineControl::Slider {
                         id: "vignette_feather".to_string(),
-                        label: "Vignette Adoucir".to_string(),
+                        label: "Vignette Feather".to_string(),
                         min: 0.1,
                         max: 0.9,
                         step: 0.01,
@@ -230,7 +230,7 @@ impl RenderEngine for RapidEngine {
                     },
                     EngineControl::Slider {
                         id: "highlight_desat".to_string(),
-                        label: "Désaturation hautes lum.".to_string(),
+                        label: "Highlight Desaturation".to_string(),
                         min: 0.0,
                         max: 1.0,
                         step: 0.05,
@@ -239,11 +239,11 @@ impl RenderEngine for RapidEngine {
                 ],
             },
             ControlGroup {
-                label: "Grain argentique".to_string(),
+                label: "Film Grain".to_string(),
                 controls: vec![
                     EngineControl::Slider {
                         id: "grain_amount".to_string(),
-                        label: "Intensité".to_string(),
+                        label: "Intensity".to_string(),
                         min: 0.0,
                         max: 1.0,
                         step: 0.05,
@@ -251,7 +251,7 @@ impl RenderEngine for RapidEngine {
                     },
                     EngineControl::Slider {
                         id: "grain_roughness".to_string(),
-                        label: "Rugosité".to_string(),
+                        label: "Roughness".to_string(),
                         min: 0.05,
                         max: 0.3,
                         step: 0.02,
@@ -285,10 +285,10 @@ impl RenderEngine for RapidEngine {
 /// 7: Magenta (300°)
 const HUE_CENTERS: [f32; 8] = [0.0, 30.0, 60.0, 120.0, 180.0, 240.0, 270.0, 300.0];
 
-/// French labels for `HUE_CENTERS`, in the same order — drives the HSL
+/// English labels for `HUE_CENTERS`, in the same order — drives the HSL
 /// control group so the UI never hardcodes a second copy of the band list.
 const HUE_BAND_LABELS: [&str; 8] = [
-    "Rouge", "Orange", "Jaune", "Vert", "Aqua", "Bleu", "Violet", "Magenta",
+    "Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple", "Magenta",
 ];
 
 /// Builds the 24 `IndexedSlider` controls (hue/sat/lum × 8 bands) for the
@@ -299,7 +299,7 @@ fn hsl_band_controls() -> Vec<EngineControl> {
         controls.push(EngineControl::IndexedSlider {
             id: "hsl_hue".to_string(),
             index: i,
-            label: format!("{name} Teinte"),
+            label: format!("{name} Hue"),
             min: -45.0,
             max: 45.0,
             step: 1.0,
@@ -328,21 +328,21 @@ fn hsl_band_controls() -> Vec<EngineControl> {
 /// Shadows/Midtones/Highlights), each a plain scalar `Recipe` field — unlike
 /// the HSL bands above these aren't `Vec<f32>`-indexed, so plain `Slider`
 /// controls are used. Zone-name prefixes match the labels already used in
-/// the "Tonalités" group ("Ombres"/"Tons moyens"/"Hautes lum.") on purpose,
-/// so it reads as the same zone vocabulary — the group title ("Tonalité
-/// locale") is what distinguishes this from that unrelated tone-recovery
+/// the "Tones" group ("Shadows"/"Midtones"/"Highlights") on purpose, so it
+/// reads as the same zone vocabulary — the group title ("Local Tone") is
+/// what distinguishes this from that unrelated tone-recovery
 /// group.
 fn zone_tone_controls() -> Vec<EngineControl> {
     const ZONES: [(&str, &str); 3] = [
-        ("zone_shadows", "Ombres"),
-        ("zone_midtones", "Tons moyens"),
-        ("zone_highlights", "Hautes lum."),
+        ("zone_shadows", "Shadows"),
+        ("zone_midtones", "Midtones"),
+        ("zone_highlights", "Highlights"),
     ];
     let mut controls = Vec::with_capacity(9);
     for (id_prefix, label_prefix) in ZONES {
         controls.push(EngineControl::Slider {
             id: format!("{id_prefix}_exposure"),
-            label: format!("{label_prefix} Exposition"),
+            label: format!("{label_prefix} Exposure"),
             min: -2.0,
             max: 2.0,
             step: 0.05,
@@ -350,7 +350,7 @@ fn zone_tone_controls() -> Vec<EngineControl> {
         });
         controls.push(EngineControl::Slider {
             id: format!("{id_prefix}_contrast"),
-            label: format!("{label_prefix} Contraste"),
+            label: format!("{label_prefix} Contrast"),
             min: -50.0,
             max: 50.0,
             step: 0.5,

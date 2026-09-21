@@ -78,7 +78,7 @@
     if (control.id === "development_time_min" && !isBw) return true;
     if (!isPositive) return false;
     if (control.id === "paper") return true;
-    if (group.label === "Tirages") return true;
+    if (group.label === "Prints") return true;
     return false;
   }
 
@@ -298,10 +298,10 @@
                     {/each}
                   {:else if control.options_type === "agx_looks"}
                     <option value="base">Base Contrast (Standard)</option>
-                    <option value="punchy">Punchy (Éclatant)</option>
-                    <option value="golden">Golden (Heure Dorée)</option>
-                    <option value="soft">Soft (Doux)</option>
-                    <option value="bw">Filmic B&W (Noir & Blanc)</option>
+                    <option value="punchy">Punchy</option>
+                    <option value="golden">Golden (Golden Hour)</option>
+                    <option value="soft">Soft</option>
+                    <option value="bw">Filmic B&W</option>
                   {/if}
                 </select>
               </div>
@@ -327,7 +327,7 @@
                           value={layer.name}
                           onchange={(e) => setLutFile(control.stage, idx, e.currentTarget.value)}
                         >
-                          <option value="">(Aucun)</option>
+                          <option value="">(None)</option>
                           {#each luts as name}
                             <option value={name}>{name}</option>
                           {/each}
@@ -336,14 +336,14 @@
                           type="button"
                           class="ghost icon-btn remove-lut-btn"
                           onclick={() => removeLutLayer(control.stage, idx)}
-                          title="Supprimer cette couche LUT"
+                          title="Remove this LUT layer"
                         >
                           <Icon name="x" size="9px" />
                         </button>
                       </div>
                       {#if layer.name}
                         <div class="frow opacity-row">
-                          <span class="din opacity-label">Opacité</span>
+                          <span class="din opacity-label">Opacity</span>
                           <span class="spacer"></span>
                           <input
                             type="range"

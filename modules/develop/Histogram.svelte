@@ -72,12 +72,12 @@
       const y = (x) => H - Math.log1p(channel[x]) * scale;
 
       // A flat fill opacity lets pure white/saturated highlights dominate the
-      // eye even when every channel is present — a bottom-heavy gradient (30%
-      // near the baseline, 20% near the peak) keeps the shape legible without
+      // eye even when every channel is present — a bottom-heavy gradient (20%
+      // near the baseline, 5% near the peak) keeps the shape legible without
       // that glare, and the stroke on top still marks exactly where peaks are.
       const gradient = ctx.createLinearGradient(0, 0, 0, H);
-      gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.2)`);
-      gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0.3)`);
+      gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.05)`);
+      gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0.2)`);
       ctx.fillStyle = gradient;
       ctx.beginPath();
       ctx.moveTo(0, H);

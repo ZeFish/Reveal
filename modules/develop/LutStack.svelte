@@ -87,7 +87,7 @@
       <div class="lut-layer-card">
         <div class="frow layer-row">
           <select class="lut-file-pick" value={layer.name} onchange={(e) => setFile(idx, e.currentTarget.value)}>
-            <option value="">(Aucun)</option>
+            <option value="">(None)</option>
             {#each luts as name}
               <option value={name}>{name}</option>
             {/each}
@@ -95,14 +95,14 @@
           <button
             class="ghost icon-btn remove-lut-btn"
             onclick={() => removeLayer(idx)}
-            title="Supprimer cette couche LUT"
+            title="Remove this LUT layer"
           >
             ×
           </button>
         </div>
         {#if layer.name}
           <div class="frow opacity-row">
-            <span class="din opacity-label">Opacité</span>
+            <span class="din opacity-label">Opacity</span>
             <span class="spacer"></span>
             <input
               type="range"
