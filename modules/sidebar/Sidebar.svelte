@@ -941,6 +941,16 @@
           <Icon name="caret-down" size="9px" class="select-caret" />
         </div>
       </div>
+      <StoryNotesList
+        pinned={pinnedStories}
+        recent={recentStories}
+        {curDir}
+        onOpen={onOpenDir}
+        onUnpin={unpinStory}
+        onPin={pinStory}
+        onReorder={onReorderPinned}
+      />
+      <div class="story-spacer"></div>
       <div class="theme-inner">
           <div class="story-actions">
             <!-- Publish only makes sense signed into a Garden account —
@@ -981,15 +991,6 @@
             <p class="publish-status">{publishStatus}</p>
           {/if}
       </div>
-      <StoryNotesList
-        pinned={pinnedStories}
-        recent={recentStories}
-        {curDir}
-        onOpen={onOpenDir}
-        onUnpin={unpinStory}
-        onPin={pinStory}
-        onReorder={onReorderPinned}
-      />
     </div>
   {/if}
 
@@ -1688,6 +1689,12 @@
     padding: 0 14px;
     flex: 1;
     overflow-y: auto;
+  }
+  /* Pushes Publish/Develop/Export to the bottom of the panel when Pinned +
+     Recent don't fill it; collapses to 0 and just falls in reading order
+     right after them once the list is long enough to scroll. */
+  .story-spacer {
+    flex: 1;
   }
   .theme-row {
     display: flex;
