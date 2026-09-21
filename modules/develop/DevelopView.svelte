@@ -109,6 +109,64 @@
     }
   });
 
+  // The crop box's x/y/w/h are fractions of the DISPLAYED image, not real-
+  // world units — so "1:1" isn't width===height in that space unless the
+  // image itself happens to be square. This converts the chosen aspect
+  // (e.g. 1:1, 16:9) into the w/h fraction that actually reads as that
+  // ratio on screen, given the image's own aspect (renderAspect). Same
+  // formula the preset-selection effect above already uses to seed the box;
+  // this is what keeps it locked once you start dragging a handle.
+  let lockedFractionalRatio = $derived.by(() => {
+    const aspect = recipe?.crop_aspect;
+    if (!aspect || aspect === "original" || aspect === "free") return null;
+    const parts = aspect.split(":").map(Number);
+    if (parts.length !== 2 || !(parts[0] > 0) || !(parts[1] > 0)) return null;
+    const targetRatio = parts[0] / parts[1];
+    const imgRatio = renderAspect || 1.5;
+    return targetRatio / imgRatio; // w/h in crop-box fraction space
+  });
+
+  /**
+   * Corner-drag resize that preserves `lockedFractionalRatio` — the other
+   * three handle types (edge handles) are hidden in the markup whenever a
+   * ratio is locked, since a single edge can't move without either
+   * breaking the ratio or guessing which direction to compensate in.
+   * @param {string} handle "nw" | "ne" | "sw" | "se"
+   * @param {number} dx @param {number} dy @param {number} fr
+   */
+  function resizeCornerLocked(handle, dx, dy, fr) {
+    const growRight = handle.includes("e");
+    const growDown = handle.includes("s");
+    const MIN = 0.05;
+
+    // Follow whichever axis moved more; derive the other from the ratio —
+    // avoids the two axes fighting over which one "wins" every frame.
+    let w = growRight ? startCropBox.w + dx : startCropBox.w - dx;
+    let h = growDown ? startCropBox.h + dy : startCropBox.h - dy;
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      w = Math.max(MIN, w);
+      h = w / fr;
+    } else {
+      h = Math.max(MIN, h);
+      w = h * fr;
+    }
+
+    // The opposite corner is the fixed anchor.
+    const anchorX = growRight ? startCropBox.x : startCropBox.x + startCropBox.w;
+    const anchorY = growDown ? startCropBox.y : startCropBox.y + startCropBox.h;
+    let x = growRight ? anchorX : anchorX - w;
+    let y = growDown ? anchorY : anchorY - h;
+
+    // Clamp to the frame, re-deriving the other side from `fr` each time so
+    // hitting an edge shrinks the box instead of silently breaking the lock.
+    if (x < 0) { w += x; x = 0; h = w / fr; }
+    if (y < 0) { h += y; y = 0; w = h * fr; }
+    if (x + w > 1) { w = 1 - x; h = w / fr; }
+    if (y + h > 1) { h = 1 - y; w = h * fr; }
+
+    return { x, y, w, h };
+  }
+
   /**
    * @param {string} handle
    * @param {PointerEvent & { currentTarget: HTMLElement }} e
@@ -145,9 +203,19 @@
 
     let { x, y, w, h } = startCropBox;
 
+    const fr = lockedFractionalRatio;
+    const isCorner = activeHandle.length === 2; // "nw" | "ne" | "sw" | "se"
+
     if (activeHandle === "move") {
       x = Math.max(0, Math.min(1 - w, startCropBox.x + dx));
       y = Math.max(0, Math.min(1 - h, startCropBox.y + dy));
+    } else if (fr && isCorner) {
+      ({ x, y, w, h } = resizeCornerLocked(activeHandle, dx, dy, fr));
+    } else if (fr) {
+      // A locked ratio hides the edge handles in the markup — if one still
+      // fires (e.g. a stale pointer capture), do nothing rather than
+      // silently breaking the ratio.
+      return;
     } else {
       let newX = x;
       let newY = y;
@@ -367,11 +435,16 @@
         <div class="crop-handle handle-sw" onpointerdown={(e) => startCropResize('sw', e)} role="presentation"></div>
         <div class="crop-handle handle-se" onpointerdown={(e) => startCropResize('se', e)} role="presentation"></div>
 
-        <!-- Edge Handlebars -->
-        <div class="crop-handle handle-n" onpointerdown={(e) => startCropResize('n', e)} role="presentation"></div>
-        <div class="crop-handle handle-e" onpointerdown={(e) => startCropResize('e', e)} role="presentation"></div>
-        <div class="crop-handle handle-s" onpointerdown={(e) => startCropResize('s', e)} role="presentation"></div>
-        <div class="crop-handle handle-w" onpointerdown={(e) => startCropResize('w', e)} role="presentation"></div>
+        <!-- Edge handles only make sense in Libre — with a ratio locked,
+             one edge alone can't move without either breaking the lock or
+             guessing which way to compensate, so they're hidden rather
+             than left to silently distort the crop. -->
+        {#if !lockedFractionalRatio}
+          <div class="crop-handle handle-n" onpointerdown={(e) => startCropResize('n', e)} role="presentation"></div>
+          <div class="crop-handle handle-e" onpointerdown={(e) => startCropResize('e', e)} role="presentation"></div>
+          <div class="crop-handle handle-s" onpointerdown={(e) => startCropResize('s', e)} role="presentation"></div>
+          <div class="crop-handle handle-w" onpointerdown={(e) => startCropResize('w', e)} role="presentation"></div>
+        {/if}
       </div>
     </div>
   {/if}
