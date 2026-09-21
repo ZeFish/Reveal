@@ -82,9 +82,11 @@
     // hosts wire onToggleDetached to opposite ends of the same flag.
     detached = false,
     onToggleDetached = () => {},
+    // Bindable so the docked host can know when Crop is open (to show the
+    // crop grid/rotation preview on the photo itself, in DevelopView) —
+    // this panel's own tabs otherwise never leave this component.
+    activeTab = $bindable("dev"),
   } = $props();
-
-  let activeTab = $state("dev");
 
   // developEngine holds the Rust engine id ("spektra" | "rapid" | null).
   const activeEngine = $derived(engines.find((e) => e.id === developEngine));

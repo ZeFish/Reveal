@@ -208,6 +208,11 @@
     // component (DevelopPanel.svelte), no IPC, just a different host.
     dev: { sidebar: false, focus: false, devPanel: true, detached: false }
   });
+  // The docked DevelopPanel's own active tab, mirrored up here so
+  // DevelopView knows when Crop is open (shows the crop grid/rotation
+  // preview only then, not whenever a non-"original" aspect is just
+  // sitting in the recipe from an earlier session).
+  let dockedActiveTab = $state("dev");
   /** @type {string | null} */ let folder = $state(null);
   // RAW, not deep-reactive: the contact sheet holds up to ~22k frames, and a
   // plain $state would wrap every element in a Proxy — then any full-array pass
@@ -4416,6 +4421,7 @@
       {onPhotoPointerDown}
       {onPhotoPointerMove}
       {onPhotoPointerUp}
+      showCropOverlay={!!showDockedPanel && dockedActiveTab === "crop"}
     />
     {#if recipe && layouts.dev.devPanel && !isTauri}
       <aside>
@@ -4623,6 +4629,7 @@
         {photoPath}
         {picked}
         bind:recipe
+        bind:activeTab={dockedActiveTab}
         {developEngine}
         {renderMs}
         {status}
