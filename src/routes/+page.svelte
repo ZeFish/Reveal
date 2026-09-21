@@ -5215,6 +5215,12 @@
     height: 100vh;
     position: relative;
     z-index: 1;
+    /* body's own background-image (a --color-surface-low wash, see
+       +layout.svelte) is lighter than DevelopView's <main>, which paints
+       --color-background over its own column — leaving the docked panel's
+       margin gutter, uncovered by either, showing that lighter body tone.
+       Paint the whole grid one flat shade so both columns' gutters match. */
+    background: var(--color-background);
   }
   .photo-mat {
     box-sizing: border-box;
