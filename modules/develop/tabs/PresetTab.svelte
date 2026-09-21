@@ -5,7 +5,14 @@
   import { isTauri } from "$lib/api.js";
   import Icon from "$lib/components/Icon.svelte";
 
-  let { recipe = $bindable() } = $props();
+  /** @typedef {{ id: string, label: string }} EngineInfo */
+  let { recipe = $bindable(), /** @type {EngineInfo[]} */ engines = [] } = $props();
+
+  /** @param {string | undefined} id */
+  function engineLabel(id) {
+    if (!id) return null;
+    return engines.find((e) => e.id === id)?.label ?? id;
+  }
 
   /** @type {Array<{ name: string, recipe: any }>} */
   let presets = $state([]);
@@ -130,36 +137,50 @@
 
 <div class="pane-scroll">
   <section>
+    <span class="din section-label">Save current</span>
     <div class="save-row">
       <input
         class="panel-input name-input"
-        placeholder="Preset name"
+        placeholder="Preset name…"
         bind:value={newName}
         onkeydown={(e) => e.key === "Enter" && saveCurrent()}
       />
       <button class="secondary save-btn" onclick={saveCurrent} disabled={!newName.trim() || !recipe || busy}>
-        Save
+        <Icon name="plus" size="10px" />
+        <span>Save</span>
       </button>
     </div>
-    <p class="hint">Click: current photo · ⌥-click: whole selection · ★: default preset on import</p>
+    <p class="hint">Click applies to the current photo · ⌥-click applies to the whole selection</p>
   </section>
 
   <div class="hairline-inner"></div>
 
   <section class="list">
+    <div class="list-header">
+      <span class="din section-label">Presets</span>
+      {#if presets.length > 0}
+        <span class="count-badge">{presets.length}</span>
+      {/if}
+    </div>
     {#if presets.length === 0}
-      <p class="empty-text">No presets yet. Save the current settings above.</p>
+      <div class="empty-state">
+        <Icon name="stack-simple" size="20px" />
+        <p class="empty-text">No presets yet — save the current settings above to start a library.</p>
+      </div>
     {:else}
       {#each presets as entry (entry.name)}
         <div class="preset-row">
           <button
             class="apply"
-            title="Apply this preset"
+            title="Apply this preset — click: current photo, ⌥-click: whole selection"
             onclick={(e) => applyPreset(entry, e)}
             onmouseenter={() => previewPreset(entry)}
             onmouseleave={clearPresetPreview}
           >
-            {entry.name}
+            <span class="preset-name">{entry.name}</span>
+            {#if engineLabel(entry.recipe?.engine)}
+              <span class="engine-badge">{engineLabel(entry.recipe?.engine)}</span>
+            {/if}
           </button>
           <button
             class="ghost icon default-btn"
@@ -171,7 +192,9 @@
           >
             <Icon name="star" size="11px" />
           </button>
-          <button class="ghost icon" title="Delete" onclick={() => deletePreset(entry)}>×</button>
+          <button class="ghost icon delete-btn" title="Delete" onclick={() => deletePreset(entry)}>
+            <Icon name="x" size="10px" />
+          </button>
         </div>
       {/each}
     {/if}
@@ -191,13 +214,37 @@
     padding: 16px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 18px;
   }
 
   section {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
+  }
+
+  .din {
+    font-family: var(--font-header, sans-serif);
+    font-size: 10.8px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
+  }
+  .section-label {
+    font-size: 9.5px;
+  }
+  .list-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .count-badge {
+    font-family: var(--font-monospace, monospace);
+    font-size: 9px;
+    color: color-mix(in srgb, var(--color-foreground) 45%, transparent);
+    background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
+    padding: 1px 6px;
+    border-radius: 999px;
   }
 
   .save-row {
@@ -214,12 +261,15 @@
     min-width: 0;
     font-family: var(--font-text, sans-serif);
     font-size: 10.8px;
-    padding: 6px 8px;
+    padding: 7px 9px;
   }
   .save-btn {
     flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     font-size: 10px;
-    padding: 6px 12px;
+    padding: 7px 13px;
   }
 
   .hint {
@@ -230,13 +280,24 @@
   }
 
   .list {
-    gap: 4px;
+    gap: 6px;
+  }
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 28px 16px;
+    color: color-mix(in srgb, var(--color-foreground) 30%, transparent);
+    border: 1px dashed var(--color-border);
+    border-radius: var(--radius);
   }
   .empty-text {
-    font-family: var(--font-monospace, monospace);
+    font-family: var(--font-text, sans-serif);
     font-size: 10.8px;
     color: color-mix(in srgb, var(--color-foreground) 45%, transparent);
     line-height: 1.4;
+    text-align: center;
     margin: 0;
   }
   .preset-row {
@@ -248,35 +309,73 @@
     all: unset;
     cursor: pointer;
     flex: 1;
-    text-align: left;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
     font-family: var(--font-text, sans-serif);
     font-size: 11px;
-    padding: 6px 10px;
+    padding: 8px 11px;
     border-radius: var(--radius);
     border: 1px solid var(--color-border);
     background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
     color: color-mix(in srgb, var(--color-foreground) 85%, transparent);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    transition: color var(--duration-instant) var(--ease-soft), border-color var(--duration-instant) var(--ease-soft), background var(--duration-instant) var(--ease-soft);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    transition: color var(--duration-fast) var(--ease-soft), border-color var(--duration-fast) var(--ease-soft), background var(--duration-fast) var(--ease-soft), box-shadow var(--duration-fast) var(--ease-soft), transform var(--duration-fast) var(--ease-soft);
   }
   .apply:hover {
     color: var(--color-foreground);
-    border-color: color-mix(in srgb, var(--color-foreground) 50%, transparent);
-    background: color-mix(in srgb, var(--color-foreground) 10%, transparent);
+    border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+    background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+    transform: translateY(-0.5px);
+  }
+  .preset-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .engine-badge {
+    flex-shrink: 0;
+    font-family: var(--font-header, sans-serif);
+    font-size: 8.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
+    background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
+    padding: 2px 6px;
+    border-radius: 999px;
   }
   .preset-row button.icon {
     width: 26px;
     height: 26px;
     padding: 0;
+    border-radius: var(--radius-sm, 6px);
   }
   .default-btn {
     flex-shrink: 0;
     color: color-mix(in srgb, var(--color-foreground) 35%, transparent);
+    transition: color var(--duration-fast) var(--ease-soft), background var(--duration-fast) var(--ease-soft);
+  }
+  .default-btn:hover {
+    color: var(--color-foreground);
+    background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
   }
   .default-btn.active {
     color: var(--color-accent);
-    border-color: var(--color-accent);
+  }
+  .default-btn.active:hover {
+    color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  }
+  .delete-btn {
+    color: color-mix(in srgb, var(--color-foreground) 30%, transparent);
+    transition: color var(--duration-fast) var(--ease-soft), background var(--duration-fast) var(--ease-soft);
+  }
+  .delete-btn:hover {
+    color: #ef4444;
+    background: color-mix(in srgb, #ef4444 12%, transparent);
   }
 </style>
