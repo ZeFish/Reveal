@@ -124,8 +124,9 @@
     border-bottom: 1px solid color-mix(in srgb, var(--color-foreground) 8%, transparent);
   }
   .frow-label {
-    width: 70px;
+    width: 90px;
     flex-shrink: 0;
+    white-space: nowrap;
   }
   .frow input[type="range"] {
     flex: 1;
