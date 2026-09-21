@@ -1,6 +1,6 @@
 <script>
-  // The one ambient signal for "something is happening" — subtle, top-right,
-  // Lightroom-style. Never pops open on its own (Francis: no modal jumping
+  // The one ambient signal for "something is happening" — subtle,
+  // bottom-center, Lightroom-style. Never pops open on its own (Francis: no modal jumping
   // in front of you every time an operation starts); clicking it is the
   // only way to see the full activity panel (old RenderQueueModal, now
   // generic). When several activities run at once, the bar shows their
@@ -30,8 +30,9 @@
   .task-indicator {
     all: unset;
     position: fixed;
-    top: 10px;
-    right: 12px;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
     z-index: 80;
     display: flex;
     align-items: center;

@@ -805,7 +805,6 @@
       });
       listen("import-started", (e) => {
         progress = { verb: "import", done: 0, total: 1, current: "Démarrage..." };
-        appMessage = `Import démarré...`;
         importedByFolder = new Map();
         importTaskId = startActivity("import", "Import carte mémoire", 1);
       });
@@ -852,16 +851,14 @@
       // rather than a dedicated chip/modal (the flow is walk-away, no review
       // step to build UI for).
       listen("cull-started", (e) => {
-        appMessage = `Culling IA · ${e.payload?.total ?? "?"} photos…`;
         cullTaskId = startActivity("cull", `Culling IA · ${e.payload?.total ?? "?"} photos`, e.payload?.total ?? 1);
       });
       listen("cull-progress", (e) => {
         const p = e.payload;
         const phaseLabel = p.phase === "cloud" ? "analyse visuelle" : "tri local";
-        appMessage = `Culling IA (${phaseLabel}) ${p.done}/${p.total}`;
-        // Keeps the generic bottom HUD (`import-hud`, driven by `progress`)
-        // ticking in step with the toast instead of freezing at the 0/N it
-        // was set to when the run started.
+        // The bottom-center activity indicator already shows this live, no
+        // separate toast needed — `progress` itself is still needed as the
+        // concurrency guard other handlers check before starting.
         progress = { verb: "cull", done: p.done, total: p.total, current: phaseLabel };
         if (cullTaskId) updateActivity(cullTaskId, { current: phaseLabel, done: p.done, total: p.total });
       });
@@ -4368,13 +4365,6 @@
       onPublishStory={publishStory}
       onOpenGardenUrl={() => { if (gardenUrl) invoke("open_path", { path: gardenUrl }); }}
     />
-    {#if progress}
-      <div class="import-hud">
-        <strong>{progress.verb}</strong>
-        <span>{progress.done}/{progress.total}</span>
-        {#if progress.current}<em>{progress.current}</em>{/if}
-      </div>
-    {/if}
     {#if false && layouts[currentMode].focus}
       <div class="focus-overlay" aria-hidden="true"></div>
     {/if}
@@ -4893,35 +4883,6 @@
     pointer-events: none;
     background: rgba(0, 0, 0, 0.18);
     backdrop-filter: grayscale(1) blur(18px);
-  }
-  .import-hud {
-    position: fixed;
-    left: 50%;
-    bottom: 1.2rem;
-    transform: translateX(-50%);
-    z-index: 60;
-    display: flex;
-    align-items: center;
-    gap: 0.7rem;
-    max-width: min(42rem, calc(100vw - 2rem));
-    padding: 0.55rem 0.8rem;
-    border: 1px solid var(--color-border);
-    border-radius: 999px;
-    background: var(--color-surface-high);
-    box-shadow: var(--shadow-lg);
-    font-family: var(--font-monospace, monospace);
-    font-size: 0.68rem;
-  }
-  .import-hud strong {
-    color: var(--color-accent);
-    text-transform: uppercase;
-  }
-  .import-hud em {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    opacity: 0.7;
-    font-style: normal;
   }
   .import {
     color: var(--color-accent);
