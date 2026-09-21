@@ -4628,6 +4628,7 @@
         </section>
       </aside>
     {:else if showDockedPanel}
+      <div class="docked-panel-frame">
       <DevelopPanel
         {photoPath}
         {picked}
@@ -4670,6 +4671,7 @@
           saveLayouts();
         }}
       />
+      </div>
     {/if}
   </div>
 {/if}
@@ -5302,6 +5304,19 @@
   }
   .open {
     align-self: flex-start;
+  }
+  /* Same floating-card treatment as the sidebar `aside` above — DevelopPanel's
+     own .panel is edge-to-edge on purpose (it also fills a whole DETACHED OS
+     window, where the window chrome itself already supplies the rounding),
+     so docking it inline needs this wrapper to match the sidebar rather than
+     sitting flush against the window edge. */
+  .docked-panel-frame {
+    margin: 2.2rem 0.9rem 0.9rem 0;
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+    min-height: 0;
   }
   .file {
     font-family: var(--font-monospace, monospace);
