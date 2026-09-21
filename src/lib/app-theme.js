@@ -38,8 +38,10 @@ const loadedThemes = new Set([DEFAULT_THEME]);
 // SCHEME change (theme pick, or macOS system light/dark) recolors dozens of
 // them at once, and those mismatched durations turn one swap into a visible
 // wave instead of a single fade. This forces one shared, synchronized
-// duration for color-ish properties for the ~250ms the swap takes, then
-// gets out of the way so hover transitions go back to their own timing.
+// duration (--duration-standard, 180ms in the app context — see app.scss)
+// for the swap, then gets out of the way so hover transitions go back to
+// their own timing. The 260ms timeout is that plus a buffer, not a duration
+// of its own — keep it above whatever --duration-standard resolves to.
 let transitionSyncTimer = /** @type {ReturnType<typeof setTimeout> | undefined} */ (undefined);
 export function syncThemeTransition() {
   const root = document.documentElement;

@@ -190,5 +190,5 @@ html:has(img:active)::before {
    this just makes whatever they already animate share one timing, briefly. */
 .theme-transitioning,
 .theme-transitioning * {
-  transition-duration: 200ms !important;
+  transition-duration: var(--duration-standard) !important;
 }
