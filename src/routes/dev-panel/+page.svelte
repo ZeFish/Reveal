@@ -1,25 +1,20 @@
 <script>
-  // The develop panel — a 1:1 port of the Swift `DevPanel.swift` +
-  // `Controls.swift` control language: DIN section titles with chevrons
-  // (collapsible, remembered), SliderField rows (88px DIN label, thin ink
-  // track, round thumb, mono value), StyledMenu pills, StyledToggle capsule,
-  // and the I/D/E shape: INFO / DÉVELOPPEMENT / EXPORT.
+  // The develop panel's DETACHED host — a real, separate Tauri window with no
+  // shared JS memory with the main window, so every piece of state below is
+  // a local MIRROR kept in sync over `main-dev-state`/`dev-panel-*` events.
+  // The actual interface lives in DevelopPanel.svelte (shared with the
+  // eventual docked host); this file's only job is the IPC bridge plus the
+  // things that only make sense for a separate OS window — forwarding
+  // keyboard shortcuts the main window would otherwise never see, and
+  // reporting focus/pointer presence for focus-mode dimming.
   import { onMount } from "svelte";
   import { listen, emit } from "@tauri-apps/api/event";
   import { invoke } from "@tauri-apps/api/core";
   import { isTauri } from "$lib/api.js";
-  import Icon from "$lib/components/Icon.svelte";
-  import InfoBlock from "@modules/develop/tabs/InfoBlock.svelte";
-  import ToolsStrip from "@modules/develop/tabs/ToolsStrip.svelte";
-  import DevTab from "@modules/develop/tabs/DevTab.svelte";
-  import CropTab from "@modules/develop/tabs/CropTab.svelte";
-  import PresetTab from "@modules/develop/tabs/PresetTab.svelte";
-  import ExportTab from "@modules/develop/tabs/ExportTab.svelte";
+  import DevelopPanel from "@modules/develop/DevelopPanel.svelte";
 
   /** @typedef {{ name: string, label: string }} FilmOrPaper */
-  /** @typedef {{ name: string, opacity: number }} LutLayer */
   /** @typedef {{ id: string, label: string, control_groups?: any[] }} EngineInfo */
-  /** @typedef {{ aperture?: number, shutter?: string, iso?: number, focal_mm?: number, captured_at?: string, make?: string, model?: string, width?: number, height?: number }} ExifInfo */
   /** @typedef {Record<string, any>} Recipe */
 
   /** @type {string | null} */
@@ -42,14 +37,14 @@
   let films = $state([]);
   /** @type {FilmOrPaper[]} */
   let papers = $state([]);
-  /** @type {(string | LutLayer)[]} */ // .cube filenames (strings) from list_luts, via main-dev-state
+  /** @type {(string | {name: string, opacity: number})[]} */ // .cube filenames (strings) from list_luts, via main-dev-state
   let luts = $state([]);
+  /** @type {EngineInfo[]} */
+  let engines = $state([]);
   let caption = $state("");
   let rating = $state(0);
   let publishing = $state(false);
   let publishStatus = $state("");
-  /** @type {ExifInfo | null} */ // the frame's EXIF spec sheet, from `frame_info`
-  let exif = $state(null);
   /** @type {Recipe | null} */ // engine defaults, for double-click-to-reset
   let defaults = $state(null);
   let showClipping = $state(false);
@@ -59,33 +54,9 @@
     emit("dev-panel-toggle-clipping", { showClipping });
   }
 
-  function onCropClick() {
-    activeTab = "crop";
+  function captionEdited() {
+    emit("dev-panel-caption-updated", { caption });
   }
-
-  function onPresetClick() {
-    activeTab = "preset";
-  }
-
-  // Quick-export the current photo straight to the Desktop, bypassing
-  // whatever custom export folder is configured — the main window's
-  // exportCurrent() accepts a destDir override for exactly this.
-  function onExportDesktopClick() {
-    emit("dev-panel-export-desktop", {});
-  }
-
-  /** @type {string | null} */ // slider value being typed, by recipe key
-  let editingKey = $state(null);
-
-  // The engine registry comes from Rust — each engine (spektra, rapid, …)
-  // declares its own id, label AND control_groups (its UI slice) via
-  // `list_engines`. We render exactly what it reports; nothing is hardcoded
-  // here, so a new Rust engine appears with zero changes to this file.
-  /** EngineInfo[]: {id, label, control_groups} @type {EngineInfo[]} */
-  let engines = $state([]);
-
-  // developEngine holds the Rust engine id ("spektra" | "rapid" | null).
-  let activeEngine = $derived(engines.find((e) => e.id === developEngine));
 
   // ---- LUT stacks (Rapid-only) — model matches Rust `LutLayer { name, opacity }`
   /** @param {string} stage */
@@ -102,9 +73,6 @@
       recipe[oldKey] = [];
       edited();
     }
-  }
-  function openLutsDir() {
-    invoke("luts_dir").then((dir) => invoke("open_path", { path: dir })).catch(() => {});
   }
   /** @param {string} stage */
   function addLutLayer(stage) {
@@ -140,8 +108,6 @@
     edited();
   }
 
-  let activeTab = $state("dev");
-
   onMount(() => {
     // Plain-browser preview (vite dev, no Tauri): show a demo state so the
     // panel's control language is inspectable — the real window overwrites
@@ -151,10 +117,6 @@
       photoPath = "/mnt/ffp-production/Capture/2026/2026-06-28/DSCF3201.RAF";
       renderMs = 532;
       rating = 3;
-      exif = {
-        aperture: 5.6, shutter: "1/60", iso: 1000, focal_mm: 23,
-        captured_at: "2026-06-28 · 14:25", make: "FUJIFILM", model: "X-T5",
-      };
       films = [{ name: "gold200", label: "Kodak Gold 200" }];
       papers = [{ name: "portra_endura", label: "Kodak Portra Endura" }];
       recipe = {
@@ -298,81 +260,13 @@
     edited(transient, key);
   }
 
-  function captionEdited() {
-    emit("dev-panel-caption-updated", { caption });
-  }
-
-  function exportSettingsChanged() {
-    emit("dev-panel-export-settings-changed", { exportEdge, exportBorder });
-  }
-
-  function triggerExport() {
-    emit("dev-panel-export", {});
-  }
-
   function resetRecipe() {
     emit("dev-panel-reset", {});
-  }
-
-  /** @param {string} appPath */
-  function openInEditor(appPath) {
-    if (appPath) emit("dev-panel-open-in-editor", { appPath });
   }
 
   function hidePanel() {
     emit("dev-panel-close", {});
   }
-
-  function copyPath() {
-    if (photoPath) navigator.clipboard?.writeText(photoPath);
-  }
-
-  // PUBLIER — develop, upload, PUT a one-image note to the Garden. The
-  // credentials come from the vault's garden plugin config, Rust-side.
-  async function publishPhoto() {
-    if (!photoPath || publishing || !isTauri) return;
-    publishing = true;
-    publishStatus = "";
-    try {
-      const live = await invoke("publish_photo", { path: photoPath });
-      publishStatus = live;
-    } catch (e) {
-      publishStatus = String(e);
-    } finally {
-      publishing = false;
-    }
-  }
-
-  function revealInFinder() {
-    if (photoPath && isTauri) {
-      invoke("open_path", { path: photoPath.split("/").slice(0, -1).join("/") }).catch(() => {});
-    }
-  }
-
-  // EXIF arrives per photo — cheap metadata-only read, no pixel decode.
-  $effect(() => {
-    const p = photoPath;
-    if (!isTauri) return;
-    exif = null;
-    if (p) {
-      invoke("frame_info", { path: p })
-        .then((i) => {
-          if (p === photoPath) exif = i;
-        })
-        .catch(() => {});
-    }
-  });
-
-  // "ƒ5.6  1/60  ISO 1000  23mm" — the Swift `exposure.spec` line.
-  const exifLine = $derived.by(() => {
-    if (!exif) return "";
-    const parts = [];
-    if (exif.aperture) parts.push(`ƒ${Number(exif.aperture.toFixed(1))}`);
-    if (exif.shutter) parts.push(exif.shutter);
-    if (exif.iso) parts.push(`ISO ${exif.iso}`);
-    if (exif.focal_mm) parts.push(`${Math.round(exif.focal_mm)}mm`);
-    return parts.join("   ");
-  });
 
   // Double-click a slider label → back to the engine default for that one key
   // (or one band of an array-valued key, e.g. hsl_hue[i], when index is set).
@@ -385,126 +279,47 @@
       setNum(key, defaults[key], false);
     }
   }
-
-  /** @param {string} key @param {number | string} raw @param {number} min @param {number} max */
-  function commitEdit(key, raw, min, max) {
-    const v = Number(String(raw).replace(",", "."));
-    if (Number.isFinite(v)) setNum(key, Math.min(Math.max(v, min), max), false);
-    editingKey = null;
-  }
-
-  /** @param {HTMLInputElement} node */
-  const autofocus = (node) => {
-    node.focus();
-    node.select();
-  };
-
-  /** @param {number | string} v */
-  const fmt = (v) => {
-    const s = Number(v).toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
-    return s === "" || s === "-0" ? "0" : s;
-  };
-  /** @param {number | string} v @param {number} min @param {number} max */
-  const pct = (v, min, max) => `${((Number(v) - min) / (max - min)) * 100}%`;
-  /** @param {string | null} p */
-  const parentDir = (p) => (p ? p.split("/").slice(0, -1).join("/").replace(/^\/Users\/[^/]+/, "~") : "");
 </script>
 
-<div class="panel">
-  <!-- STICKY TOP ZONE -->
-  <div class="sticky-top">
-    <header data-tauri-drag-region>
-      <button class="close" onclick={hidePanel} title="Fermer le panneau (⇧D)">
-        <Icon name="x" size="11px" />
-      </button>
-      <span class="din title">{picked ?? "—"}</span>
-      <button
-        class="header-util-btn"
-        class:active={showClipping}
-        onclick={toggleClipping}
-        title="Avertissement d'écrêtage (Blancs & Noirs)"
-      >
-        <Icon name="circle-half" size="12px" />
-        {#if showClipping}
-          <span class="clip-indicator"></span>
-        {/if}
-      </button>
-    </header>
-
-    <!-- TAB BAR -->
-    <div class="tab-bar">
-      <button class="tab-btn" class:active={activeTab === 'dev'} onclick={() => activeTab = 'dev'}>
-        <Icon name="sliders-horizontal" size="11px" />
-        <span>Dev</span>
-      </button>
-      <button class="tab-btn" class:active={activeTab === 'crop'} onclick={() => activeTab = 'crop'}>
-        <Icon name="crop" size="11px" />
-        <span>Crop</span>
-      </button>
-      <button class="tab-btn" class:active={activeTab === 'preset'} onclick={() => activeTab = 'preset'}>
-        <Icon name="stack-simple" size="11px" />
-        <span>Presets</span>
-      </button>
-      <button class="tab-btn" class:active={activeTab === 'info'} onclick={() => activeTab = 'info'}>
-        <Icon name="image" size="11px" />
-        <span>Info</span>
-      </button>
-      <button class="tab-btn" class:active={activeTab === 'export'} onclick={() => activeTab = 'export'}>
-        <Icon name="download-simple" size="11px" />
-        <span>Export</span>
-      </button>
-    </div>
-    <div class="hairline"></div>
-  </div>
-
-  <!-- SCROLLABLE TAB CONTENT -->
-  <div class="pane-scroll">
-    {#if activeTab === 'dev'}
-      <DevTab
-        bind:recipe
-        {engines}
-        {developEngine}
-        {activeEngine}
-        {films}
-        {papers}
-        {luts}
-        {edited}
-        {resetOne}
-        {addLutLayer}
-        {removeLutLayer}
-        {updateLutOpacity}
-        {setLutFile}
-        {engineChanged}
-        {resetRecipe}
-      />
-    {:else if activeTab === 'crop'}
-      <CropTab bind:recipe {edited} />
-    {:else if activeTab === 'preset'}
-      <PresetTab bind:recipe />
-    {:else if activeTab === 'info'}
-      <InfoBlock
-        {picked}
-        {exifLine}
-        {exif}
-        {renderMs}
-        {status}
-        {rating}
-        bind:caption
-        {photoPath}
-      />
-    {:else if activeTab === 'export'}
-      <ExportTab
-        {installedEditors}
-        {exportFolder}
-        bind:exportEdge
-        bind:exportBorder
-        {photoPath}
-        bind:publishing
-        bind:publishStatus
-      />
-    {/if}
-  </div>
-</div>
+<DevelopPanel
+  {photoPath}
+  {picked}
+  bind:recipe
+  {developEngine}
+  {renderMs}
+  {status}
+  {installedEditors}
+  bind:exportEdge
+  bind:exportBorder
+  {exportFolder}
+  {films}
+  {papers}
+  {luts}
+  {engines}
+  bind:caption
+  {rating}
+  bind:publishing
+  bind:publishStatus
+  {showClipping}
+  {toggleClipping}
+  {edited}
+  {resetOne}
+  {addLutLayer}
+  {removeLutLayer}
+  {updateLutOpacity}
+  {setLutFile}
+  {engineChanged}
+  {resetRecipe}
+  {hidePanel}
+  onCaptionEdited={captionEdited}
+  onExportSettingsChanged={() => emit("dev-panel-export-settings-changed", { exportEdge, exportBorder })}
+  onExport={() => emit("dev-panel-export", {})}
+  onExportDaily={() => emit("dev-panel-export-daily", {})}
+  onChooseExportFolder={() => emit("dev-panel-choose-export-folder", {})}
+  onOpenInEditor={(/** @type {string} */ appPath) => emit("dev-panel-open-in-editor", { appPath })}
+  detached={true}
+  onToggleDetached={() => emit("dev-panel-dock-requested", {})}
+/>
 
 <style>
   :global(body) {
@@ -513,144 +328,6 @@
     margin: 0;
     padding: 0;
     overflow: hidden;
-  }
-
-  .panel {
     height: 100vh;
-    display: flex;
-    flex-direction: column;
-    background: var(--color-surface-high);
   }
-
-  .sticky-top {
-    flex-shrink: 0;
-    display: flex;
-    flex-direction: column;
-    background: var(--color-surface-high);
-    z-index: 10;
-  }
-
-  .din {
-    font-family: var(--font-header, sans-serif);
-    font-size: 10.8px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-  }
-
-  header {
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 14px 10px;
-  }
-  .close {
-    all: unset;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    border-radius: 4px;
-    color: color-mix(in srgb, var(--color-foreground) 50%, transparent);
-    transition: color var(--duration-fast), background var(--duration-fast);
-  }
-  .close:hover {
-    color: var(--color-foreground);
-    background: color-mix(in srgb, var(--color-foreground) 10%, transparent);
-  }
-  header .title {
-    color: var(--color-foreground);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    min-width: 0;
-    flex: 1;
-  }
-  .header-util-btn {
-    all: unset;
-    cursor: pointer;
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    border-radius: var(--radius-sm, 4px);
-    color: color-mix(in srgb, var(--color-foreground) 50%, transparent);
-    transition: color var(--duration-fast), background var(--duration-fast);
-  }
-  .header-util-btn:hover {
-    color: var(--color-foreground);
-    background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
-  }
-  .header-util-btn.active {
-    color: var(--color-accent);
-    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
-  }
-  .clip-indicator {
-    position: absolute;
-    bottom: 2px;
-    right: 2px;
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: var(--color-accent);
-  }
-
-  .hairline {
-    height: 1px;
-    background: var(--color-border);
-    margin: 0 12px;
-    flex-shrink: 0;
-  }
-
-  .tab-bar {
-    display: flex;
-    gap: 3px;
-    margin: 0 12px 8px;
-    padding: 2px;
-    background: color-mix(in srgb, var(--color-foreground) 3.5%, transparent);
-    border-radius: var(--radius-sm, 4px);
-  }
-  .tab-btn {
-    all: unset;
-    cursor: pointer;
-    flex: 1;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    padding: 4px 0;
-    border-radius: 3px;
-    font-family: var(--font-header, sans-serif);
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--color-foreground) 50%, transparent);
-    transition: color var(--duration-fast) var(--ease-soft), background var(--duration-fast) var(--ease-soft), box-shadow var(--duration-fast) var(--ease-soft);
-  }
-  .tab-btn:hover {
-    color: var(--color-foreground);
-  }
-  .tab-btn.active {
-    color: var(--color-foreground);
-    background: var(--color-surface-high);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
-  }
-
-  .pane-scroll {
-    flex: 1;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    /* padding is handled within the individual tab components */
-  }
-
 </style>

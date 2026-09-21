@@ -9,7 +9,13 @@
   // container class app-specific: Standard's global `.grid` utility flows
   // children by column, which would turn this contact sheet into one long row.
   import PhotoCell from "./PhotoCell.svelte";
+  import Icon from "$lib/components/Icon.svelte";
   import { untrack } from "svelte";
+
+  /** @param {HTMLElement} node */
+  function autofocus(node) {
+    node.focus();
+  }
 
   /** @typedef {{ path: string, name: string, previewVersion?: number, rating?: number }} PhotoFrame */
 
@@ -30,7 +36,10 @@
     onToggleStory = () => {},
     onDragStart = () => {},
     scrollTop = 0,
-    onScroll = () => {}
+    onScroll = () => {},
+    /** @type {Map<number, {id: string, text: string}[]>} row (-1 = above the first) → paragraphs anchored there */
+    gridProseByRow = new Map(),
+    onSaveProse = () => {},
   } = $props();
 
   /** @type {HTMLDivElement | null} */
@@ -73,6 +82,85 @@
   const padBottom = $derived(
     virtual ? Math.max(0, (totalRows - 1 - lastRow) * rowPitch) : 0,
   );
+
+  // Gaps between rows do two things: show whatever paragraphs already
+  // anchor there (always — this is how you SEE a story while working the
+  // grid, not just add to it), and — for gaps strictly between two visible
+  // rows only — offer a hover "+" to add another. Absolutely positioned over
+  // the SAME space the grid already leaves between rows (never a real grid
+  // item), so none of this can drift the virtualization math above. Masonry
+  // has no shared row boundary across the width (each column flows
+  // independently), so it gets none of this.
+  const rowGaps = $derived.by(() => {
+    if (layout === "masonry") return [];
+    const set = new Set(gridProseByRow.keys());
+    if (totalRows >= 2) {
+      const last = Math.min(lastRow, totalRows - 2);
+      for (let r = firstRow; r <= last; r++) set.add(r);
+    }
+    return [...set].sort((a, b) => a - b);
+  });
+  /** @param {number} r */
+  const canAddAt = (r) => r >= firstRow && r <= Math.min(lastRow, totalRows - 2);
+
+  const HOVER_DWELL_MS = 900;
+  /** @type {number | null} */
+  let dwellingRow = $state(null);
+  /** @type {number | null} */
+  let editingRow = $state(null);
+  /** @type {string | null} */
+  let editingBlockId = $state(null); // null = composing a new paragraph
+  let draftText = $state("");
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
+  let dwellTimer;
+
+  /** @param {number} row */
+  function armDwell(row) {
+    if (editingRow !== null || !canAddAt(row)) return; // don't fight an open composer
+    clearTimeout(dwellTimer);
+    dwellTimer = setTimeout(() => (dwellingRow = row), HOVER_DWELL_MS);
+  }
+  /** @param {number} row */
+  function disarmDwell(row) {
+    clearTimeout(dwellTimer);
+    if (dwellingRow === row) dwellingRow = null;
+  }
+
+  /**
+   * @param {number} row
+   * @param {{id: string, text: string}} [existing] editing this paragraph instead of adding a new one
+   */
+  function openComposer(row, existing) {
+    clearTimeout(dwellTimer);
+    editingRow = row;
+    editingBlockId = existing?.id ?? null;
+    draftText = existing?.text ?? "";
+  }
+  function closeComposer() {
+    editingRow = null;
+    editingBlockId = null;
+    dwellingRow = null;
+    draftText = "";
+  }
+  async function submitComposer() {
+    const row = editingRow;
+    const blockId = editingBlockId;
+    const text = draftText;
+    closeComposer();
+    if (row === null) return;
+    if (blockId || text.trim()) await onSaveProse(row, text, blockId ?? undefined);
+  }
+  /** @param {KeyboardEvent} e */
+  function onComposerKey(e) {
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      closeComposer();
+    } else if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      submitComposer();
+    }
+  }
 
   let isProgrammaticScroll = false;
 
@@ -183,6 +271,54 @@
         onDragStart={(/** @type {DragEvent} */ event) => onDragStart(f.path, event)}
       />
     {/each}
+
+    {#each rowGaps as r (r)}
+      {@const center = r === -1 ? gap / 4 : gap / 2 + padTop + (r - firstRow) * rowPitch + rowH + gap / 2}
+      {@const hitH = r === -1 ? gap / 2 : Math.max(gap, 10)}
+      {@const prose = gridProseByRow.get(r) ?? []}
+      {@const expanded = editingRow === r || prose.length > 0}
+      <div
+        class="row-gap"
+        role="presentation"
+        class:active={dwellingRow === r || expanded}
+        class:expanded
+        style="top: {expanded ? center - 14 : center - hitH / 2}px; height: {expanded ? 'auto' : hitH + 'px'};"
+        onmouseenter={() => armDwell(r)}
+        onmouseleave={() => disarmDwell(r)}
+      >
+        {#if editingRow === r}
+          <div class="row-gap-composer" role="presentation" onclick={(e) => e.stopPropagation()}>
+            <textarea
+              rows="1"
+              placeholder="Ajouter un paragraphe…"
+              bind:value={draftText}
+              onkeydown={onComposerKey}
+              onblur={() => (draftText.trim() ? submitComposer() : closeComposer())}
+              use:autofocus
+            ></textarea>
+          </div>
+        {:else}
+          {#if prose.length}
+            <div class="row-gap-prose">
+              {#each prose as p (p.id)}
+                <button class="row-gap-text" onclick={() => openComposer(r, p)} title="Modifier ce paragraphe">
+                  {p.text}
+                </button>
+              {/each}
+            </div>
+          {/if}
+          {#if dwellingRow === r && canAddAt(r)}
+            <button
+              class="row-gap-add"
+              title="Ajouter un paragraphe ici"
+              onclick={() => openComposer(r)}
+            >
+              <Icon name="plus" size="10px" />
+            </button>
+          {/if}
+        {/if}
+      </div>
+    {/each}
   </div>
 </div>
 
@@ -198,6 +334,7 @@
   }
 
   .photo-grid {
+    position: relative;
     display: grid;
     grid-template-columns: repeat(var(--cols), var(--cellw));
     grid-auto-flow: row;
@@ -206,6 +343,85 @@
     gap: var(--gap);
     padding-left: var(--gap);
     padding-right: var(--gap);
+  }
+
+  /* Lives INSIDE the gap the grid already leaves between rows — never a real
+     grid item, so it can't push rows apart or drift the virtualized scroll
+     math. Invisible until a ~1s dwell proves you meant to stop there, so a
+     fast cull pass never sees it flicker. */
+  .row-gap {
+    position: absolute;
+    left: var(--gap);
+    right: var(--gap);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    z-index: 2;
+  }
+  .row-gap.expanded {
+    z-index: 3;
+  }
+  .row-gap-add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+    border: none;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+    color: var(--color-accent);
+    cursor: pointer;
+    opacity: 0;
+    animation: row-gap-in 0.15s ease forwards;
+  }
+  .row-gap-add:hover {
+    background: color-mix(in srgb, var(--color-accent) 28%, transparent);
+  }
+  @keyframes row-gap-in {
+    to { opacity: 1; }
+  }
+  .row-gap-prose {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+  }
+  .row-gap-text {
+    display: block;
+    width: 100%;
+    text-align: left;
+    font-size: 12px;
+    line-height: 1.4;
+    padding: 0.4em 0.6em;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: var(--color-surface-low, rgba(0, 0, 0, 0.04));
+    color: inherit;
+    cursor: pointer;
+    white-space: pre-wrap;
+  }
+  .row-gap-text:hover {
+    border-color: var(--color-accent);
+  }
+  .row-gap-composer {
+    width: 100%;
+    padding: 2px 0;
+  }
+  .row-gap-composer textarea {
+    width: 100%;
+    resize: none;
+    font: inherit;
+    font-size: 12px;
+    line-height: 1.4;
+    padding: 0.4em 0.6em;
+    border-radius: 6px;
+    border: 1px solid var(--color-accent);
+    background: var(--color-surface, #fff);
+    color: inherit;
   }
 
   /* Masonry — native CSS columns at the same explicit column count. */

@@ -42,7 +42,7 @@
         <div class="shortcut-row"><kbd>d</kbd> <span>Développer</span></div>
         <div class="shortcut-row"><kbd>⇧</kbd> <kbd>D</kbd> <span>Panneau de développement</span></div>
         <div class="shortcut-row"><kbd>z</kbd> / <kbd>⇧</kbd> <kbd>z</kbd> <span>Zoom : cadre → plein → 100% (⇧ inverse)</span></div>
-        <div class="shortcut-row"><kbd>s</kbd> <span>Storytelling</span></div>
+        <div class="shortcut-row"><kbd>s</kbd> <span>Aperçu (filtre sur la grille)</span></div>
         <div class="shortcut-row"><kbd>b</kbd> <span>Panneau des dossiers</span></div>
         <div class="shortcut-row"><kbd>o</kbd> <span>Mode Focus</span></div>
         <div class="shortcut-row"><kbd>Esc</kbd> <span>Revenir à la grille</span></div>

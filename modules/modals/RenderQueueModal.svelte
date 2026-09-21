@@ -2,37 +2,42 @@
   import Alert from "@stnd/ui/Alert.svelte";
   /**
    * @typedef {Object} Props
-   * @property {any[]} [exportQueue]
-   * @property {*} [activeExportJobId]
+   * @property {any[]} [activityQueue]
+   * @property {*} [activeActivityId]
    * @property {() => void} [onClose]
    * @property {() => void} [onCancelQueue]
    */
 
   /** @type {Props} */
   let {
-    exportQueue = [],
-    activeExportJobId = null,
+    activityQueue = [],
+    activeActivityId = null,
     onClose = () => {},
     onCancelQueue = () => {},
   } = $props();
+
+  // Cancel only exists for export jobs today (Rust's cancel_exports) — other
+  // activity kinds (import, cull, publish, move) have no cancel path yet.
+  const activeJob = $derived(activityQueue.find((j) => j.id === activeActivityId));
+  const canCancelActive = $derived(activeJob?.kind === "export");
 </script>
 
 <!-- Floating panel, not a modal: no backdrop, so the grid/develop canvas
-     behind it stays fully clickable while a render is in flight. -->
-<div class="queue-panel" role="dialog" aria-label="Render queue">
+     behind it stays fully clickable while an activity is in flight. -->
+<div class="queue-panel" role="dialog" aria-label="Activité">
   <div class="modal-header">
-    <h3>RENDER QUEUE</h3>
-    {#if activeExportJobId}
+    <h3>ACTIVITÉ</h3>
+    {#if canCancelActive}
       <button class="queue-cancel" onclick={onCancelQueue}>Cancel Queue</button>
     {/if}
-    <button class="close-btn" onclick={onClose} aria-label="Close render queue">✕</button>
+    <button class="close-btn" onclick={onClose} aria-label="Close activity panel">✕</button>
   </div>
   <div class="modal-body queue-list">
-    {#if exportQueue.length === 0}
-      <p class="empty-queue">No renders have run in this session.</p>
+    {#if activityQueue.length === 0}
+      <p class="empty-queue">Aucune activité cette session.</p>
     {:else}
-      {#each exportQueue.slice().reverse() as item (item.id)}
-        <div class="queue-item" class:active={item.id === activeExportJobId}>
+      {#each activityQueue.slice().reverse() as item (item.id)}
+        <div class="queue-item" class:active={item.id === activeActivityId}>
           <div class="queue-item-meta">
             <span class="queue-time">{item.timestamp}</span>
             <span class="queue-name">{item.label}</span>

@@ -1,5 +1,4 @@
 <script>
-  import { emit } from "@tauri-apps/api/event";
   import { invoke } from "@tauri-apps/api/core";
   import { isTauri } from "$lib/api.js";
   import Icon from "$lib/components/Icon.svelte";
@@ -12,27 +11,25 @@
     photoPath,
     publishing = $bindable(false),
     publishStatus = $bindable(""),
+    // What each of these actually DOES differs by host (docked: call the
+    // main window's own function directly; detached: relay over IPC) — see
+    // DevelopPanel.svelte. publishPhoto stays local below since it's a plain
+    // Tauri command either way, nothing host-specific about it.
+    onExportSettingsChanged = () => {},
+    onExport = () => {},
+    onExportDaily = () => {},
+    onChooseExportFolder = () => {},
+    /** @param {string} appPath */
+    onOpenInEditor = () => {},
   } = $props();
 
   function exportSettingsChanged() {
-    emit("dev-panel-export-settings-changed", { exportEdge, exportBorder });
-  }
-
-  function triggerExport() {
-    emit("dev-panel-export", {});
-  }
-
-  function triggerDailyNote() {
-    emit("dev-panel-export-daily", {});
-  }
-
-  function chooseExportFolder() {
-    emit("dev-panel-choose-export-folder", {});
+    onExportSettingsChanged({ exportEdge, exportBorder });
   }
 
   /** @param {string} appPath */
   function openInEditor(appPath) {
-    if (appPath) emit("dev-panel-open-in-editor", { appPath });
+    if (appPath) onOpenInEditor(appPath);
   }
 
   async function publishPhoto() {
@@ -75,7 +72,7 @@
       <span class="spacer"></span>
       <button
         class="folder-pick"
-        onclick={chooseExportFolder}
+        onclick={() => onChooseExportFolder()}
         title="Choisir le dossier d'export"
       >
         <span class="mono">{exportFolder ? exportFolder.split("/").pop() : "Bureau"}</span>
@@ -111,8 +108,8 @@
         }}
       ><span class="knob"></span></button>
     </div>
-    <button class="capsule fill" onclick={triggerExport} disabled={!photoPath}>Export</button>
-    <button class="capsule secondary" onclick={triggerDailyNote} disabled={!photoPath}>Note du jour (Obsidian)</button>
+    <button class="capsule fill" onclick={() => onExport()} disabled={!photoPath}>Export</button>
+    <button class="capsule secondary" onclick={() => onExportDaily()} disabled={!photoPath}>Note du jour (Obsidian)</button>
     <button class="capsule accent" onclick={publishPhoto} disabled={!photoPath || publishing}>
       {publishing ? "Publishing…" : "Publish (Garden)"}
     </button>

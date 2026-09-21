@@ -3182,17 +3182,21 @@ fn cancel_exports(cancellation: tauri::State<'_, ExportState>) {
 /// `load_preferences`/`save_preferences` read/write for the Settings modal)
 /// — reused here rather than adding dedicated `ShellPrefs` fields + setter
 /// commands for four AI-cull settings.
-fn read_ai_cull_prefs(app: &tauri::AppHandle) -> (bool, u32, Option<String>, Option<String>) {
+/// (mark_story, export_desktop, target, api_key, model) — the two outcomes
+/// are independent toggles now, not one master switch: a walk-away run can
+/// mark picks into the story, export JPEGs to the Desktop, or both.
+fn read_ai_cull_prefs(app: &tauri::AppHandle) -> (bool, bool, u32, Option<String>, Option<String>) {
     let Ok(path) = prefs_file(app) else {
-        return (false, 24, None, None);
+        return (false, false, 24, None, None);
     };
     let Ok(raw) = std::fs::read_to_string(path) else {
-        return (false, 24, None, None);
+        return (false, false, 24, None, None);
     };
     let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
-        return (false, 24, None, None);
+        return (false, false, 24, None, None);
     };
-    let enabled = value.get("ai_cull_enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+    let mark_story = value.get("ai_cull_mark_story").and_then(|v| v.as_bool()).unwrap_or(false);
+    let export_desktop = value.get("ai_cull_export_desktop").and_then(|v| v.as_bool()).unwrap_or(false);
     let target = value
         .get("ai_cull_target")
         .and_then(|v| v.as_u64())
@@ -3208,7 +3212,7 @@ fn read_ai_cull_prefs(app: &tauri::AppHandle) -> (bool, u32, Option<String>, Opt
         .and_then(|v| v.as_str())
         .map(str::to_string)
         .filter(|s| !s.is_empty());
-    (enabled, target, api_key, model)
+    (mark_story, export_desktop, target, api_key, model)
 }
 
 /// Local prefilter + cloud vision ranking, no side effects (no rating bump,
@@ -3310,21 +3314,23 @@ struct CullResult {
     considered: usize,
     survivors: usize,
     picked: usize,
-    exported_to: String,
+    marked: usize,
+    exported_to: Option<String>,
 }
 
 /// Auto-cull one just-imported day-folder down to the best `ai_cull_target`
 /// frames and export them — the AI-picks step between `import_card`'s
-/// preset application and a batch export. Structured like `import_card`/
-/// `export_photos`: an in-flight guard, progress events, a final result
-/// event. Local prefilter first (`reveal_cull::prefilter`), then a cloud
-/// vision ranking pass (`reveal_cull::rank_all`), then straight into
-/// `export_batch` — no round-trip back to the frontend for the export step.
+/// preset application and whichever of the two independent outcomes are
+/// enabled (mark into the story, export to the Desktop, or both — see
+/// `read_ai_cull_prefs`). Structured like `import_card`/`export_photos`: an
+/// in-flight guard, progress events, a final result event. Local prefilter
+/// first (`reveal_cull::prefilter`), then a cloud vision ranking pass
+/// (`reveal_cull::rank_all`), then the enabled outcome(s) — no round-trip
+/// back to the frontend for either.
 #[tauri::command]
 async fn ai_cull(
     app: tauri::AppHandle,
     engine_state: tauri::State<'_, EngineState>,
-    index_state: tauri::State<'_, IndexState>,
     cull_state: tauri::State<'_, CullState>,
     cancel_state: tauri::State<'_, CullCancelState>,
     dir: String,
@@ -3339,8 +3345,8 @@ async fn ai_cull(
     }
     cancel_state.0.store(false, std::sync::atomic::Ordering::Relaxed);
 
-    let (enabled, target, api_key, model) = read_ai_cull_prefs(&app);
-    if !enabled {
+    let (mark_story, export_desktop, target, api_key, model) = read_ai_cull_prefs(&app);
+    if !mark_story && !export_desktop {
         cull_state.0.lock().unwrap().remove(&dir);
         return Err("culling IA désactivé".into());
     }
@@ -3355,7 +3361,6 @@ async fn ai_cull(
     );
 
     let engine = engine_state.0.clone();
-    let index = index_state.0.clone();
     let cancel = cancel_state.0.clone();
     let app_for_worker = app.clone();
     let dir_key = dir.clone();
@@ -3364,32 +3369,46 @@ async fn ai_cull(
         let (picked, considered, survivors) =
             score_paths(&app_for_worker, &dir_key, &paths, target, &api_key, model, &cancel)?;
 
-        // Mark the picks visibly (existing star-filter/index path) — the
-        // walk-away workflow has no review step, so this is the paper trail.
-        for path in &picked {
-            let p = std::path::Path::new(path);
-            if let Ok(mut sidecar) = reveal_meta::read(p).map(|s| s.unwrap_or_default()) {
-                sidecar.rating = Some(5);
-                let _ = reveal_meta::write(p, &sidecar);
+        // Mark the picks into the story (the same `q` quick-collection) —
+        // only ADDS, never removes, same rule as the manual culling button:
+        // a photo already there is left alone rather than toggled out.
+        let mut marked = 0usize;
+        if mark_story {
+            let dir_path = std::path::Path::new(&dir_key);
+            let existing: std::collections::HashSet<String> =
+                story::stems(dir_path).into_iter().collect();
+            for path in &picked {
+                let p = std::path::Path::new(path);
+                let stem = p
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                if !existing.contains(&stem) && story::toggle(dir_path, p).is_ok() {
+                    marked += 1;
+                }
             }
-            let _ = index.set_rating(path, 5);
         }
 
-        let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-        let folder_name = std::path::Path::new(&dir_key)
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "culled".to_string());
-        let dest_dir = format!("{home}/Desktop/{folder_name}");
-
-        let exported = export_batch(&engine, &app_for_worker, &cancel, &picked, &dest_dir, 2048, 0.04, "cull-progress")?;
+        let exported_to = if export_desktop {
+            let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+            let folder_name = std::path::Path::new(&dir_key)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "culled".to_string());
+            let dest_dir = format!("{home}/Desktop/{folder_name}");
+            export_batch(&engine, &app_for_worker, &cancel, &picked, &dest_dir, 2048, 0.04, "cull-progress")?;
+            Some(dest_dir)
+        } else {
+            None
+        };
 
         Ok(CullResult {
             dir: dir_key,
             considered,
             survivors,
-            picked: exported,
-            exported_to: dest_dir,
+            picked: picked.len(),
+            marked,
+            exported_to,
         })
     })
     .await;
@@ -3407,12 +3426,15 @@ async fn ai_cull(
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
+            let outcome = match (&stats.exported_to, stats.marked) {
+                (Some(dest), m) if m > 0 => format!("ajoutés à l'histoire, exportés vers {dest}"),
+                (Some(dest), _) => format!("exportés vers {dest}"),
+                (None, m) if m > 0 => "ajoutés à l'histoire".to_string(),
+                (None, _) => "retenus".to_string(),
+            };
             let _ = notify_user(
                 "Culling IA — Reveal".to_string(),
-                format!(
-                    "{folder_name} : {} de {} conservés, exportés vers {}",
-                    stats.picked, stats.considered, stats.exported_to
-                ),
+                format!("{folder_name} : {} de {} conservés, {outcome}", stats.picked, stats.considered),
             )
             .await;
             let _ = app.emit("cull-finished", stats);
@@ -3465,7 +3487,7 @@ async fn ai_cull_selection(
     }
     cancel_state.0.store(false, std::sync::atomic::Ordering::Relaxed);
 
-    let (_enabled, target, api_key, model) = read_ai_cull_prefs(&app);
+    let (_mark_story, _export_desktop, target, api_key, model) = read_ai_cull_prefs(&app);
     let Some(api_key) = api_key else {
         cull_state.0.lock().unwrap().remove(&dir);
         return Err("aucune clé API de vision configurée (Réglages → AI CULL)".into());

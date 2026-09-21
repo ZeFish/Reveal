@@ -28,6 +28,8 @@
     applePhotosActive = false,
     scanning = false,
     onAddLibraryFolder = () => {},
+    gridProseByRow = new Map(),
+    onSaveProse = () => {},
   } = $props();
 </script>
 
@@ -53,6 +55,8 @@
     onContextMenu={openPhotoMenu}
     onToggleStory={(/** @type {string} */ path) => toggleStoryWithPath(path)}
     onDragStart={onPhotoDragStart}
+    {gridProseByRow}
+    {onSaveProse}
   />
 {:else if !loading}
   <div class="empty">

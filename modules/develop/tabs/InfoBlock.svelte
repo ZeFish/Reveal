@@ -1,5 +1,4 @@
 <script>
-  import { emit } from "@tauri-apps/api/event";
   import { invoke } from "@tauri-apps/api/core";
   import Icon from "$lib/components/Icon.svelte";
 
@@ -12,11 +11,11 @@
     rating,
     caption = $bindable(),
     photoPath,
+    // What happens after `caption` changes differs by host (docked: save
+    // directly; detached: relay over IPC) — same pattern as DevelopPanel's
+    // other action props, so this stays injected rather than hardcoded here.
+    onCaptionEdited = () => {},
   } = $props();
-
-  function captionEdited() {
-    emit("dev-panel-caption-updated", { caption });
-  }
 
   function copyPath() {
     if (photoPath) navigator.clipboard?.writeText(photoPath);
@@ -57,7 +56,7 @@
     rows="2"
     placeholder="Caption…"
     bind:value={caption}
-    oninput={captionEdited}
+    oninput={() => onCaptionEdited()}
   ></textarea>
   {#if photoPath}
     <div class="path-row">

@@ -460,22 +460,9 @@ fn get_blurred_luma(x: usize, y: usize, blurred: &[f32], dw: usize, dh: usize) -
     top * (1.0 - ty) + bottom * ty
 }
 
-fn hash_2d(x: f32, y: f32) -> f32 {
-    let mut p3_x = (x * 0.1031).fract();
-    let mut p3_y = (y * 0.1031).fract();
-    let mut p3_z = (x * 0.1031).fract();
-
-    let dot_val = p3_x * (p3_y + 33.33) + p3_y * (p3_z + 33.33) + p3_z * (p3_x + 33.33);
-    p3_x = (p3_x + dot_val).fract();
-    p3_y = (p3_y + dot_val).fract();
-    p3_z = (p3_z + dot_val).fract();
-
-    ((p3_x + p3_y) * p3_z).fract()
-}
-
-/// Integer 2D hash → [0, 1), exact for any `u32` coordinate. Unlike
-/// `hash_2d` (a float `fract()`-based hash), this has no precision ceiling:
-/// `hash_2d` loses fractional bits once the coordinate's integer part grows
+/// Integer 2D hash → [0, 1), exact for any `u32` coordinate. Replaced an
+/// earlier float `fract()`-based hash (and the gradient noise built on it):
+/// that one lost fractional bits once the coordinate's integer part grew
 /// past a few thousand, which showed up as a visible diagonal moiré/mesh
 /// pattern in SilverGrain on full-resolution (4000px+) photos instead of
 /// random per-pixel noise. Bit-mixing avalanche (SplitMix32-style).
@@ -487,38 +474,6 @@ fn hash_2d_u32(x: u32, y: u32) -> f32 {
     h = h.wrapping_mul(0x297A_2D39);
     h ^= h >> 15;
     (h as f32) / (u32::MAX as f32)
-}
-
-fn gradient_noise(x: f32, y: f32) -> f32 {
-    let ix = x.floor();
-    let iy = y.floor();
-    let fx = x.fract();
-    let fy = y.fract();
-
-    let ux = fx * fx * fx * (fx * (fx * 6.0 - 15.0) + 10.0);
-    let uy = fy * fy * fy * (fy * (fy * 6.0 - 15.0) + 10.0);
-
-    let ga_x = hash_2d(ix, iy) * 2.0 - 1.0;
-    let ga_y = hash_2d(ix + 11.0, iy + 37.0) * 2.0 - 1.0;
-
-    let gb_x = hash_2d(ix + 1.0, iy) * 2.0 - 1.0;
-    let gb_y = hash_2d(ix + 12.0, iy + 37.0) * 2.0 - 1.0;
-
-    let gc_x = hash_2d(ix, iy + 1.0) * 2.0 - 1.0;
-    let gc_y = hash_2d(ix + 11.0, iy + 38.0) * 2.0 - 1.0;
-
-    let gd_x = hash_2d(ix + 1.0, iy + 1.0) * 2.0 - 1.0;
-    let gd_y = hash_2d(ix + 12.0, iy + 38.0) * 2.0 - 1.0;
-
-    let dot_00 = ga_x * fx + ga_y * fy;
-    let dot_10 = gb_x * (fx - 1.0) + gb_y * fy;
-    let dot_01 = gc_x * fx + gc_y * (fy - 1.0);
-    let dot_11 = gd_x * (fx - 1.0) + gd_y * (fy - 1.0);
-
-    let bottom = dot_00 * (1.0 - ux) + dot_10 * ux;
-    let top = dot_01 * (1.0 - ux) + dot_11 * ux;
-
-    bottom * (1.0 - uy) + top * uy
 }
 
 fn apply_vibrance(r: f32, g: f32, b: f32, sat_adj: f32, vib_adj: f32) -> (f32, f32, f32) {
@@ -1618,54 +1573,6 @@ fn apply_silvergrain(pixels: &mut [f32], width: u32, height: u32, amount: f32, r
     }
 }
 
-struct PrngState {
-    seed: u64,
-}
-
-impl PrngState {
-    fn new(seed: u64) -> Self {
-        Self {
-            seed: seed.wrapping_mul(6364136223846793005),
-        }
-    }
-
-    fn next(&mut self) -> u64 {
-        self.seed = self
-            .seed
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
-        self.seed
-    }
-
-    fn uniform(&mut self) -> f32 {
-        ((self.next() >> 11) as f32) * (1.0 / 9007199254740992.0)
-    }
-
-    fn normal(&mut self) -> f32 {
-        let u1 = self.uniform().max(1e-6);
-        let u2 = self.uniform();
-        (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos()
-    }
-
-    fn poisson(&mut self, lambda: f64) -> u32 {
-        if lambda > 30.0 {
-            let z = self.normal() as f64;
-            ((lambda + z * lambda.sqrt()).max(0.0)) as u32
-        } else {
-            let l = (-lambda).exp();
-            let mut k = 0;
-            let mut p = 1.0;
-            loop {
-                k += 1;
-                p *= self.uniform() as f64;
-                if p <= l {
-                    return k - 1;
-                }
-            }
-        }
-    }
-}
-
 const LOGC3_CUT: f32 = 0.010591;
 const LOGC3_A: f32 = 5.555556;
 const LOGC3_B: f32 = 0.052272;
@@ -1683,15 +1590,6 @@ fn logc3_encode(x: f32) -> f32 {
     }
 }
 
-#[inline]
-fn srgb_encode(x: f32) -> f32 {
-    let c = x.clamp(0.0, 1.0);
-    if c <= 0.0031308 {
-        12.92 * c
-    } else {
-        1.055 * c.powf(1.0 / 2.4) - 0.055
-    }
-}
 
 fn load_lut_stack(lut_layers: &[LutLayer], luts_dir: &Path) -> Vec<(Arc<Cube>, f32)> {
     lut_layers

@@ -8,7 +8,7 @@
   // The floating sidebar — a 1:1 port of the Swift `sidebarCard` +
   // `folderBrowser` + `FolderTree` (CullView.swift / FolderTree.swift):
   // full-height elevated card, the brand cluster (traffic lights + toggles +
-  // wordmark) riding its top, FRAMES/STORY tabs, "TOUTE LA BIBLIOTHÈQUE",
+  // wordmark) riding its top, FRAMES/APERÇU tabs, "TOUTE LA BIBLIOTHÈQUE",
   // one section per catalogue, the tree with status dots and story dots,
   // then BIBLIOTHÈQUE and the Garden account row at the bottom.
   import Icon from "$lib/components/Icon.svelte";
@@ -23,9 +23,12 @@
     curDir,
     scanning,
     indexProgress = null, // {dirs, frames} while a scan walks the library
-    mode, // "cull" | "story"
+    // Grid is the only mode; this is a display filter on top of it — not a
+    // destination. `true` swaps the folder tree for the Aperçu body (thème +
+    // publish actions + notes list), same content, same interactivity.
+    previewFilter = false,
     storyDirs = new Set(),
-    // STORY-mode body props — passed by +page.svelte (Task 10); defaulted so the
+    // Aperçu body props — passed by +page.svelte (Task 10); defaulted so the
     // sidebar renders cleanly until then. onSetPinned is (notePath, pinned),
     // onReorderPinned is (fromIndex, toIndex) — both return promises upstream.
     pinnedStories = [],
@@ -51,7 +54,7 @@
     /** @type {(path: string) => void} */
     onSetImportDir = () => {},
     onOpenNote,
-    onMode,
+    onTogglePreview = () => {},
     onToggleSidebar,
     onToggleFocus,
     onToggleAppearance,
@@ -562,7 +565,7 @@
     node.select();
   };
 
-  // STORY-mode pin toggles — typed thin wrappers over the defaulted callback
+  // Aperçu pin toggles — typed thin wrappers over the defaulted callback
   // props so the inline arrow params aren't implicit `any` under strict mode.
   /** @param {string} notePath */
   const unpinStory = (notePath) => onSetPinned(notePath, false);
@@ -729,19 +732,21 @@
     <button class="wordmark" onclick={onShowShortcuts} title="Keyboard shortcuts">REVEAL</button>
   </div>
 
-  <!-- FRAMES ↔ STORYTELLING — a browsing mode, not a one-off action. -->
+  <!-- FRAMES ↔ APERÇU — a display filter on the same grid, not a mode. Both
+       tabs call the same toggle; only Aperçu is guarded (nothing to preview
+       without a folder or in the read-only Apple Photos library). -->
   <div class="tabs">
-    <button class="tab" class:active={mode !== "story"} onclick={() => onMode("cull")}>Frames</button>
+    <button class="tab" class:active={!previewFilter} onclick={() => previewFilter && onTogglePreview()}>Frames</button>
     <button
       class="tab"
-      class:active={mode === "story"}
+      class:active={previewFilter}
       disabled={isLibrary || applePhotos?.active}
-      onclick={() => onMode("story")}
-      title={isLibrary ? "Choose a folder to start a storytelling" : "Storytelling (S)"}
-    >Storytelling</button>
+      onclick={() => !previewFilter && onTogglePreview()}
+      title={isLibrary ? "Choisis un dossier pour composer une histoire" : "Aperçu (S)"}
+    >Aperçu</button>
   </div>
 
-  {#if mode !== "story"}
+  {#if !previewFilter}
     <div class="tree">
       <!-- The index-wide view — the base of everything. -->
       <div
@@ -872,23 +877,30 @@
     {/if}
     </div>
   {:else}
-    <!-- STORY mode: THÈME + ÉPINGLÉES + RÉCENTES — port of Swift `folderBrowser`
-         STORY branch (CullView.swift:531-578). Brand cluster + tabs unchanged. -->
+    <!-- Aperçu filter body: THÈME + ÉPINGLÉES + RÉCENTES — port of Swift
+         `folderBrowser` STORY branch (CullView.swift:531-578). Brand cluster
+         + tabs unchanged; this only ever swaps in over the SAME grid. -->
     <div class="story-body">
       <details open class="theme-section">
         <summary class="section-toggle">Thème</summary>
         <div class="theme-inner">
           <StoryThemePanel dir={curDir} />
           <div class="story-actions">
-            <button class="publish-hero-btn" onclick={() => onPublishStory()} disabled={publishing}>
-              {#if publishing}
-                <Icon name="arrows-clockwise" size="11px" class="spin" />
-                <span>Publication…</span>
-              {:else}
-                <Icon name="arrow-square-out" size="11px" />
-                <span>Publier sur Garden</span>
-              {/if}
-            </button>
+            <!-- Publier n'a de sens que connecté à un compte Garden — sans ça
+                 le bouton ne mène qu'à une erreur réseau. Développer et
+                 Exporter restent locaux, donc toujours disponibles : Reveal
+                 doit rester utilisable sans jamais se connecter au jardin. -->
+            {#if signedIn}
+              <button class="publish-hero-btn" onclick={() => onPublishStory()} disabled={publishing}>
+                {#if publishing}
+                  <Icon name="arrows-clockwise" size="11px" class="spin" />
+                  <span>Publication…</span>
+                {:else}
+                  <Icon name="arrow-square-out" size="11px" />
+                  <span>Publier sur Garden</span>
+                {/if}
+              </button>
+            {/if}
             <div class="secondary-actions">
               <button class="action-btn secondary" onclick={() => onDevelopStory()} title="Développer toutes les photos de l'histoire">
                 <Icon name="sliders-horizontal" size="10px" />
@@ -900,14 +912,14 @@
               </button>
             </div>
           </div>
-          {#if gardenUrl}
+          {#if signedIn && gardenUrl}
             <button class="open-page-banner" onclick={() => onOpenUrl(gardenUrl)}>
               <Icon name="check-circle" size="12px" class="banner-check" />
               <span class="banner-text">En ligne sur Garden</span>
               <Icon name="arrow-square-out" size="10px" class="banner-arrow" />
             </button>
           {/if}
-          {#if publishStatus}
+          {#if signedIn && publishStatus}
             <p class="publish-status">{publishStatus}</p>
           {/if}
         </div>
@@ -1610,8 +1622,8 @@
     color: var(--color-accent);
   }
 
-  /* STORY-mode body (THÈME + ÉPINGLÉES + RÉCENTES) — replaces the folder tree +
-     Bibliothèque when mode === "story". */
+  /* Aperçu filter body (THÈME + ÉPINGLÉES + RÉCENTES) — replaces the folder
+     tree + Bibliothèque when previewFilter is on. */
   .story-body {
     display: flex;
     flex-direction: column;

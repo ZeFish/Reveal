@@ -13,7 +13,6 @@
 //! So a slider drag costs only the last line; changing photo or stocks pays
 //! its own cache miss and nothing else.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -341,7 +340,6 @@ pub struct Engine {
     /// distinct from spektrafilm-rs's internal `data_dir/luts` — that one is
     /// spectral-upsampling tables, not creative grading LUTs).
     luts_dir: PathBuf,
-    lut_cache: Mutex<HashMap<String, Arc<Cube>>>,
     backend: Box<dyn ComputeBackend>,
     decoder: DecoderRegistry,
     /// Decoded photo, already in ProPhoto working space. Keyed by (path, fast)
@@ -381,7 +379,6 @@ impl Engine {
         Ok(Self {
             data_dir,
             luts_dir,
-            lut_cache: Mutex::new(HashMap::new()),
             backend,
             decoder: DecoderRegistry,
             decoded: Mutex::new(None),
@@ -407,49 +404,6 @@ impl Engine {
         }
         names.sort();
         Ok(names)
-    }
-
-    /// Load (or reuse from cache) every named layer in `layers`, paired with
-    /// its opacity. A layer whose file is missing or fails to parse is
-    /// dropped with a stderr note — one bad LUT shouldn't fail the render.
-    fn resolve_luts(&self, layers: &[LutLayer]) -> Vec<(Arc<Cube>, f32)> {
-        layers
-            .iter()
-            .filter(|l| l.opacity > 0.0 && !l.name.is_empty())
-            .filter_map(|l| {
-                let cached = self.lut_cache.lock().unwrap().get(&l.name).cloned();
-                let cube = match cached {
-                    Some(c) => c,
-                    None => {
-                        let candidate_1 = self.luts_dir.join(format!("{}.cube", l.name));
-                        let candidate_2 = self.luts_dir.join(format!("{}.CUBE", l.name));
-                        let candidate_3 = self.luts_dir.join(&l.name);
-                        let path = if candidate_1.exists() {
-                            candidate_1
-                        } else if candidate_2.exists() {
-                            candidate_2
-                        } else {
-                            candidate_3
-                        };
-                        match Cube::load(&path) {
-                            Ok(c) => {
-                                let c = Arc::new(c);
-                                self.lut_cache
-                                    .lock()
-                                    .unwrap()
-                                    .insert(l.name.clone(), c.clone());
-                                c
-                            }
-                            Err(e) => {
-                                eprintln!("LUT '{}' skipped: {e:#}", l.name);
-                                return None;
-                            }
-                        }
-                    }
-                };
-                Some((cube, l.opacity.clamp(0.0, 1.0)))
-            })
-            .collect()
     }
 
     fn scan_luts_dir(base_dir: &Path, current_dir: &Path, names: &mut Vec<String>) -> Result<()> {

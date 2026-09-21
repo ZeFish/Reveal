@@ -12,10 +12,13 @@
   import { reloadPhotoPages, restorePhotoSelection } from "@modules/sidebar/applePhotosBrowsing.js";
   import CullView from "@modules/culling/CullView.svelte";
   import DevelopView from "@modules/develop/DevelopView.svelte";
+  import DevelopPanel from "@modules/develop/DevelopPanel.svelte";
   import StoryView from "@modules/story/StoryView.svelte";
+  import { parseStory, serializeStory } from "$lib/story.js";
   import ShortcutsModal from "@modules/modals/ShortcutsModal.svelte";
-  import SettingsModal from "@modules/modals/SettingsModal.svelte";
   import RenderQueueModal from "@modules/modals/RenderQueueModal.svelte";
+  import TaskIndicator from "@modules/modals/TaskIndicator.svelte";
+  import Toast from "@modules/modals/Toast.svelte";
   import ContextMenu from "@modules/menus/ContextMenu.svelte";
   import Dropdown from "@stnd/ui/Dropdown.svelte";
   import DropdownItem from "@stnd/ui/DropdownItem.svelte";
@@ -101,14 +104,21 @@
    * @property {any} control_groups
    */
   /** A render-queue job. */
-  /** @typedef {Object} ExportJob
+  /** One entry in the activity queue — the single place every long-running
+   * operation (import, export, culling, publish, move, develop-settings
+   * sync) reports its progress, instead of each keeping its own ad-hoc
+   * display. The top-right indicator shows an aggregate across every
+   * "running" entry; the activity panel (old RenderQueueModal) lists them
+   * individually, live ones and history together.
+   * @typedef {Object} Activity
    * @property {string} id
+   * @property {string} kind e.g. "import" | "export" | "cull" | "publish" | "move" | "develop"
    * @property {string} label
    * @property {string} current
    * @property {number} done
    * @property {number} total
    * @property {string} phase
-   * @property {string} status
+   * @property {string} status "running" | "completed" | "failed" | "cancelled"
    * @property {string} timestamp
    */
   /** Sidebar Garden account state. */
@@ -161,8 +171,13 @@
     });
   }
 
-  /** @type {"cull" | "dev" | "story"} */
+  /** @type {"cull" | "dev"} */
   let currentMode = $state("cull");
+  // Aperçu is a display filter on the grid, not a destination — flipping it
+  // never changes `currentMode`. On, the grid's WYSIWYG rendering (StoryView)
+  // replaces the dense grid: same photos, same interactions, laid out and
+  // filtered exactly like the published page will read.
+  let previewFilter = $state(false);
   // Space is a "loupe" — the single-photo canvas without the dev panel. While a
   // space-look is active we suppress the panel window regardless of the stored
   // layouts.dev.devPanel preference, so quick looks never pop (or steal focus
@@ -185,11 +200,13 @@
     const factor = 1.05 + (1.618 - 1.05) * progress;
     return 100 / factor;
   });
-  /** @type {Record<"cull" | "dev" | "story", Record<string, boolean>>} */
+  /** @type {Record<"cull" | "dev", Record<string, boolean>>} */
   let layouts = $state({
     cull: { sidebar: true, focus: false, devPanel: false },
-    dev: { sidebar: false, focus: false, devPanel: true },
-    story: { sidebar: true, focus: false, devPanel: false }
+    // detached: the Develop panel opens as its own OS window (the old
+    // default). Docked (the new default) renders it inline instead — same
+    // component (DevelopPanel.svelte), no IPC, just a different host.
+    dev: { sidebar: false, focus: false, devPanel: true, detached: false }
   });
   /** @type {string | null} */ let folder = $state(null);
   // RAW, not deep-reactive: the contact sheet holds up to ~22k frames, and a
@@ -349,6 +366,7 @@
       } else {
         minRating = 0;
         filterStory = false;
+        previewFilter = false;
         storySet = new Set();
         sel = 0;
         selectOnly(0);
@@ -421,7 +439,11 @@
   // AI cull (walk-away card→cull→export): mirrors autoImport's hydrate-at-
   // boot pattern, but sourced from the generic preferences bag rather than
   // a dedicated ShellPrefs field (see SettingsModal's "AI CULL" section).
-  let aiCullEnabled = $state(false);
+  // Two independent outcomes, not one master switch: marking picks into the
+  // story (the `q` quick-collection) and exporting JPEGs to the Desktop can
+  // each be on or off on their own.
+  let aiCullMarkStory = $state(false);
+  let aiCullExportDesktop = $state(false);
   let aiCullTarget = $state(24);
   // Per-run bookkeeping: destDir -> file paths copied THIS import, built
   // from import-progress's per-file payload (already emitted, previously
@@ -441,7 +463,6 @@
   let filmOpen = $state(true);
   let textureOpen = $state(true);
   let shortcutsOpen = $state(false);
-  let settingsOpen = $state(false);
   // Sidebar Garden account row — null until boot resolves the stored key.
   /** @type {GardenAccount | null} */ let gardenAccount = $state(null);
   let preferences = $state({
@@ -451,9 +472,11 @@
     logs_folder: "Logs",
     export_folder: "",
     lut_folder: "",
-    ai_cull_enabled: false,
+    ai_cull_mark_story: false,
+    ai_cull_export_desktop: false,
     ai_cull_target: 24,
     ai_api_key: "",
+    ai_model: "",
     apple_photos_cache_limit_gib: 4,
   });
 
@@ -517,6 +540,12 @@
   };
   let showClipping = $state(false);
   let caption = $state("");
+  // Docked Develop panel only — the detached one has its own separate copies
+  // of these (its own onMount fetch, its own local publish button state).
+  /** @type {Recipe | null} */
+  let developDefaults = $state(null);
+  let devPublishing = $state(false);
+  let devPublishStatus = $state("");
   /** @type {Set<string>} */ let storySet = $state(new Set());
   /** @type {string | null} */ let liveUrl = $state(null);
   let storyContent = $state("");
@@ -526,8 +555,16 @@
   /** @type {[string, string][]} */ let installedEditors = $state([]);
   let catalogContent = $state("");
   let catalogOpen = $state(false);
-  /** @type {ExportJob[]} */ let exportQueue = $state([]);
-  /** @type {string | null} */ let activeExportJobId = $state(null);
+  /** @type {Activity[]} */ let activityQueue = $state([]);
+  /** @type {string | null} */ let activeActivityId = $state(null);
+  // Cross-listener correlation: these backend event streams (publish-progress,
+  // import-progress, cull-progress) fire many times over one logical
+  // operation, so the id created when it starts needs to survive to update
+  // the same activity entry on each subsequent event.
+  /** @type {string | null} */ let publishTaskId = $state(null);
+  /** @type {string | null} */ let importTaskId = $state(null);
+  /** @type {string | null} */ let cullTaskId = $state(null);
+  const anyActivityRunning = $derived(activityQueue.some((j) => j.status === "running"));
   let queueOpen = $state(false);
   let currentScrollTop = $state(0);
   /** @type {PhotoMenu | null} */ let photoMenu = $state(null);
@@ -536,6 +573,17 @@
     const d = gridDir();
     if (d && currentMode === "cull") {
       scrollOffsets[d] = currentScrollTop;
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem(`reveal.scroll.${d}`, String(currentScrollTop));
+      }
+    }
+  });
+
+  // Session restore (openDir's restoreSession) reopens whichever photo was
+  // in Develop last time the app quit — this is the write half.
+  $effect(() => {
+    if (typeof localStorage !== "undefined" && currentMode === "dev" && photoPath) {
+      localStorage.setItem("reveal.lastPhotoPath", photoPath);
     }
   });
 
@@ -612,13 +660,25 @@
       // the frontend renders whatever the Rust registry reports, so adding an
       // engine is a Rust module with zero frontend changes.
       engines = await invoke("list_engines").catch(() => []);
+      // For the docked Develop panel's "reset to default" (⌥-click a slider
+      // label) — the detached panel fetches its own copy in its own onMount;
+      // this is the docked equivalent, fetched once, same as everything above.
+      developDefaults = await invoke("default_recipe").catch(() => null);
       await refreshDirs();
-      const lastDir = localStorage.getItem("reveal.lastDirectory");
+      // Prefer the persisted path; fall back to the most recently indexed
+      // directory when nothing was saved yet (fresh install / cleared
+      // localStorage but an existing library). The autoload_path/
+      // take_open_file check below only overrides this for an actual
+      // deep-link/"open with" target — it used to redo this exact fallback
+      // itself, indexing the same directory twice on every launch.
+      const lastDir = localStorage.getItem("reveal.lastDirectory") || dirs[dirs.length - 1]?.dir;
       if (lastDir) {
-        await openDir(lastDir, false);
+        // restoreSession: land back in Develop on whichever photo was open
+        // when the app last quit, instead of always resetting to Grid.
+        await openDir(lastDir, false, true);
+      } else {
+        currentMode = "cull";
       }
-      currentMode = "cull";
-      await switchMode("cull");
       // A seeded root with an empty index (fresh install, or the library was
       // pointed elsewhere) indexes itself — no button hunt on first launch.
       if (root && !dirs.length) rescan();
@@ -627,7 +687,8 @@
       autoImport = !!shellPrefs.auto_import;
       importDir = shellPrefs.import_dir ?? null;
       const savedPreferences = await invoke("load_preferences").catch(() => ({}));
-      aiCullEnabled = !!savedPreferences.ai_cull_enabled;
+      aiCullMarkStory = !!savedPreferences.ai_cull_mark_story;
+      aiCullExportDesktop = !!savedPreferences.ai_cull_export_desktop;
       aiCullTarget = Number(savedPreferences.ai_cull_target) || 24;
       // The Garden account row: cached username shows instantly, the silent
       // /me re-verify refreshes stats (Swift `refreshIfNeeded`).
@@ -691,6 +752,13 @@
       listen("import-progress", async (e) => {
         const payload = e.payload;
         progress = { verb: "import", ...payload };
+        if (importTaskId) {
+          updateActivity(importTaskId, {
+            current: payload?.dest?.split("/").pop() || "",
+            done: payload?.done,
+            total: payload?.total,
+          });
+        }
         if (payload?.destDir && payload?.dest) {
           const list = importedByFolder.get(payload.destDir) ?? [];
           list.push(payload.dest);
@@ -720,6 +788,7 @@
         progress = { verb: "import", done: 0, total: 1, current: "Démarrage..." };
         appMessage = `Import démarré...`;
         importedByFolder = new Map();
+        importTaskId = startActivity("import", "Import carte mémoire", 1);
       });
       listen("import-finished", async (e) => {
         progress = null;
@@ -732,10 +801,18 @@
           await openDir(lastFolder);
         }
         setTimeout(() => (appMessage = ""), 4000);
+        if (importTaskId) {
+          updateActivity(importTaskId, {
+            done: 1, total: 1, phase: "Complete", status: "completed",
+            current: stats?.folders?.length ? `${stats.folders.length} dossier(s)` : "",
+          });
+          if (activeActivityId === importTaskId) activeActivityId = null;
+          importTaskId = null;
+        }
         // Walk-away AI cull: one folder at a time (not concurrently, so a
         // multi-day card doesn't hammer the vision API in parallel), only
         // for folders that actually received photos this run.
-        if (aiCullEnabled && stats?.folders?.length) {
+        if ((aiCullMarkStory || aiCullExportDesktop) && stats?.folders?.length) {
           for (const folder of stats.folders) {
             const folderPaths = importedByFolder.get(folder);
             if (folderPaths?.length) await triggerAiCull(folder, folderPaths);
@@ -746,12 +823,18 @@
         progress = null;
         appMessage = `Échec de l'import : ${e.payload.message}`;
         setTimeout(() => (appMessage = ""), 6000);
+        if (importTaskId) {
+          updateActivity(importTaskId, { phase: String(e.payload.message), status: "failed" });
+          if (activeActivityId === importTaskId) activeActivityId = null;
+          importTaskId = null;
+        }
       });
       // AI cull toasts — reuses the same appMessage pattern as import/export
       // rather than a dedicated chip/modal (the flow is walk-away, no review
       // step to build UI for).
       listen("cull-started", (e) => {
         appMessage = `Culling IA · ${e.payload?.total ?? "?"} photos…`;
+        cullTaskId = startActivity("cull", `Culling IA · ${e.payload?.total ?? "?"} photos`, e.payload?.total ?? 1);
       });
       listen("cull-progress", (e) => {
         const p = e.payload;
@@ -761,20 +844,36 @@
         // ticking in step with the toast instead of freezing at the 0/N it
         // was set to when the run started.
         progress = { verb: "cull", done: p.done, total: p.total, current: phaseLabel };
+        if (cullTaskId) updateActivity(cullTaskId, { current: phaseLabel, done: p.done, total: p.total });
       });
       listen("cull-finished", (e) => {
         const stats = e.payload;
-        appMessage = `Culling IA ✓ ${stats.picked}/${stats.considered} conservés → ${stats.exported_to}`;
+        const outcome = stats.exported_to
+          ? (stats.marked > 0 ? `ajoutés à l'histoire, exportés → ${stats.exported_to}` : `exportés → ${stats.exported_to}`)
+          : (stats.marked > 0 ? "ajoutés à l'histoire" : "retenus");
+        appMessage = `Culling IA ✓ ${stats.picked}/${stats.considered} conservés · ${outcome}`;
         setTimeout(() => (appMessage = ""), 6000);
+        if (progress?.verb === "cull") progress = null;
+        if (cullTaskId) {
+          updateActivity(cullTaskId, { done: stats.picked, total: stats.considered, current: outcome, phase: "Complete", status: "completed" });
+          if (activeActivityId === cullTaskId) activeActivityId = null;
+          cullTaskId = null;
+        }
       });
       listen("cull-failed", (e) => {
         appMessage = `Culling IA : ${e.payload.message}`;
         setTimeout(() => (appMessage = ""), 6000);
+        if (progress?.verb === "cull") progress = null;
+        if (cullTaskId) {
+          updateActivity(cullTaskId, { phase: String(e.payload.message), status: "failed" });
+          if (activeActivityId === cullTaskId) activeActivityId = null;
+          cullTaskId = null;
+        }
       });
       listen("export-progress", (e) => {
         progress = { verb: "export", ...e.payload };
-        if (activeExportJobId) {
-          updateQueueJob(activeExportJobId, {
+        if (activeActivityId) {
+          updateActivity(activeActivityId, {
             current: e.payload.current || "Finishing",
             done: e.payload.done,
             total: e.payload.total,
@@ -790,8 +889,16 @@
           setTimeout(() => { progress = null; }, 3000);
         }
       });
-      listen("publish-progress", (e) =>
-        (progress = { verb: e.payload.phase || "publication", ...e.payload }));
+      listen("publish-progress", (e) => {
+        progress = { verb: e.payload.phase || "publication", ...e.payload };
+        if (publishTaskId) {
+          updateActivity(publishTaskId, {
+            current: e.payload.current || e.payload.phase || "",
+            done: e.payload.done,
+            total: e.payload.total,
+          });
+        }
+      });
       const pollCards = async () => (cards = await invoke("find_cards"));
       pollCards();
       setInterval(pollCards, 5000);
@@ -817,15 +924,7 @@
           }
         });
         listen("dev-panel-engine-updated", (e) => {
-          if (e.payload.engine === null) {
-            clearDevelopment();
-          } else {
-            developEngine = e.payload.engine;
-            if (recipe) {
-              recipe.engine = developEngine === "rapid" ? "rapid" : "spektra";
-            }
-            edited(false);
-          }
+          applyEngineChange(e.payload.engine);
         });
         listen("dev-panel-caption-updated", (e) => {
           caption = e.payload.caption;
@@ -843,14 +942,9 @@
         listen("dev-panel-export-daily", () => {
           exportToDailyNote();
         });
-        listen("dev-panel-reset", async () => {
-          // RÉINITIALISER — back to the engine defaults, like Swift's
-          // resetSettings; the sidecar re-saves through the normal edit path.
-          if (recipe) {
-            recipe = await invoke("default_recipe");
-            edited();
-          }
-        });
+        // RÉINITIALISER — back to the engine defaults, like Swift's
+        // resetSettings; the sidecar re-saves through the normal edit path.
+        listen("dev-panel-reset", applyResetRecipe);
         listen("dev-panel-export-settings-changed", (e) => {
           exportEdge = e.payload.exportEdge;
           exportBorder = e.payload.exportBorder;
@@ -887,6 +981,20 @@
         listen("dev-panel-close", () => {
           layouts.dev.devPanel = false;
           saveLayouts();
+        });
+        // The detached panel's own "dock" button asks to come back inline —
+        // dropping the flag hides the external window (reactive effect below)
+        // and the docked <DevelopPanel> takes over.
+        listen("dev-panel-dock-requested", () => {
+          layouts.dev.detached = false;
+          saveLayouts();
+        });
+        listen("settings-panel-ready", () => sendSettingsToPanel());
+        listen("settings-panel-choose-folder", (e) => {
+          choosePreferenceFolder(/** @type {any} */ (e.payload)?.key);
+        });
+        listen("settings-panel-save", (e) => {
+          saveSettingsFromPanel(/** @type {any} */ (e.payload)?.preferences);
         });
         listen("open-settings-requested", openSettings);
         listen("toggle-dev-panel-requested", toggleDevPanel);
@@ -970,16 +1078,13 @@
         });
       }
 
+      // A deep-link/"open with" target overrides whatever was already opened
+      // above; otherwise there's nothing left to do here — the boot sequence
+      // already landed on the right directory (or Grid) once.
       const auto = await invoke("autoload_path") || await invoke("take_open_file");
       if (auto) {
         if (auto.endsWith("/") || !auto.includes(".")) openFolder(auto);
         else openPhoto(auto);
-      } else {
-        const savedDir = localStorage.getItem("reveal.lastDirectory");
-        // Use the persisted path even when a slow or temporarily unavailable
-        // network volume has not returned it in the sidebar index yet.
-        const lastDir = savedDir || dirs[dirs.length - 1]?.dir;
-        if (lastDir) openDir(lastDir, false);
       }
     })();
   });
@@ -998,16 +1103,11 @@
   }
 
   /**
-   * @param {"cull" | "dev" | "story"} to
+   * @param {"cull" | "dev"} to
    * @param {{ openDevPanel?: boolean }} [opts]
    */
   async function switchMode(to, { openDevPanel = true } = {}) {
-    if (to === "story" && applePhotosActive) {
-      appMessage = "Storytelling needs a filesystem folder. You can edit and export Apple Photos directly.";
-      return;
-    }
     closePhotoMenu();
-    if (to === "story" && !curDir && !folder) return;
     if (to !== "dev") zoomMode = "frame"; // always re-enter develop framed
     if (to === "dev" && openDevPanel) {
       // Develop always opens as a complete workspace. A deliberate entry ends
@@ -1048,6 +1148,23 @@
         scheduleRender(PREVIEW_PX);
       }
     }
+  }
+
+  /**
+   * Flip the Aperçu filter — same guards the old "story" mode had (needs a
+   * real folder; Apple Photos albums are read-only, nothing to preview).
+   * @param {boolean} [value] force a value instead of toggling
+   */
+  function togglePreviewFilter(value) {
+    const next = value ?? !previewFilter;
+    if (next) {
+      if (applePhotosActive) {
+        appMessage = "Aperçu needs a filesystem folder. You can edit and export Apple Photos directly.";
+        return;
+      }
+      if (!curDir && !folder) return;
+    }
+    previewFilter = next;
   }
 
   function cycleZoom(reverse = false) {
@@ -1258,7 +1375,9 @@
     if (!isTauri) return;
     try {
       let win = await WebviewWindow.getByLabel(spec.label);
-      if (currentMode === "dev" && layouts.dev[spec.flag] && !spaceLook) {
+      // Docked is the default now — only actually open/show the OS window
+      // when the panel has been explicitly detached.
+      if (currentMode === "dev" && layouts.dev[spec.flag] && layouts.dev.detached && !spaceLook) {
         const pos = await computePalettePosition(index, spec.width);
         if (!win) {
           win = new WebviewWindow(spec.label, {
@@ -1327,7 +1446,7 @@
     if (isTauri) {
       // Reactively sync every palette when mode, any palette flag, or quick-look
       // toggles. spaceLook suppresses all palettes so quick-look stays clean.
-      const trigger = [currentMode, layouts.dev.devPanel, spaceLook];
+      const trigger = [currentMode, layouts.dev.devPanel, layouts.dev.detached, spaceLook];
       syncPalettes();
     }
   });
@@ -1526,25 +1645,50 @@
     photoMenu = null;
   }
 
+  // Settings is always its own OS window (Francis: it should feel like any
+  // other app's Settings, never a dialog over the main one) — same
+  // WebviewWindow pattern as the Develop palettes, minus the position
+  // cascade (it isn't tied to Develop mode) and minus continuous sync (one
+  // snapshot out, one save or folder-pick round trip back).
+  function sendSettingsToPanel() {
+    if (isTauri) emit("main-settings-state", { preferences }).catch(() => {});
+  }
+
   async function openSettings() {
     if (isTauri) {
       const saved = await invoke("load_preferences");
       preferences = { ...preferences, ...saved, export_folder: saved.export_folder ?? exportFolder };
     }
-    settingsOpen = true;
+    if (!isTauri) return;
+    let win = await WebviewWindow.getByLabel("settings-panel");
+    if (win) {
+      await win.show();
+      await win.setFocus();
+      sendSettingsToPanel();
+    } else {
+      win = new WebviewWindow("settings-panel", {
+        url: "/settings-panel",
+        title: "Réglages",
+        width: 640,
+        height: 480,
+        resizable: true,
+        titleBarStyle: "overlay",
+        hiddenTitle: true,
+      });
+      win.once("tauri://created", () => setTimeout(sendSettingsToPanel, 300));
+    }
   }
 
-  async function saveSettings() {
+  /** @param {typeof preferences} newPreferences */
+  async function saveSettingsFromPanel(newPreferences) {
+    preferences = newPreferences;
     if (isTauri) await invoke("save_preferences", { preferences });
     exportFolder = preferences.export_folder ?? "";
     saveExportPrefs();
-    aiCullEnabled = !!preferences.ai_cull_enabled;
+    aiCullMarkStory = !!preferences.ai_cull_mark_story;
+    aiCullExportDesktop = !!preferences.ai_cull_export_desktop;
     aiCullTarget = Number(preferences.ai_cull_target) || 24;
-    settingsOpen = false;
   }
-  const readApplePhotosCache = () => invoke("apple_photos_cache_status");
-  const clearApplePhotosCache = () => invoke("apple_photos_cache_clear");
-
   // The sidebar's Garden account row — sign-in verifies the pasted key
   // against /api/me and stores it; errors bubble to the popover.
   /** @param {string} apiKey */
@@ -1566,7 +1710,10 @@
   async function choosePreferenceFolder(key) {
     if (!isTauri) return;
     const path = await invoke("pick_folder");
-    if (path) preferences = { ...preferences, [key]: path };
+    if (path) {
+      preferences = { ...preferences, [key]: path };
+      emit("settings-panel-folder-chosen", { key, path }).catch(() => {});
+    }
   }
 
   async function closeMainWindow() {
@@ -1745,6 +1892,7 @@
    */
   async function developFromMenu(path, toVault) {
     closePhotoMenu();
+    /** @type {string | null} */ let devJobId = null;
     try {
       const sidecar = await invoke("load_sidecar", { path });
       if (!sidecar?.engine_settings) {
@@ -1762,6 +1910,7 @@
         return;
       }
       progress = { verb: "Developing", done: 0, total: 1, current: path.split("/").pop() };
+      devJobId = startActivity("develop", `Développer ${path.split("/").pop()}`, 1);
       await invoke("export_photo", {
         path,
         recipe: sidecar.engine_settings,
@@ -1770,9 +1919,12 @@
         borderFrac: exportBorder ? 0.04 : 0,
       });
       progress = { ...progress, done: 1 };
+      updateActivity(devJobId, { done: 1, phase: "Complete", status: "completed" });
     } catch (error) {
       appMessage = `Development failed: ${error}`;
+      if (devJobId) updateActivity(devJobId, { phase: String(error), status: "failed" });
     } finally {
+      if (devJobId && activeActivityId === devJobId) activeActivityId = null;
       if (progress) {
         setTimeout(() => {
           progress = null;
@@ -1903,6 +2055,7 @@
     }
     const srcDirs = new Set(toMove.map(parentOf));
     progress = { verb: "move", done: 0, total: toMove.length, current: "" };
+    const jobId = startActivity("move", `Déplacer ${toMove.length} photo(s)`, toMove.length);
     let moved = 0;
     const errors = [];
     for (const p of toMove) {
@@ -1910,6 +2063,7 @@
         await invoke("move_photo", { path: p, destDir });
         moved += 1;
         progress = { verb: "move", done: moved, total: toMove.length, current: p.split("/").pop() };
+        updateActivity(jobId, { done: moved, current: p.split("/").pop() });
       } catch (e) {
         errors.push(`${p.split("/").pop()} : ${e}`);
       }
@@ -1927,6 +2081,12 @@
     appMessage = errors.length
       ? `${moved} déplacée${moved > 1 ? "s" : ""} · ${errors.length} échec${errors.length > 1 ? "s" : ""}`
       : `${moved} photo${moved > 1 ? "s" : ""} déplacée${moved > 1 ? "s" : ""} → ${destName}`;
+    updateActivity(jobId, {
+      current: destName,
+      phase: errors.length ? `${errors.length} échec(s)` : "Complete",
+      status: errors.length ? "failed" : "completed",
+    });
+    if (activeActivityId === jobId) activeActivityId = null;
     if (errors.length) console.warn("move errors:", errors);
     return;
   }
@@ -2037,7 +2197,12 @@
    * @param {string} dir
    * @param {boolean} [restoreMode]
    */
-  async function openDir(dir, restoreMode = true) {
+  /**
+   * @param {string} dir
+   * @param {boolean} [restoreMode] Apple Photos only — authorize interactively (true) or stay silent (false, startup)
+   * @param {boolean} [restoreSession] re-enter Develop on whichever photo was open last time, instead of always landing in Grid
+   */
+  async function openDir(dir, restoreMode = true, restoreSession = false) {
     if (dir?.startsWith(APPLE_PHOTOS_ROOT)) {
       await openApplePhotos(dir.slice(APPLE_PHOTOS_ROOT.length), { authorize: restoreMode });
       return;
@@ -2057,6 +2222,7 @@
     // Folder switch always starts with the full contact sheet.
     minRating = 0;
     filterStory = false;
+    previewFilter = false;
     debug = "invoke…";
     /** @type {RevealWindow} */ (window).__log?.(`openDir start dir=${dir} minRating=${JSON.stringify(minRating)}`);
     try {
@@ -2079,9 +2245,20 @@
     }
     sel = 0;
     selectOnly(0);
-    await switchMode("cull");
+    let restoredToDevelop = false;
+    if (restoreSession && typeof localStorage !== "undefined") {
+      const savedPhoto = localStorage.getItem("reveal.lastPhotoPath");
+      const savedIdx = savedPhoto ? frames.findIndex((f) => f.path === savedPhoto) : -1;
+      if (savedPhoto && localStorage.getItem(`reveal.mode.${dir}`) === "dev" && savedIdx !== -1) {
+        sel = savedIdx;
+        selectOnly(sel);
+        await openPhoto(savedPhoto, { openDevPanel: layouts.dev.devPanel });
+        restoredToDevelop = true;
+      }
+    }
+    if (!restoredToDevelop) await switchMode("cull");
     refreshStory();
-    const savedScroll = scrollOffsets[dir] || 0;
+    const savedScroll = (typeof localStorage !== "undefined" && Number(localStorage.getItem(`reveal.scroll.${dir}`))) || scrollOffsets[dir] || 0;
     setTimeout(() => {
       currentScrollTop = savedScroll;
     }, 50);
@@ -2149,6 +2326,75 @@
     }
     storySet = new Set(await invoke("story_stems", { dir: d }));
     refreshStoryDirs();
+  }
+
+  // Grid always shows filename order; the story has its own, independent
+  // order (Aperçu drag-and-drop). A paragraph's *position in Grid* has to
+  // come from somewhere else — so it anchors to whichever story photo it
+  // trails in the FILE, and renders after THAT photo's row in Grid. Walking
+  // the file once gives every paragraph's anchor; saveGridProse (below)
+  // finds the anchor for a NEW paragraph the same way, so what you just
+  // typed lands exactly where this map will look for it on next render.
+  const storyBlocks = $derived.by(() => parseStory(storyContent).blocks);
+  const gridProseByRow = $derived.by(() => {
+    /** @type {Map<number, {id: string, text: string}[]>} */
+    const map = new Map();
+    const rowOf = new Map(view.map((f, i) => [stem(f.name), Math.floor(i / cols)]));
+    let anchorRow = -1; // -1 = no story photo seen yet → renders above row 0
+    for (const b of storyBlocks) {
+      if (b.isPhoto) {
+        const row = rowOf.get(b.stem);
+        if (row !== undefined) anchorRow = row;
+      } else if (b.text.trim()) {
+        const list = map.get(anchorRow) ?? [];
+        list.push({ id: b.id, text: b.text });
+        map.set(anchorRow, list);
+      }
+    }
+    return map;
+  });
+
+  /**
+   * Grid's hover "+" between rows (or clicking an existing paragraph shown
+   * there) — writes straight to the story note, no mode switch.
+   * @param {number} row grid row this came from (-1 = before the first photo)
+   * @param {string} text
+   * @param {string} [blockId] editing/deleting an existing paragraph instead of adding one
+   */
+  async function saveGridProse(row, text, blockId) {
+    if (!gridDir()) return;
+    const trimmed = (text ?? "").trim();
+    const { frontmatter, blocks } = parseStory(storyContent);
+
+    if (blockId) {
+      const i = blocks.findIndex((b) => b.id === blockId);
+      if (i === -1) return;
+      if (!trimmed) blocks.splice(i, 1); // cleared text = remove the paragraph
+      else blocks[i] = { ...blocks[i], text: trimmed };
+    } else {
+      if (!trimmed) return;
+      // Same photo, same story order, no matter which of its several
+      // filename-order rows it "belongs to" here — the LAST story photo
+      // whose Grid row is <= the gap you hovered.
+      let anchorStem = null;
+      for (let i = 0; i < view.length; i++) {
+        if (Math.floor(i / cols) > row) break;
+        const s = stem(view[i].name);
+        if (storySet.has(s)) anchorStem = s;
+      }
+      const anchorIdx = anchorStem ? blocks.findIndex((b) => b.isPhoto && b.stem === anchorStem) : -1;
+      blocks.splice(anchorIdx + 1, 0, {
+        id: `blk-grid-${Date.now()}`,
+        isPhoto: false,
+        stem: "",
+        text: trimmed,
+        rowBreak: true,
+      });
+    }
+
+    const next = serializeStory(frontmatter, blocks);
+    await saveStoryContent(next);
+    storyContent = next;
   }
 
   async function refreshStory() {
@@ -2257,27 +2503,33 @@
 
   async function publishStory() {
     const d = gridDir();
-    if (!d || !storySet.size) return;
+    if (!d || !storySet.size || !gardenAccount?.signed_in || anyActivityRunning) return;
     liveUrl = null;
     progress = { verb: "publication", done: 0, total: storySet.size, current: "" };
+    publishTaskId = startActivity("publish", `Publier l'histoire · ${storySet.size} photos`, storySet.size);
     try {
       liveUrl = await invoke("publish_story", { dir: d, dryRun: false });
       status = "publié ✓";
       setTimeout(() => (status = status === "publié ✓" ? "" : status), 2000);
+      updateActivity(publishTaskId, { done: storySet.size, phase: "Complete", status: "completed" });
     } catch (e) {
       status = `erreur : ${e}`;
+      updateActivity(publishTaskId, { phase: String(e), status: "failed" });
     } finally {
       progress = null;
+      if (activeActivityId === publishTaskId) activeActivityId = null;
+      publishTaskId = null;
     }
   }
 
   async function exportLocalStory() {
     const d = gridDir();
-    if (!d || !storySet.size) return;
+    if (!d || !storySet.size || anyActivityRunning) return;
     const dest = await invoke("pick_folder");
     if (!dest) return;
     liveUrl = null;
     progress = { verb: "export", done: 0, total: storySet.size, current: "" };
+    const jobId = startActivity("export", `Exporter l'histoire · ${storySet.size} photos`, storySet.size);
     try {
       await invoke("export_local_story", {
         dir: d,
@@ -2287,10 +2539,13 @@
       });
       status = "exporté ✓";
       setTimeout(() => (status = status === "exporté ✓" ? "" : status), 2000);
+      updateActivity(jobId, { done: storySet.size, current: dest, phase: "Complete", status: "completed" });
     } catch (e) {
       status = `erreur : ${e}`;
+      updateActivity(jobId, { phase: String(e), status: "failed" });
     } finally {
       progress = null;
+      if (activeActivityId === jobId) activeActivityId = null;
     }
   }
 
@@ -2338,16 +2593,24 @@
   }
 
   /**
-   * Cull one just-imported day-folder down to `aiCullTarget` frames and
-   * export them — Rust does prefilter -> vision ranking -> export in one
-   * call (`ai_cull`), so this is just the invocation + error toast; progress
-   * comes through the `cull-*` events listened for at boot.
+   * Cull one just-imported day-folder down to `aiCullTarget` frames — Rust
+   * does prefilter -> vision ranking -> (story marking and/or Desktop
+   * export, per the two Settings toggles) in one call (`ai_cull`), so this
+   * is just the invocation + error toast; progress comes through the
+   * `cull-*` events listened for at boot.
    * @param {string} dir
    * @param {string[]} paths
    */
   async function triggerAiCull(dir, paths) {
     try {
       await invoke("ai_cull", { dir, paths });
+      // The Rust side wrote directly to this folder's story note — if it's
+      // the one currently open, our in-memory copy is now stale.
+      if (dir === curDir) {
+        storySet = new Set(await invoke("story_stems", { dir }));
+        await loadStory();
+        refreshStoryDirs();
+      }
     } catch (error) {
       appMessage = `Culling IA (${dir.split("/").pop()}) : ${error}`;
       setTimeout(() => (appMessage = ""), 6000);
@@ -2371,6 +2634,7 @@
     if (!d || !view.length || progress) return;
     progress = { verb: "cull", done: 0, total: view.length, current: "" };
     appMessage = `Culling IA · ${view.length} photos…`;
+    cullTaskId = startActivity("cull", `Culling IA · ${view.length} photos`, view.length);
     try {
       const result = await invoke("ai_cull_selection", { dir: d, paths: view.map((f) => f.path) });
       const currentStems = new Set(await invoke("story_stems", { dir: d }));
@@ -2386,10 +2650,17 @@
       await loadStory();
       refreshStoryDirs();
       appMessage = `Culling IA ✓ ${added} ajoutés à la collection rapide (${result.picked.length}/${result.considered} retenus)`;
+      updateActivity(cullTaskId, {
+        done: result.picked.length, total: result.considered,
+        current: `${added} ajoutés`, phase: "Complete", status: "completed",
+      });
     } catch (error) {
       appMessage = `Culling IA : ${error}`;
+      updateActivity(cullTaskId, { phase: String(error), status: "failed" });
     } finally {
       progress = null;
+      if (activeActivityId === cullTaskId) activeActivityId = null;
+      cullTaskId = null;
       setTimeout(() => (appMessage = ""), 6000);
     }
   }
@@ -2433,15 +2704,17 @@
   }
 
   /**
+   * @param {string} kind e.g. "import" | "export" | "cull" | "publish" | "move" | "develop"
    * @param {string} label
    * @param {number} total
    */
-  function createQueueJob(label, total) {
+  function startActivity(kind, label, total) {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    exportQueue = [
-      ...exportQueue,
+    activityQueue = [
+      ...activityQueue,
       {
         id,
+        kind,
         label,
         current: "Waiting",
         done: 0,
@@ -2451,29 +2724,30 @@
         timestamp: new Date().toLocaleTimeString(),
       },
     ];
-    activeExportJobId = id;
-    queueOpen = true;
+    activeActivityId = id;
+    // Subtle by default (Francis: no popping window every time something
+    // starts) — the top-right indicator is the ambient signal; the panel
+    // opens only when that indicator is clicked.
     return id;
   }
 
   /**
    * @param {string} id
-   * @param {Partial<ExportJob>} patch
+   * @param {Partial<Activity>} patch
    */
-  function updateQueueJob(id, patch) {
-    exportQueue = exportQueue.map((job) => (job.id === id ? { ...job, ...patch } : job));
+  function updateActivity(id, patch) {
+    activityQueue = activityQueue.map((job) => (job.id === id ? { ...job, ...patch } : job));
   }
 
   async function cancelExportQueue() {
-    if (!activeExportJobId) return;
-    updateQueueJob(activeExportJobId, { phase: "Cancelling after current photo…" });
+    if (!activeActivityId) return;
+    updateActivity(activeActivityId, { phase: "Cancelling after current photo…" });
     await invoke("cancel_exports");
   }
 
   async function exportGrid() {
     if (!view.length) return;
-    const jobId = createQueueJob(`Export ${view.length} photos`, view.length);
-    progress = { verb: "export", done: 0, total: view.length, current: "" };
+    const jobId = startActivity("export", `Export ${view.length} photos`, view.length);
     try {
       const completed = await invoke("export_photos", {
         paths: view.map((f) => f.path),
@@ -2481,9 +2755,9 @@
         longEdge: exportEdge,
         borderFrac: exportBorder ? 0.04 : 0,
       });
-      const job = exportQueue.find((item) => item.id === jobId);
+      const job = activityQueue.find((item) => item.id === jobId);
       if (job?.status !== "cancelled") {
-        updateQueueJob(jobId, {
+        updateActivity(jobId, {
           current: "",
           done: completed,
           phase: completed === view.length ? "Complete" : "Stopped",
@@ -2491,13 +2765,12 @@
         });
       }
     } catch (error) {
-      updateQueueJob(jobId, {
+      updateActivity(jobId, {
         phase: String(error),
         status: "failed",
       });
     } finally {
-      if (activeExportJobId === jobId) activeExportJobId = null;
-      progress = null;
+      if (activeActivityId === jobId) activeActivityId = null;
     }
   }
 
@@ -2505,12 +2778,12 @@
   // focused frame if nothing is multi-selected) with the active export params.
   async function exportSelection() {
     const targets = selectedFrames();
-    if (!targets.length || progress) return;
-    const jobId = createQueueJob(
+    if (!targets.length || anyActivityRunning) return;
+    const jobId = startActivity(
+      "export",
       `Export ${targets.length} photo${targets.length > 1 ? "s" : ""}`,
       targets.length,
     );
-    progress = { verb: "export", done: 0, total: targets.length, current: "" };
     try {
       const completed = await invoke("export_photos", {
         paths: targets.map((f) => f.path),
@@ -2518,24 +2791,23 @@
         longEdge: exportEdge,
         borderFrac: exportBorder ? 0.04 : 0,
       });
-      updateQueueJob(jobId, {
+      updateActivity(jobId, {
         current: "",
         done: completed,
         phase: completed === targets.length ? "Complete" : "Stopped",
         status: completed === targets.length ? "completed" : "cancelled",
       });
     } catch (error) {
-      updateQueueJob(jobId, { phase: String(error), status: "failed" });
+      updateActivity(jobId, { phase: String(error), status: "failed" });
     } finally {
-      if (activeExportJobId === jobId) activeExportJobId = null;
-      progress = null;
+      if (activeActivityId === jobId) activeActivityId = null;
     }
   }
 
   /** @param {string} [destDir] override the configured export folder — used by the dev panel's quick-export-to-Desktop button */
   async function exportCurrent(destDir = exportFolder) {
     if (!photoPath || !recipe) return;
-    const jobId = createQueueJob(`Export ${picked}`, 1);
+    const jobId = startActivity("export", `Export ${picked}`, 1);
     status = "Exporting…";
     try {
       await invoke("export_photo", {
@@ -2545,7 +2817,7 @@
         longEdge: exportEdge,
         borderFrac: exportBorder ? 0.04 : 0,
       });
-      updateQueueJob(jobId, {
+      updateActivity(jobId, {
         current: picked ?? "",
         done: 1,
         phase: "Complete",
@@ -2554,10 +2826,10 @@
       status = "Exported";
       setTimeout(() => (status = status === "Exported" ? "" : status), 2000);
     } catch (e) {
-      updateQueueJob(jobId, { phase: String(e), status: "failed" });
+      updateActivity(jobId, { phase: String(e), status: "failed" });
       status = `Export failed: ${e}`;
     } finally {
-      if (activeExportJobId === jobId) activeExportJobId = null;
+      if (activeActivityId === jobId) activeActivityId = null;
     }
   }
 
@@ -2602,7 +2874,7 @@
     }
 
     status = "Vers le journal…";
-    progress = { verb: "Journal", done: 0, total: targets.length, current: "" };
+    const jobId = startActivity("publish", `Journal · ${targets.length} photos`, targets.length);
     try {
       const notePath = await invoke("export_batch_to_daily_note", {
         paths: targets,
@@ -2614,12 +2886,14 @@
       appMessage = `Dans le journal → ${targets.length} photos ajoutées à ${noteName} ✓`;
       setTimeout(() => (appMessage = ""), 4000);
       setTimeout(() => (status = ""), 3000);
+      updateActivity(jobId, { done: targets.length, current: noteName, phase: "Complete", status: "completed" });
     } catch (e) {
       status = `Échec journal : ${e}`;
       appMessage = `Échec export journal : ${e}`;
       setTimeout(() => (appMessage = ""), 4000);
+      updateActivity(jobId, { phase: String(e), status: "failed" });
     } finally {
-      progress = null;
+      if (activeActivityId === jobId) activeActivityId = null;
     }
   }
 
@@ -2637,12 +2911,15 @@
     // Folder switch always starts with the full contact sheet.
     minRating = 0;
     filterStory = false;
+    previewFilter = false;
     frames = await withPreviewVersions(await invoke("list_dir", { path }));
     sel = 0;
     selectOnly(0);
     if (typeof localStorage !== "undefined") {
+      // A stale "story" value from before Aperçu became a filter just falls
+      // through to "cull" here — the grid, with Aperçu off, is correct either way.
       const savedMode = localStorage.getItem(`reveal.mode.${path}`);
-      if (savedMode === "cull" || savedMode === "dev" || savedMode === "story") {
+      if (savedMode === "cull" || savedMode === "dev") {
         await switchMode(savedMode);
       } else {
         await switchMode("cull");
@@ -2766,9 +3043,11 @@
     if (!recipeToApply || !targetFrames.length || progress) return;
     const snapshot = { ...recipeToApply };
     progress = { verb: "Applying settings", done: 0, total: targetFrames.length, current: "" };
+    const jobId = startActivity("develop", `Synchroniser ${targetFrames.length} photo(s)`, targetFrames.length);
     try {
       for (const frame of targetFrames) {
         progress = { ...progress, current: frame.name };
+        updateActivity(jobId, { current: frame.name });
 
         // Load existing sidecar to preserve each destination photo's unique crop
         const existingSidecar = await invoke("load_sidecar", { path: frame.path }).catch(() => null);
@@ -2792,6 +3071,7 @@
         await invoke("save_recipe", { path: frame.path, recipe: frameRecipe });
         frame.previewVersion = Date.now();
         progress = { ...progress, done: progress.done + 1 };
+        updateActivity(jobId, { done: progress.done });
 
         if (frame.path === photoPath) {
           recipe = { ...frameRecipe };
@@ -2811,10 +3091,13 @@
       setTimeout(() => {
         if (appMessage.startsWith("Settings applied")) appMessage = "";
       }, 2500);
+      updateActivity(jobId, { phase: "Complete", status: "completed" });
     } catch (e) {
       appMessage = `Could not apply settings: ${e}`;
+      updateActivity(jobId, { phase: String(e), status: "failed" });
     } finally {
       progress = null;
+      if (activeActivityId === jobId) activeActivityId = null;
     }
   }
 
@@ -2848,6 +3131,20 @@
       exitFullscreen();
       return true;
     }
+    if (res.action === "TOGGLE_PREVIEW") {
+      if (res.andSwitchToCull) {
+        if (currentMode !== "cull") switchMode("cull", { openDevPanel: false });
+        togglePreviewFilter(true);
+      } else {
+        togglePreviewFilter();
+      }
+      return true;
+    }
+    if (res.action === "GO_TO_GRID") {
+      togglePreviewFilter(false);
+      if (currentMode !== "cull") switchMode("cull", { openDevPanel: false });
+      return true;
+    }
     return false;
   }
 
@@ -2863,6 +3160,16 @@
     if (["Enter", " "].includes(e.key) && e.target instanceof Element &&
       e.target.closest("button, [role='button']")) return;
 
+    // Every mode-dependent decision below reads through this controller
+    // instead of comparing `currentMode` inline — one place to look when a
+    // shortcut behaves differently per mode, and one place to extend when a
+    // new mode shows up.
+    const controller = new AppController({
+      currentMode,
+      spaceLook,
+      devPanel: layouts.dev.devPanel
+    });
+
     // ⌘A / Ctrl-A — select all
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
       selectedPaths = new Set(view.map(f => f.path));
@@ -2872,7 +3179,7 @@
 
     // ⌘C / Ctrl-C — copy photo image to OS clipboard
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c") {
-      const targetPath = currentMode === "dev" ? photoPath : (view[sel]?.path || photoPath);
+      const targetPath = controller.resolveCopyTarget({ photoPath, selectedFramePath: view[sel]?.path });
       if (targetPath) {
         copyImageToClipboard(targetPath);
         e.preventDefault();
@@ -2970,7 +3277,7 @@
       e.preventDefault();
       return;
     }
-    if (e.key.toLowerCase() === "z" && !e.metaKey && !e.ctrlKey && currentMode === "dev") {
+    if (e.key.toLowerCase() === "z" && !e.metaKey && !e.ctrlKey && controller.canCycleZoom()) {
       cycleZoom(e.shiftKey);
       e.preventDefault();
       return;
@@ -2982,7 +3289,7 @@
     }
     if (e.key === "r" && !e.metaKey && !e.ctrlKey) {
       // Swift `r` — "Reveal": develop + export the selection. The render queue
-      // still surfaces automatically (createQueueJob opens it) and stays
+      // still surfaces automatically (startActivity opens it) and stays
       // reachable from the native menu.
       exportSelection();
       e.preventDefault();
@@ -2990,14 +3297,8 @@
     }
 
     // Mode switcher shortcuts handled via AppController
-    const controller = new AppController({
-      currentMode,
-      spaceLook,
-      devPanel: layouts.dev.devPanel
-    });
-
     if (e.key === "g") {
-      applyWorkflowResult(controller.handleG());
+      applyWorkflowResult(controller.handleG({ previewFilter }));
       e.preventDefault();
       return;
     }
@@ -3012,13 +3313,13 @@
       return;
     }
     if (e.key === "Escape") {
-      applyWorkflowResult(controller.handleEscape({ hasOverlay: false, fullscreen }));
+      applyWorkflowResult(controller.handleEscape({ hasOverlay: false, fullscreen, previewFilter }));
       e.preventDefault();
       return;
     }
 
     // In Develop mode (single photo view), ArrowUp / ArrowDown modifies the last edited setting!
-    if (currentMode === "dev" && (e.key === "ArrowUp" || e.key === "ArrowDown") && !e.metaKey && !e.ctrlKey) {
+    if (controller.canAdjustRecipe() && (e.key === "ArrowUp" || e.key === "ArrowDown") && !e.metaKey && !e.ctrlKey) {
       if (recipe && lastEditedKey) {
         const config = SETTING_STEPS[lastEditedKey] || { step: 0.05, shiftStep: 0.25 };
         const step = e.shiftKey ? config.shiftStep : config.step;
@@ -3037,7 +3338,7 @@
       }
     }
 
-    const c = (fullscreen || currentMode === "dev") ? 1 : cols;
+    const c = controller.navColumnCount({ fullscreen, cols });
     const isNav = ["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"].includes(e.key);
     
     if (isNav) {
@@ -3064,7 +3365,7 @@
       e.preventDefault();
       if (fullscreen) {
         prepareFullscreenFrame(view[sel].path);
-      } else if (currentMode === "dev" && view[sel]) {
+      } else if (controller.shouldOpenOnNav() && view[sel]) {
         openPhoto(view[sel].path);
       }
       document.querySelector(`[data-idx="${sel}"]`)?.scrollIntoView({ block: "nearest" });
@@ -3072,7 +3373,7 @@
     }
 
     if (e.key === " " && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
-      if (currentMode === "cull") {
+      if (controller.isCull()) {
         if (!selectedPaths.size && !view[sel]) return;
         photoPath = view[sel]?.path;
         if (!photoPath) return;
@@ -3277,6 +3578,134 @@
     status = "";
   }
 
+  // ---- docked Develop panel ------------------------------------------------
+  // Same mutation logic the detached panel runs locally before its emit
+  // (dev-panel/+page.svelte) — here there's nothing to emit, `edited` above
+  // already IS the notification (it schedules the render and the disk save).
+
+  /** @param {boolean} [transient] @param {string} [key] */
+  function dockedEdited(transient = false, key = undefined) {
+    if (key) lastEditedKey = key;
+    edited(transient);
+  }
+
+  // Recipe's JSDoc typedef lists its known fields for the rest of the app;
+  // these functions poke it by dynamic key (LUT stacks, per-engine controls),
+  // same as the detached panel's own copies — an `any` view is the honest
+  // type for that, not a workaround.
+  /** @param {string} key @param {number | string} v @param {boolean} transient @param {number} [index] */
+  function setDevNum(key, v, transient, index) {
+    if (!recipe) return;
+    const r = /** @type {any} */ (recipe);
+    if (index != null) {
+      if (!Array.isArray(r[key])) r[key] = [];
+      r[key][index] = Number(v);
+    } else {
+      r[key] = Number(v);
+    }
+    dockedEdited(transient, key);
+  }
+
+  /** @param {string} key @param {number} [index] */
+  function resetOne(key, index) {
+    const d = /** @type {any} */ (developDefaults);
+    if (!d || !recipe || !(key in d)) return;
+    if (index != null) {
+      setDevNum(key, d[key]?.[index] ?? 0, false, index);
+    } else {
+      setDevNum(key, d[key], false);
+    }
+  }
+
+  /** @param {string} stage */
+  const lutsKey = (stage) => (stage === "pre" ? "rapid_pre_luts" : "rapid_post_luts");
+  /** @param {string} stage */
+  const oldLutsKey = (stage) => (stage === "pre" ? "pre_luts" : "post_luts");
+  /** @param {any} r @param {string} stage */
+  function ensureLutMigration(r, stage) {
+    if (!r || developEngine !== "rapid") return;
+    const key = lutsKey(stage);
+    const oldKey = oldLutsKey(stage);
+    if (r[oldKey]?.length > 0) {
+      r[key] = [...(r[key] ?? []), ...r[oldKey]];
+      r[oldKey] = [];
+      dockedEdited();
+    }
+  }
+  /** @param {string} stage */
+  function addLutLayer(stage) {
+    if (!recipe) return;
+    const r = /** @type {any} */ (recipe);
+    ensureLutMigration(r, stage);
+    const key = lutsKey(stage);
+    const first = typeof luts[0] === "string" ? luts[0] : (luts[0]?.name ?? "");
+    r[key] = [...(r[key] ?? []), { name: first, opacity: 1 }];
+    dockedEdited();
+  }
+  /** @param {string} stage @param {number} index */
+  function removeLutLayer(stage, index) {
+    if (!recipe) return;
+    const r = /** @type {any} */ (recipe);
+    ensureLutMigration(r, stage);
+    const key = lutsKey(stage);
+    r[key] = (r[key] ?? []).filter((/** @type {any} */ _, /** @type {number} */ i) => i !== index);
+    dockedEdited();
+  }
+  /** @param {string} stage @param {number} index @param {number | string} value */
+  function updateLutOpacity(stage, index, value) {
+    if (!recipe) return;
+    const r = /** @type {any} */ (recipe);
+    ensureLutMigration(r, stage);
+    const key = lutsKey(stage);
+    r[key] = (r[key] ?? []).map((/** @type {any} */ l, /** @type {number} */ i) => (i === index ? { ...l, opacity: Number(value) } : l));
+    dockedEdited(true);
+  }
+  /** @param {string} stage @param {number} index @param {string} name */
+  function setLutFile(stage, index, name) {
+    if (!recipe) return;
+    const r = /** @type {any} */ (recipe);
+    ensureLutMigration(r, stage);
+    const key = lutsKey(stage);
+    r[key] = (r[key] ?? []).map((/** @type {any} */ l, /** @type {number} */ i) => (i === index ? { ...l, name } : l));
+    dockedEdited();
+  }
+
+  /** @param {string | null} engineId */
+  function applyEngineChange(engineId) {
+    if (engineId === null) {
+      clearDevelopment();
+    } else {
+      developEngine = engineId;
+      if (recipe) recipe.engine = developEngine === "rapid" ? "rapid" : "spektra";
+      edited(false);
+    }
+  }
+  /** @param {string} value */
+  function dockedEngineChanged(value) {
+    applyEngineChange(value === "none" ? null : value);
+  }
+
+  async function applyResetRecipe() {
+    if (recipe) {
+      recipe = await invoke("default_recipe");
+      edited();
+    }
+  }
+
+  function dockedToggleClipping() {
+    showClipping = !showClipping;
+  }
+
+  function dockedHidePanel() {
+    layouts.dev.devPanel = false;
+    saveLayouts();
+  }
+
+  // exportEdge/exportBorder are already mutated directly (bind: on
+  // <DevelopPanel>) — only the persist step needs doing.
+  function dockedExportSettingsChanged() {
+    saveExportPrefs();
+  }
 
   /** @param {number | string} v */
   const fmt = (v) => Number(v).toFixed(2).replace(/\.?0+$/, "") || "0";
@@ -3364,7 +3793,7 @@
   </div>
 {/if}
 
-{#if currentMode === "cull" || currentMode === "story"}
+{#if currentMode === "cull"}
   <div class="cull" role="presentation">
     <div class="body">
       {#if sidebarVisible}
@@ -3378,7 +3807,7 @@
           {curDir}
           {scanning}
           {indexProgress}
-          mode={currentMode}
+          {previewFilter}
           {storyDirs}
           focusOn={layouts[currentMode].focus}
           {catalogContent}
@@ -3391,7 +3820,7 @@
           onAddLocation={indexRoot}
           onSetImportDir={setImportDir}
           onOpenNote={() => (catalogOpen = true)}
-          onMode={(/** @type {"cull" | "dev" | "story"} */ m) => switchMode(m)}
+          onTogglePreview={() => togglePreviewFilter()}
           onToggleSidebar={toggleSidebar}
           onToggleFocus={toggleFocusMode}
           onToggleAppearance={toggleAppearance}
@@ -3437,7 +3866,7 @@
             {curDir}
             {scanning}
             {indexProgress}
-            mode={currentMode}
+            {previewFilter}
             {storyDirs}
             focusOn={layouts[currentMode].focus}
             {catalogContent}
@@ -3457,7 +3886,7 @@
             onAddLocation={indexRoot}
             onSetImportDir={setImportDir}
             onOpenNote={() => (catalogOpen = true)}
-            onMode={(/** @type {"cull" | "dev" | "story"} */ m) => switchMode(m)}
+            onTogglePreview={() => togglePreviewFilter()}
             onToggleSidebar={toggleSidebar}
             onToggleFocus={toggleFocusMode}
             onToggleAppearance={toggleAppearance}
@@ -3621,10 +4050,6 @@
             </button>
           {/if}
 
-          {#if appMessage}
-            <span class="progress">{appMessage}</span>
-          {/if}
-
           <!-- The live import chip — same DIN/mono treatment as export, plus
                a stop control; the copy finishes its current file then halts. -->
           {#if progress && progress.verb === "import"}
@@ -3701,7 +4126,7 @@
                     <Icon name="arrow-square-out" size="10px" />
                   </button>
                 {/if}
-                {#if storySet.size}
+                {#if storySet.size && gardenAccount?.signed_in}
                   <button
                     class="std-menu-item"
                     class:disabled={!!progress}
@@ -3792,7 +4217,17 @@
           </Popover>
         </header>
 
-      {#if currentMode === "cull"}
+      {#if previewFilter}
+        <StoryView
+          {view}
+          {storySet}
+          {storyContent}
+          {progress}
+          liveUrl={liveUrl ?? undefined}
+          {thumbUrl}
+          {saveStoryContent}
+        />
+      {:else}
         <CullView
           {view}
           {loading}
@@ -3820,16 +4255,8 @@
           {applePhotosActive}
           {scanning}
           onAddLibraryFolder={indexRoot}
-        />
-      {:else if currentMode === "story"}
-        <StoryView
-          {view}
-          {storySet}
-          {storyContent}
-          {progress}
-          liveUrl={liveUrl ?? undefined}
-          {thumbUrl}
-          {saveStoryContent}
+          {gridProseByRow}
+          onSaveProse={saveGridProse}
         />
       {/if}
       </div>
@@ -3888,21 +4315,13 @@
           </div>
       </Dialog>
     {/if}
-
-    {#if queueOpen}
-      <RenderQueueModal
-        {exportQueue}
-        {activeExportJobId}
-        onClose={() => (queueOpen = false)}
-        onCancelQueue={cancelExportQueue}
-      />
-    {/if}
   </div>
 {:else}
+  {@const showDockedPanel = isTauri && recipe && layouts.dev.devPanel && !layouts.dev.detached}
   <div
     class="app"
     role="presentation"
-    style="grid-template-columns: {(layouts.dev.devPanel && !isTauri) ? '1fr 19.5rem' : '1fr'};"
+    style="grid-template-columns: {showDockedPanel ? '1fr 20rem' : (layouts.dev.devPanel && !isTauri) ? '1fr 19.5rem' : '1fr'};"
     onmousedown={startWindowDrag}
   >
     <DevelopView
@@ -4125,20 +4544,66 @@
           {/if}
         </section>
       </aside>
+    {:else if showDockedPanel}
+      <DevelopPanel
+        {photoPath}
+        {picked}
+        bind:recipe
+        {developEngine}
+        {renderMs}
+        {status}
+        {installedEditors}
+        bind:exportEdge
+        bind:exportBorder
+        {exportFolder}
+        {films}
+        {papers}
+        {luts}
+        {engines}
+        bind:caption
+        rating={currentRating}
+        bind:publishing={devPublishing}
+        bind:publishStatus={devPublishStatus}
+        {showClipping}
+        toggleClipping={dockedToggleClipping}
+        edited={dockedEdited}
+        {resetOne}
+        {addLutLayer}
+        {removeLutLayer}
+        {updateLutOpacity}
+        {setLutFile}
+        engineChanged={dockedEngineChanged}
+        resetRecipe={applyResetRecipe}
+        hidePanel={dockedHidePanel}
+        onCaptionEdited={captionEdited}
+        onExportSettingsChanged={dockedExportSettingsChanged}
+        onExport={exportCurrent}
+        onExportDaily={exportToDailyNote}
+        onChooseExportFolder={chooseExportFolder}
+        onOpenInEditor={openInEditor}
+        detached={false}
+        onToggleDetached={() => {
+          layouts.dev.detached = true;
+          saveLayouts();
+        }}
+      />
     {/if}
   </div>
 {/if}
 <a href="/dev-panel" style="display: none;">Prerender Target</a>
+<a href="/settings-panel" style="display: none;">Prerender Target</a>
 
-{#if settingsOpen}
-  <SettingsModal
-    bind:preferences={preferences}
-    onClose={() => (settingsOpen = false)}
-    onChooseFolder={choosePreferenceFolder}
-    onSave={saveSettings}
-    cacheAvailable={applePhotosSupported}
-    onCacheStatus={readApplePhotosCache}
-    onCacheClear={clearApplePhotosCache}
+<!-- The one place every long-running operation reports to, regardless of
+     which mode (Grid/Develop) is currently showing — an import can finish
+     while you're in Develop, and you should still see it. -->
+<Toast message={appMessage} />
+<TaskIndicator {activityQueue} onOpen={() => (queueOpen = true)} />
+{#if queueOpen}
+  <RenderQueueModal
+    {activityQueue}
+    {activeActivityId}
+    onClose={() => (queueOpen = false)}
+    onCancelQueue={cancelExportQueue}
   />
 {/if}
 
