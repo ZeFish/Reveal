@@ -230,7 +230,7 @@
                   max={control.max}
                   step={control.step}
                   value={toDisplay(control.id, recipe[control.id])}
-                  style="--slider-value: {pct(toDisplay(control.id, recipe[control.id]), control.min, control.max)}"
+                  style="--f: {pct(toDisplay(control.id, recipe[control.id]), control.min, control.max)}"
                   oninput={(e) => {
                     recipe[control.id] = fromDisplay(control.id, parseFloat(e.currentTarget.value));
                     edited(true); // live proxy
@@ -263,7 +263,7 @@
                   max={control.max}
                   step={control.step}
                   value={recipe[control.id]?.[control.index] ?? 0}
-                  style="--slider-value: {pct(recipe[control.id]?.[control.index], control.min, control.max)}"
+                  style="--f: {pct(recipe[control.id]?.[control.index], control.min, control.max)}"
                   oninput={(e) => {
                     if (!Array.isArray(recipe[control.id])) recipe[control.id] = [];
                     recipe[control.id][control.index] = parseFloat(e.currentTarget.value);
@@ -353,7 +353,7 @@
                             max="1"
                             step="0.01"
                             value={layer.opacity}
-                            style="--slider-value: {pct(layer.opacity, 0, 1)}"
+                            style="--f: {pct(layer.opacity, 0, 1)}"
                             oninput={(e) =>
                               updateLutOpacity(control.stage, idx, parseFloat(e.currentTarget.value))}
                           />
@@ -534,11 +534,13 @@
     --switch-height: 11px;
   }
 
-  /* Sizing only from here down — range-slider/select/button identity
-     (fill gradient via --slider-value, thumb, chevron, borders, hover
-     states) all come from Standard's own zero-class rules
-     (_standard-11-forms.scss, _standard-13-components.scss) plus the
-     app-wide pill shape in +layout.svelte. */
+  /* Sizing only from here down — range-slider identity (fill gradient,
+     thumb) is app.scss's own StyledSlider rule reading --f, not the
+     framework's default; select/button chevron/borders/hover still come
+     from Standard's zero-class rules (_standard-11-forms.scss,
+     _standard-13-components.scss) plus the app-wide pill shape in
+     +layout.svelte. --f used to be named --slider-value here, a name
+     app.scss's gradient never read, so every fill sat frozen at 50%. */
   input[type="range"] {
     flex: 1;
     min-width: 0;

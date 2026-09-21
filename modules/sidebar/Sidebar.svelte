@@ -16,6 +16,7 @@
   import StoryNotesList from "./StoryNotesList.svelte";
   import gardenThemes from "$lib/garden-themes.generated.json";
   import { storyTheme, updateStoryTheme, DEFAULT_DARK_BG, DEFAULT_ACCENT } from "$lib/story-theme.svelte.js";
+  import { loadFontPackages } from "$lib/app-theme.js";
   import { APPLE_PHOTOS_ROOT, photoCollectionAncestors } from "./applePhotosTree.js";
 
   let {
@@ -188,6 +189,15 @@
       fontHeader: t?.fontHeader ?? null,
       fontText: t?.fontText ?? null,
     });
+    // Picking a curated theme sets fontHeader/fontText to names like
+    // "Forrest" or "Monosten", but nothing else in this preview ever loads
+    // those fonts' @font-face CSS — the published Garden page does, via its
+    // own pipeline, which is why a theme's fonts show up there but silently
+    // fall back to the FONTS dropdown's system-safe defaults in here. This
+    // is the same lazy font-package loader Reveal's own app-chrome theme
+    // switcher already uses (see app-theme.js), just pointed at this
+    // theme's fontPackages instead of the app's own.
+    if (t?.fontPackages?.length) loadFontPackages(t.fontPackages);
   }
 
   async function submitKey() {

@@ -57,9 +57,8 @@ for (const [path, loader] of Object.entries(fontModules)) {
 // its own comment — fonts aren't reachable through package export maps).
 const loadedFontPackages = new Set(THEME_FONT_PACKAGES[DEFAULT_THEME] ?? []);
 
-/** @param {string} theme */
-async function loadThemeFonts(theme) {
-  const packages = THEME_FONT_PACKAGES[theme] ?? [];
+/** @param {string[]} packages */
+export async function loadFontPackages(packages) {
   await Promise.all(
     packages
       .filter((pkg) => !loadedFontPackages.has(pkg) && FONT_LOADERS[pkg])
@@ -68,6 +67,11 @@ async function loadThemeFonts(theme) {
         return FONT_LOADERS[pkg]();
       }),
   );
+}
+
+/** @param {string} theme */
+async function loadThemeFonts(theme) {
+  await loadFontPackages(THEME_FONT_PACKAGES[theme] ?? []);
 }
 
 // Every component picks its own hover-transition timing (120ms here, 150ms

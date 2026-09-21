@@ -28,7 +28,8 @@
   import Alert from "@stnd/ui/Alert.svelte";
   import { AppController } from "$lib/controllers/AppController.js";
   import { extractGardenUrl } from "$lib/story.js";
-  import { storyTheme, updateStoryTheme, contrastInk, getFontFamilyWithFallback } from "$lib/story-theme.svelte.js";
+  import { storyTheme, updateStoryTheme, contrastInk, getFontFamilyWithFallback, currentThemeFontPackages } from "$lib/story-theme.svelte.js";
+  import { loadFontPackages } from "$lib/app-theme.js";
 
   // ---- shared shapes (plain-JS JSDoc typing — no runtime effect) ----------
   /** A catalogue frame row, as returned by `index_frames` / `list_dir`. */
@@ -450,6 +451,11 @@
         fontHeader: t.fontHeader,
         fontText: t.fontText,
       });
+      // A saved theme only carries font NAMES ("Forrest") — the fontPackages
+      // array that actually loads their @font-face CSS lives on the curated
+      // theme entry, not the folder's note, so it has to be looked back up.
+      const pkgs = currentThemeFontPackages();
+      if (pkgs.length) loadFontPackages(pkgs);
     });
   });
 

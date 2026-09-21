@@ -76,11 +76,27 @@ export function updateStoryTheme(tokens) {
   if (tokens.fontRatio !== undefined) storyTheme.fontRatio = tokens.fontRatio;
 }
 
-export function getStoryThemeName() {
-  const match = gardenThemes.themes.find(
+function matchingCuratedTheme() {
+  return gardenThemes.themes.find(
     (t) =>
       t.darkBackground?.toLowerCase() === storyTheme.darkBackground?.toLowerCase() &&
       t.darkAccent?.toLowerCase() === storyTheme.darkAccent?.toLowerCase()
   );
+}
+
+export function getStoryThemeName() {
+  const match = matchingCuratedTheme();
   return match?.label ?? (storyTheme.darkBackground ? "Custom" : "Default (Garden)");
+}
+
+/**
+ * A saved folder theme only stores fontHeader/fontText NAMES (e.g.
+ * "Forrest"), not which @font-face package actually declares them — that
+ * mapping only exists on the curated theme entry itself (fontPackages).
+ * Used to re-load a theme's fonts after story_load_theme reads a folder's
+ * already-saved theme back from disk, where only the names come back.
+ * @returns {string[]}
+ */
+export function currentThemeFontPackages() {
+  return matchingCuratedTheme()?.fontPackages ?? [];
 }

@@ -110,7 +110,7 @@
               max="1"
               step="0.01"
               value={layer.opacity}
-              style="--slider-value: {layer.opacity * 100}%"
+              style="--f: {layer.opacity * 100}%"
               oninput={(e) => updateOpacity(idx, parseFloat(e.currentTarget.value))}
             />
             <span class="val">{Math.round(layer.opacity * 100)}%</span>
@@ -179,11 +179,12 @@
     opacity: 0.8;
     font-variant-numeric: tabular-nums;
   }
-  /* Sizing only from here down — select/button/range-slider identity
-     (chevron, borders, hover, fill/thumb) all come from Standard's own
-     zero-class rules (_standard-11-forms.scss, _standard-13-components.scss)
-     plus the app-wide pill shape in +layout.svelte. --slider-value (set
-     inline per input above) is what drives the slider's fill gradient. */
+  /* Sizing only from here down — the track fill/thumb come from app.scss's
+     own StyledSlider rule (::-webkit-slider-runnable-track background:
+     linear-gradient(... var(--f, 50%) ...)), not the framework's default
+     range styling. --f (set inline per input above) is what drives it —
+     this used to be named --slider-value, a name app.scss's gradient never
+     read, so every slider's fill sat frozen at the 50% fallback. */
   .lut-file-pick {
     flex: 1;
     font-size: 0.75rem;
