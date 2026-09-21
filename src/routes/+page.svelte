@@ -430,8 +430,8 @@
   /** @type {string | null} */ let curDir = $state(null);
 
   // Folder mood — the SAME story-theme tokens the Editorial/Garden preview
-  // already reads from `<folder>/<folder-name>.md` frontmatter (StoryThemePanel
-  // writes them via story_set_theme), now also driving Reveal's own working
+  // already reads from `<folder>/<folder-name>.md` frontmatter (the sidebar's
+  // theme dropdown writes them via story_set_theme), now also driving Reveal's own working
   // chrome, not just the exported-preview canvas. A wedding folder and a
   // corporate-shoot folder can carry their own theme note and the app itself
   // shifts mood while you're in them — reusing the existing per-folder file

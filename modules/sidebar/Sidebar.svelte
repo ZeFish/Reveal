@@ -11,9 +11,11 @@
   // wordmark) riding its top, FRAMES/EDITORIAL tabs, "ALL LIBRARY",
   // one section per catalogue, the tree with status dots and story dots,
   // then LIBRARY and the Garden account row at the bottom.
+  import { invoke } from "@tauri-apps/api/core";
   import Icon from "$lib/components/Icon.svelte";
-  import StoryThemePanel from "./StoryThemePanel.svelte";
   import StoryNotesList from "./StoryNotesList.svelte";
+  import gardenThemes from "$lib/garden-themes.generated.json";
+  import { storyTheme, updateStoryTheme } from "$lib/story-theme.svelte.js";
   import { APPLE_PHOTOS_ROOT, photoCollectionAncestors } from "./applePhotosTree.js";
 
   let {
@@ -110,6 +112,45 @@
   let accountError = $state(null);
 
   const signedIn = $derived(!!garden?.signed_in);
+
+  // Folder theme — a plain dropdown (the richer specimen-card/curated-chips/
+  // customize-panel picker, StoryThemePanel.svelte, was tried and dropped —
+  // Francis: "the theme selector I hate it. Replace with a simple
+  // dropdown."). Reads/writes the same storyTheme reactive singleton
+  // +page.svelte's own curDir effect populates, so this and the app-wide
+  // chrome never disagree about which theme is active.
+  const THEMES = gardenThemes.themes;
+  const currentThemeId = $derived.by(() => {
+    const match = THEMES.find(
+      (t) =>
+        t.darkBackground?.toLowerCase() === storyTheme.darkBackground?.toLowerCase() &&
+        t.darkAccent?.toLowerCase() === storyTheme.darkAccent?.toLowerCase()
+    );
+    return match ? String(match.id) : "";
+  });
+
+  /** @param {Event & { currentTarget: HTMLSelectElement }} e */
+  async function onThemePick(e) {
+    const id = e.currentTarget.value;
+    const t = id ? THEMES.find((theme) => String(theme.id) === id) : null;
+    const tokens = {
+      darkBackground: t?.darkBackground ?? null,
+      darkForeground: null,
+      lightBackground: null,
+      lightForeground: null,
+      darkAccent: t?.darkAccent ?? null,
+      lightAccent: null,
+      fontHeader: t?.fontHeader ?? null,
+      fontText: t?.fontText ?? null,
+    };
+    updateStoryTheme({
+      darkBackground: tokens.darkBackground,
+      darkAccent: tokens.darkAccent,
+      fontHeader: tokens.fontHeader,
+      fontText: tokens.fontText,
+    });
+    if (curDir) await invoke("story_set_theme", { dir: curDir, tokens });
+  }
 
   async function submitKey() {
     if (!pastedKey.trim() || verifying) return;
@@ -883,10 +924,24 @@
          `folderBrowser` STORY branch (CullView.swift:531-578). Brand cluster
          + tabs unchanged; this only ever swaps in over the SAME grid. -->
     <div class="story-body">
-      <details open class="theme-section">
-        <summary class="section-toggle">Theme</summary>
-        <div class="theme-inner">
-          <StoryThemePanel dir={curDir} />
+      <div class="theme-row">
+        <span class="theme-row-label">Theme</span>
+        <div class="theme-select-wrap">
+          <select
+            value={currentThemeId}
+            onchange={onThemePick}
+            disabled={!curDir}
+            aria-label="Folder theme"
+          >
+            <option value="">Default</option>
+            {#each THEMES as t}
+              <option value={t.id}>{t.label}</option>
+            {/each}
+          </select>
+          <Icon name="caret-down" size="9px" class="select-caret" />
+        </div>
+      </div>
+      <div class="theme-inner">
           <div class="story-actions">
             <!-- Publish only makes sense signed into a Garden account —
                  without that the button just leads to a network error.
@@ -925,8 +980,7 @@
           {#if signedIn && publishStatus}
             <p class="publish-status">{publishStatus}</p>
           {/if}
-        </div>
-      </details>
+      </div>
       <StoryNotesList
         pinned={pinnedStories}
         recent={recentStories}
@@ -1635,18 +1689,54 @@
     flex: 1;
     overflow-y: auto;
   }
-  .theme-section > summary {
-    cursor: pointer;
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    opacity: 0.5;
-    text-transform: uppercase;
-    font-weight: 500;
-    list-style: none;
-    margin-bottom: 8px;
+  .theme-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
   }
-  .theme-section > summary::-webkit-details-marker {
-    display: none;
+  .theme-row-label {
+    font-family: var(--font-header, sans-serif);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    opacity: 0.55;
+  }
+  .theme-select-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    flex: 1;
+    max-width: 60%;
+  }
+  .theme-select-wrap select {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    background: var(--color-surface-high, #222);
+    color: var(--color-foreground);
+    border: 1px solid var(--color-border, rgba(255, 255, 255, 0.12));
+    border-radius: var(--radius-sm, 6px);
+    padding: 3px 20px 3px 8px;
+    font-size: 10px;
+    cursor: pointer;
+    outline: none;
+    font-family: inherit;
+    transition: border-color 0.15s ease;
+  }
+  .theme-select-wrap select:hover {
+    border-color: rgba(255, 255, 255, 0.25);
+  }
+  .theme-select-wrap select:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  :global(.theme-select-wrap .select-caret) {
+    position: absolute;
+    right: 7px;
+    pointer-events: none;
+    opacity: 0.6;
   }
   .theme-inner {
     display: flex;
