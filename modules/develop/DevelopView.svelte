@@ -496,6 +496,7 @@
   class="zoom-{zoomMode}"
   class:panning
   class:frame-overflow={zoomMode === "frame" && developPhotoPercent > 100}
+  class:has-caption={showCaption && caption.trim() && !imgFailed}
   onpointerdown={(e) => { onPhotoPointerDown(e); onLoupePointerDown(e); }}
   onpointermove={(e) => { onPhotoPointerMove(e); onLoupePointerMove(e); }}
   onpointerup={(e) => { onPhotoPointerUp(e); onLoupePointerUp(e); }}
@@ -553,7 +554,7 @@
   {/if}
 
   {#if showCaption && caption.trim() && !imgFailed}
-    <div class="caption-overlay" style={matStyle}>
+    <div class="caption-plate">
       <div class="caption-bar">{@html captionHtml}</div>
     </div>
   {/if}
@@ -659,6 +660,14 @@
     position: relative;
     overflow: hidden;
     background: var(--color-background, #121212);
+  }
+  /* With a caption, the photo and its plate stack as two ordinary flex
+     items in a column — the photo shrinks to leave the caption room below
+     it rather than the caption sitting on top of it (matStyle's own
+     max-height:90% still caps the photo, so it just settles a bit smaller). */
+  main.has-caption {
+    flex-direction: column;
+    gap: 14px;
   }
   .photo-mat {
     display: block;
@@ -853,29 +862,23 @@
     color: #0a84ff;
   }
 
-  /* Sized/positioned exactly like the img/canvas it overlays — same
-     max-width/max-height/aspect-ratio/transform (matStyle) — but with none
-     of .photo-mat's own chrome (border, shadow, background), just a flex
-     box to pin the caption bar to ITS bottom edge, not the viewport's. */
-  .caption-overlay {
-    position: absolute;
-    pointer-events: none;
-    z-index: 6;
+  /* A flow item below the photo, not an overlay on it — see main.has-caption. */
+  .caption-plate {
+    flex-shrink: 0;
+    max-width: 90%;
     display: flex;
-    align-items: flex-end;
     justify-content: center;
   }
   .caption-bar {
-    width: 100%;
+    width: auto;
+    max-width: 46rem;
     box-sizing: border-box;
-    padding: 16px 20px 14px;
-    background: linear-gradient(to top, rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0));
-    color: #fff;
+    padding: 0 4px;
+    color: var(--color-foreground, #fff);
     font-family: var(--font-text, serif);
     font-size: 15px;
     line-height: 1.45;
     text-align: center;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
     white-space: pre-wrap;
   }
 

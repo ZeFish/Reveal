@@ -44,7 +44,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    background: var(--theme-bg, var(--color-background));
+    background: var(--theme-bg, var(--color-surface));
     transition: background 0.3s var(--ease-standard);
   }
 </style>

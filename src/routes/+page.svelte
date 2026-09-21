@@ -453,9 +453,42 @@
     });
   });
 
+  // The folder-theme override below only ever carried the DARK half of the
+  // 8 theme tokens ThemeTokens actually models (darkBackground/darkAccent),
+  // so a themed folder stayed visibly dark even after toggling the system
+  // to light mode — "l" (toggleAppearance) flips the OS/webview's
+  // prefers-color-scheme, which the framework's own :root rules follow
+  // fine, but this override doesn't unless it ALSO knows which scheme is
+  // active. story.rs's set_theme mirrors light_background = derived
+  // foreground of dark_background, light_foreground = dark_background —
+  // reproduced here with the same contrastInk helper rather than fetching
+  // the light_* fields separately, since they're always that exact swap.
+  let prefersDarkScheme = $state(true);
+  $effect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    prefersDarkScheme = mq.matches;
+    /** @param {MediaQueryListEvent} e */
+    const onChange = (e) => { prefersDarkScheme = e.matches; };
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  });
+
   let appThemed = $derived(!!storyTheme.darkBackground);
-  let appBg = $derived(storyTheme.darkBackground ?? undefined);
-  let appFg = $derived(storyTheme.darkBackground ? contrastInk(storyTheme.darkBackground) : undefined);
+  let appBg = $derived(
+    !storyTheme.darkBackground
+      ? undefined
+      : prefersDarkScheme
+        ? storyTheme.darkBackground
+        : contrastInk(storyTheme.darkBackground)
+  );
+  let appFg = $derived(
+    !storyTheme.darkBackground
+      ? undefined
+      : prefersDarkScheme
+        ? contrastInk(storyTheme.darkBackground)
+        : storyTheme.darkBackground
+  );
   let appAccent = $derived(storyTheme.darkAccent ?? undefined);
   let appFontHeader = $derived(storyTheme.fontHeader ? getFontFamilyWithFallback(storyTheme.fontHeader, true) : undefined);
   let appFontText = $derived(storyTheme.fontText ? getFontFamilyWithFallback(storyTheme.fontText, false) : undefined);
@@ -1565,7 +1598,7 @@
     try {
       await invoke("toggle_system_appearance");
     } catch (e) {
-      appMessage = `apparence: ${e}`;
+      appMessage = `appearance: ${e}`;
       setTimeout(() => (appMessage = ""), 5000);
     }
   }
