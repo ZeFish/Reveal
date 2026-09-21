@@ -2365,9 +2365,15 @@
         const row = rowOf.get(b.stem);
         if (row !== undefined) anchorRow = row;
       } else if (b.text.trim()) {
-        const list = map.get(anchorRow) ?? [];
+        // A paragraph's own `<!--grid-anchor:STEM-->` (any grid photo, in the
+        // story or not) wins over the sequential last-embedded-photo-seen
+        // fallback — that fallback only still fires for older notes saved
+        // before paragraphs recorded their own anchor.
+        const explicitRow = b.stem ? rowOf.get(b.stem) : undefined;
+        const row = explicitRow !== undefined ? explicitRow : anchorRow;
+        const list = map.get(row) ?? [];
         list.push({ id: b.id, text: b.text });
-        map.set(anchorRow, list);
+        map.set(row, list);
       }
     }
     return map;
@@ -2392,20 +2398,24 @@
       else blocks[i] = { ...blocks[i], text: trimmed };
     } else {
       if (!trimmed) return;
-      // Same photo, same story order, no matter which of its several
-      // filename-order rows it "belongs to" here — the LAST story photo
-      // whose Grid row is <= the gap you hovered.
-      let anchorStem = null;
+      // Two different anchors: where it DISPLAYS in Grid (any photo at or
+      // before the hovered row, in the story or not — recorded on the block
+      // itself so gridProseByRow can place it there) vs. where it lands IN
+      // THE FILE (has to sit after an actually-embedded photo, since that's
+      // the only kind of position the markdown format has).
+      let displayStem = null;
+      let fileAnchorStem = null;
       for (let i = 0; i < view.length; i++) {
         if (Math.floor(i / cols) > row) break;
         const s = stem(view[i].name);
-        if (storySet.has(s)) anchorStem = s;
+        displayStem = s;
+        if (storySet.has(s)) fileAnchorStem = s;
       }
-      const anchorIdx = anchorStem ? blocks.findIndex((b) => b.isPhoto && b.stem === anchorStem) : -1;
+      const anchorIdx = fileAnchorStem ? blocks.findIndex((b) => b.isPhoto && b.stem === fileAnchorStem) : -1;
       blocks.splice(anchorIdx + 1, 0, {
         id: `blk-grid-${Date.now()}`,
         isPhoto: false,
-        stem: "",
+        stem: displayStem ?? "",
         text: trimmed,
         rowBreak: true,
       });

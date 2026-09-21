@@ -72,11 +72,17 @@ export function parseStory(content) {
   let prose = [];
   let rowOpen = false; // the line above was a captionless embed → same row
   let lastWasBlank = true; // was the line before this an empty line?
+  // A hidden `<!--grid-anchor:STEM-->` line just above a paragraph records
+  // which grid photo it visually sits after — possibly one not embedded in
+  // the story at all. Without it (older notes), Grid falls back to the last
+  // *embedded* photo seen, which is all it ever had to anchor to before.
+  let pendingAnchorStem = "";
 
   const flushProse = () => {
     const t = prose.join("\n").trim();
-    if (t) blocks.push({ id: nextId(), isPhoto: false, stem: "", text: t, rowBreak: true });
+    if (t) blocks.push({ id: nextId(), isPhoto: false, stem: pendingAnchorStem, text: t, rowBreak: true });
     prose = [];
+    pendingAnchorStem = "";
   };
 
   const lines = body.split("\n");
@@ -109,6 +115,12 @@ export function parseStory(content) {
       lastWasBlank = false;
       i = j;
     } else {
+      const anchorMatch = prose.length === 0 ? line.trim().match(/^<!--\s*grid-anchor:\s*(\S+?)\s*-->$/) : null;
+      if (anchorMatch) {
+        pendingAnchorStem = anchorMatch[1];
+        i++;
+        continue;
+      }
       rowOpen = false;
       lastWasBlank = false;
       prose.push(line);
@@ -150,6 +162,7 @@ export function serializeStory(frontmatter, blocks) {
       const t = (b.text ?? "").trim();
       if (!t) continue;
       if (out) out += "\n\n";
+      if (b.stem) out += `<!--grid-anchor:${b.stem}-->\n`;
       out += t;
       rowOpen = false;
     }
