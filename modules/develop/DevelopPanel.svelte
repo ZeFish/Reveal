@@ -162,25 +162,20 @@
 
     <!-- TAB BAR -->
     <div class="tab-bar">
-      <button class="tab-btn" class:active={activeTab === 'dev'} onclick={() => activeTab = 'dev'}>
-        <Icon name="sliders-horizontal" size="11px" />
-        <span>Dev</span>
+      <button class="tab-btn" class:active={activeTab === 'dev'} onclick={() => activeTab = 'dev'} title="Dev" aria-label="Dev">
+        <Icon name="sliders-horizontal" size="14px" />
       </button>
-      <button class="tab-btn" class:active={activeTab === 'crop'} onclick={() => activeTab = 'crop'}>
-        <Icon name="crop" size="11px" />
-        <span>Crop</span>
+      <button class="tab-btn" class:active={activeTab === 'crop'} onclick={() => activeTab = 'crop'} title="Crop" aria-label="Crop">
+        <Icon name="crop" size="14px" />
       </button>
-      <button class="tab-btn" class:active={activeTab === 'preset'} onclick={() => activeTab = 'preset'}>
-        <Icon name="stack-simple" size="11px" />
-        <span>Presets</span>
+      <button class="tab-btn" class:active={activeTab === 'preset'} onclick={() => activeTab = 'preset'} title="Presets" aria-label="Presets">
+        <Icon name="stack-simple" size="14px" />
       </button>
-      <button class="tab-btn" class:active={activeTab === 'info'} onclick={() => activeTab = 'info'}>
-        <Icon name="image" size="11px" />
-        <span>Info</span>
+      <button class="tab-btn" class:active={activeTab === 'info'} onclick={() => activeTab = 'info'} title="Info" aria-label="Info">
+        <Icon name="image" size="14px" />
       </button>
-      <button class="tab-btn" class:active={activeTab === 'export'} onclick={() => activeTab = 'export'}>
-        <Icon name="download-simple" size="11px" />
-        <span>Export</span>
+      <button class="tab-btn" class:active={activeTab === 'export'} onclick={() => activeTab = 'export'} title="Export" aria-label="Export">
+        <Icon name="download-simple" size="14px" />
       </button>
     </div>
     <div class="hairline"></div>
@@ -357,14 +352,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 4px;
-    padding: 4px 0;
+    padding: 6px 0;
     border-radius: 3px;
-    font-family: var(--font-header, sans-serif);
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
     color: color-mix(in srgb, var(--color-foreground) 50%, transparent);
     transition: color var(--duration-fast) var(--ease-soft), background var(--duration-fast) var(--ease-soft), box-shadow var(--duration-fast) var(--ease-soft);
   }
