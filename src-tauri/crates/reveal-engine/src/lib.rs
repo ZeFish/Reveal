@@ -310,6 +310,12 @@ pub struct ProfileEntry {
     pub stage: String,
     /// "positive" or "negative" (profile `info.film_type`).
     pub film_type: String,
+    /// True for a "bw" `info.channel_model` profile — the only kind
+    /// spektrafilm-rs's `resolve_for_render` actually varies by development
+    /// time (it collapses a family of push/pull density curves to the
+    /// selected one); every color profile ignores development_time
+    /// entirely, so the "Durée" slider is a no-op there by design.
+    pub is_bw: bool,
 }
 
 pub struct RenderOutput {
@@ -456,6 +462,7 @@ impl Engine {
                     label: p.info.name.clone().unwrap_or_else(|| name.clone()),
                     stage: p.info.stage.clone(),
                     film_type: p.info.film_type.clone(),
+                    is_bw: p.is_bw(),
                     name,
                 }),
                 Err(_) => continue,
