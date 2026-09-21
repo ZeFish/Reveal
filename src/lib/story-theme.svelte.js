@@ -49,6 +49,7 @@ export function getFontFamilyWithFallback(font, isHeader = false) {
  *   darkAccent: string | null,
  *   fontHeader: string | null,
  *   fontText: string | null,
+ *   fontRatio: string | null,
  * }} StoryThemeState
  */
 
@@ -57,6 +58,11 @@ export const storyTheme = $state({
   darkAccent: /** @type {string | null} */ (null),
   fontHeader: /** @type {string | null} */ (null),
   fontText: /** @type {string | null} */ (null),
+  // The heading modular-scale multiplier (--font-ratio) — how much bigger
+  // each heading level reads relative to the base size. Independent of the
+  // curated theme presets (none of them set it), so picking a theme never
+  // resets a fine-tuned ratio.
+  fontRatio: /** @type {string | null} */ (null),
 });
 
 /**
@@ -67,6 +73,7 @@ export function updateStoryTheme(tokens) {
   if (tokens.darkAccent !== undefined) storyTheme.darkAccent = tokens.darkAccent;
   if (tokens.fontHeader !== undefined) storyTheme.fontHeader = tokens.fontHeader;
   if (tokens.fontText !== undefined) storyTheme.fontText = tokens.fontText;
+  if (tokens.fontRatio !== undefined) storyTheme.fontRatio = tokens.fontRatio;
 }
 
 export function getStoryThemeName() {

@@ -459,6 +459,15 @@
   let appAccent = $derived(storyTheme.darkAccent ?? undefined);
   let appFontHeader = $derived(storyTheme.fontHeader ? getFontFamilyWithFallback(storyTheme.fontHeader, true) : undefined);
   let appFontText = $derived(storyTheme.fontText ? getFontFamilyWithFallback(storyTheme.fontText, false) : undefined);
+  // --font-ratio (heading modular scale) is independent of the background/
+  // accent theme, so this is unconditional. Written here mainly to keep the
+  // token present should any Reveal chrome start consuming --optical-ratio/
+  // --scale-* later — today NONE of Reveal's own components size off those
+  // (every .svelte file hardcodes px), so this override is currently inert
+  // inside the app itself. Its real consumer is the published Garden page:
+  // story_set_theme already writes font-ratio into the note's frontmatter,
+  // which Garden's own site DOES render typography from.
+  let appFontRatio = $derived(storyTheme.fontRatio ?? undefined);
 
   let minRating = $state(0);
   let scanning = $state(false);
@@ -3927,6 +3936,7 @@
     style:--color-accent={appAccent}
     style:--font-header={appFontHeader}
     style:--font-text={appFontText}
+    style:--font-ratio={appFontRatio}
   >
     <div class="body">
       {#if sidebarVisible}
@@ -4454,6 +4464,7 @@
     style:--color-accent={appAccent}
     style:--font-header={appFontHeader}
     style:--font-text={appFontText}
+    style:--font-ratio={appFontRatio}
     onmousedown={startWindowDrag}
   >
     <DevelopView

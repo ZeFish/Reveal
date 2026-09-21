@@ -141,6 +141,7 @@ impl StoryNote {
             light_accent: get("color-light-accent"),
             font_header: get("font-header"),
             font_text: get("font-text"),
+            font_ratio: get("font-ratio"),
         }
     }
 
@@ -169,6 +170,7 @@ impl StoryNote {
 
         self.set_frontmatter("font-header", tokens.font_header.as_deref());
         self.set_frontmatter("font-text", tokens.font_text.as_deref());
+        self.set_frontmatter("font-ratio", tokens.font_ratio.as_deref());
     }
 
     /// Whether this note is pinned (frontmatter `pinned: true`).
@@ -190,9 +192,10 @@ impl StoryNote {
     }
 }
 
-/// The 8 Garden theme frontmatter tokens, all optional (None = unspecified,
-/// inherits default). The user picks dark_background + dark_accent + fonts;
-/// the rest are derived on write. Port of Swift `ThemeTokens` + `setStoryTheme`.
+/// The Garden theme frontmatter tokens, all optional (None = unspecified,
+/// inherits default). The user picks dark_background + dark_accent + fonts
+/// (+ font_ratio, the heading modular-scale multiplier); the rest are
+/// derived on write. Port of Swift `ThemeTokens` + `setStoryTheme`.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ThemeTokens {
@@ -204,6 +207,9 @@ pub struct ThemeTokens {
     pub light_accent: Option<String>,
     pub font_header: Option<String>,
     pub font_text: Option<String>,
+    /// Heading modular-scale ratio (`--font-ratio`, e.g. "1.333") — how much
+    /// bigger each heading level reads relative to the base size.
+    pub font_ratio: Option<String>,
 }
 
 /// Read a frontmatter scalar from one line (quotes stripped), or None.
@@ -500,6 +506,7 @@ mod tests {
             light_accent: None, // mirrors dark_accent
             font_header: Some("Sohne".to_string()),
             font_text: None,
+            font_ratio: None,
         };
         n.set_theme(&tokens);
         // user-picked
@@ -522,7 +529,7 @@ mod tests {
         let tokens = super::ThemeTokens {
             dark_background: None, dark_foreground: None, light_background: None,
             light_foreground: None, dark_accent: None, light_accent: None,
-            font_header: None, font_text: None,
+            font_header: None, font_text: None, font_ratio: None,
         };
         n.set_theme(&tokens);
         assert!(n.frontmatter_value("color-dark-background").is_none());
@@ -537,7 +544,7 @@ mod tests {
             dark_background: Some("#15110D".to_string()), dark_foreground: None,
             light_background: None, light_foreground: None,
             dark_accent: Some("#D6202C".to_string()), light_accent: None,
-            font_header: Some("Sohne".to_string()), font_text: None,
+            font_header: Some("Sohne".to_string()), font_text: None, font_ratio: None,
         };
         n.set_theme(&tokens);
         let read = n.theme_tokens();

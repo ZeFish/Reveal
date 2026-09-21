@@ -130,9 +130,13 @@
     );
     return match ? String(match.id) : "";
   });
-  let customizeOpen = $state(false);
   let previewBg = $derived(storyTheme.darkBackground ?? DEFAULT_DARK_BG);
   let previewAccent = $derived(storyTheme.darkAccent ?? DEFAULT_ACCENT);
+  // Matches the reveal theme's own default (packages/themes/reveal/reveal.scss).
+  const DEFAULT_FONT_RATIO = 1.333;
+  let previewFontRatio = $derived(
+    storyTheme.fontRatio ? Number(storyTheme.fontRatio) : DEFAULT_FONT_RATIO
+  );
 
   const FONTS = [
     { label: "System", value: null },
@@ -150,7 +154,7 @@
 
   /** @type {ReturnType<typeof setTimeout> | null} */
   let themeSaveTimer = null;
-  /** @param {{darkBackground?: string|null, darkAccent?: string|null, fontHeader?: string|null, fontText?: string|null}} partial */
+  /** @param {{darkBackground?: string|null, darkAccent?: string|null, fontHeader?: string|null, fontText?: string|null, fontRatio?: string|null}} partial */
   function applyTheme(partial) {
     updateStoryTheme(partial);
     if (!curDir) return;
@@ -168,6 +172,7 @@
           lightAccent: null,
           fontHeader: storyTheme.fontHeader,
           fontText: storyTheme.fontText,
+          fontRatio: storyTheme.fontRatio,
         },
       });
     }, 250);
@@ -976,20 +981,8 @@
       </div>
 
       <div class="customize-block">
-        <button
-          type="button"
-          class="customize-toggle"
-          onclick={() => (customizeOpen = !customizeOpen)}
-          aria-expanded={customizeOpen}
-          disabled={!curDir}
-        >
-          <span>Customize colors & fonts</span>
-          <span class="toggle-arrow" class:open={customizeOpen}>
-            <Icon name="caret-right" size="9px" />
-          </span>
-        </button>
-        {#if customizeOpen}
-          <div class="customize-fields">
+        <span class="customize-label">Customize colors & fonts</span>
+        <div class="customize-fields">
             <div class="field-row">
               <span class="field-label">BACKGROUND</span>
               <div class="color-picker-badge">
@@ -998,6 +991,7 @@
                     type="color"
                     value={previewBg}
                     oninput={(e) => applyTheme({ darkBackground: e.currentTarget.value })}
+                    disabled={!curDir}
                   />
                 </label>
                 <span class="hex-text">{previewBg.toUpperCase()}</span>
@@ -1021,6 +1015,7 @@
                     type="color"
                     value={previewAccent}
                     oninput={(e) => applyTheme({ darkAccent: e.currentTarget.value })}
+                    disabled={!curDir}
                   />
                 </label>
                 <span class="hex-text">{previewAccent.toUpperCase()}</span>
@@ -1042,6 +1037,7 @@
                 <select
                   value={storyTheme.fontHeader ?? ""}
                   onchange={(e) => applyTheme({ fontHeader: e.currentTarget.value || null })}
+                  disabled={!curDir}
                 >
                   {#each FONTS as f}
                     <option value={f.value ?? ""}>{f.label}</option>
@@ -1056,6 +1052,7 @@
                 <select
                   value={storyTheme.fontText ?? ""}
                   onchange={(e) => applyTheme({ fontText: e.currentTarget.value || null })}
+                  disabled={!curDir}
                 >
                   {#each FONTS as f}
                     <option value={f.value ?? ""}>{f.label}</option>
@@ -1064,8 +1061,32 @@
                 <Icon name="caret-down" size="9px" class="select-caret" />
               </div>
             </div>
-          </div>
-        {/if}
+            <div class="field-row">
+              <span class="field-label">SCALE</span>
+              <div class="ratio-slider-wrap">
+                <input
+                  type="range"
+                  min="1.05"
+                  max="1.8"
+                  step="0.005"
+                  value={previewFontRatio}
+                  oninput={(e) => applyTheme({ fontRatio: e.currentTarget.value })}
+                  disabled={!curDir}
+                />
+                <span class="hex-text">{previewFontRatio.toFixed(2)}</span>
+                {#if storyTheme.fontRatio}
+                  <button
+                    type="button"
+                    class="field-reset"
+                    title="Reset to default heading scale"
+                    onclick={() => applyTheme({ fontRatio: null })}
+                  >
+                    <Icon name="x" size="10px" />
+                  </button>
+                {/if}
+              </div>
+            </div>
+        </div>
       </div>
 
       <StoryNotesList
@@ -1884,38 +1905,19 @@
     opacity: 0.6;
   }
 
-  /* Fine-tune override toggle — Francis: "the panel should offer the
-     ability to customize the style tokens like fonts and color." Kept
-     collapsed by default so the plain dropdown stays the primary control. */
+  /* Fine-tune override — Francis: "the panel should offer the ability to
+     customize the style tokens like fonts and color" / "always expanded
+     tho" (a collapse toggle was tried first and dropped). */
   .customize-block {
     display: flex;
     flex-direction: column;
     gap: 8px;
   }
-  .customize-toggle {
-    all: unset;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 6px;
+  .customize-label {
+    display: block;
     font-size: 10px;
-    opacity: 0.7;
-    transition: opacity 0.15s ease;
+    opacity: 0.55;
     padding: 2px 0;
-  }
-  .customize-toggle:hover {
-    opacity: 1;
-  }
-  .customize-toggle:disabled {
-    opacity: 0.35;
-    cursor: default;
-  }
-  .toggle-arrow {
-    margin-left: auto;
-    transition: transform 0.18s ease;
-  }
-  .toggle-arrow.open {
-    transform: rotate(90deg);
   }
   .customize-fields {
     display: flex;
@@ -1980,6 +1982,22 @@
   .field-reset:hover {
     opacity: 1;
     color: var(--color-accent);
+  }
+  .ratio-slider-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    max-width: 60%;
+  }
+  .ratio-slider-wrap input[type="range"] {
+    flex: 1;
+    min-width: 0;
+  }
+  .ratio-slider-wrap .hex-text {
+    flex-shrink: 0;
+    width: 2.6em;
+    text-align: right;
   }
   .theme-inner {
     display: flex;
