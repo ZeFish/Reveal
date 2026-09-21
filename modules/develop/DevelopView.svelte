@@ -386,16 +386,103 @@
     }
     histogram = { r, g, b, luma };
   }
+
+  // Capture One-style loupe: press on the photo, a circle follows the
+  // cursor showing that spot at native pixel scale (no upscaling blur —
+  // imageSmoothingEnabled off), release to dismiss. Only in "frame" zoom
+  // (fit-to-view) — "actual" already shows 1:1 pixels and owns pointer-down
+  // for panning (see the prop handlers above), and crop owns its own
+  // overlay's pointer events entirely.
+  let loupeActive = $state(false);
+  let loupePos = $state({ x: 0, y: 0 }); // client coords, for the fixed overlay
+  /** @type {HTMLCanvasElement | null} */
+  let loupeCanvasEl = $state(null);
+  const LOUPE_DIAMETER = 220;
+  const LOUPE_ZOOM = 2; // 2x native pixels — plain 1x reads as "too tight" on a retina display
+
+  function loupeSource() {
+    if (useCanvas && canvasEl?.width) return { el: canvasEl, w: canvasEl.width, h: canvasEl.height };
+    if (imgEl && loaded) {
+      const w = imgEl.naturalWidth || imgEl.width;
+      const h = imgEl.naturalHeight || imgEl.height;
+      if (w && h) return { el: imgEl, w, h };
+    }
+    return null;
+  }
+
+  /** @param {PointerEvent & { currentTarget: HTMLElement }} e */
+  function onLoupePointerDown(e) {
+    if (zoomMode !== "frame" || isCropping || imgFailed || e.button !== 0) return;
+    const source = loupeSource();
+    // Only clicks landing ON the actual photo element start the loupe — not
+    // the empty margin around it inside this flex-centered <main>.
+    if (!source || e.target !== source.el) return;
+    loupeActive = true;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    updateLoupe(e.clientX, e.clientY);
+    e.stopPropagation();
+  }
+
+  /** @param {PointerEvent} e */
+  function onLoupePointerMove(e) {
+    if (!loupeActive) return;
+    updateLoupe(e.clientX, e.clientY);
+  }
+
+  /** @param {PointerEvent & { currentTarget: HTMLElement }} e */
+  function onLoupePointerUp(e) {
+    if (!loupeActive) return;
+    loupeActive = false;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+  }
+
+  /** @param {number} clientX @param {number} clientY */
+  function updateLoupe(clientX, clientY) {
+    const source = loupeSource();
+    if (!source) return;
+    const rect = source.el.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+
+    // object-fit: contain picks the smaller scale (letterboxed), cover picks
+    // the larger (overflowing) — same box, opposite constrained axis.
+    const imgRatio = source.w / source.h;
+    const boxRatio = rect.width / rect.height;
+    const widthConstrained = objectFit === "cover" ? boxRatio > imgRatio : boxRatio <= imgRatio;
+    const dispW = widthConstrained ? rect.width : rect.height * imgRatio;
+    const dispH = widthConstrained ? rect.width / imgRatio : rect.height;
+    const offX = (rect.width - dispW) / 2;
+    const offY = (rect.height - dispH) / 2;
+
+    let nx = (clientX - rect.left - offX) / dispW;
+    let ny = (clientY - rect.top - offY) / dispH;
+    if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return; // dragged off the photo
+    if (flipH < 0) nx = 1 - nx;
+    if (flipV < 0) ny = 1 - ny;
+
+    loupePos = { x: clientX, y: clientY };
+
+    if (!loupeCanvasEl) return;
+    const ctx = loupeCanvasEl.getContext("2d");
+    if (!ctx) return;
+    loupeCanvasEl.width = LOUPE_DIAMETER;
+    loupeCanvasEl.height = LOUPE_DIAMETER;
+    const span = LOUPE_DIAMETER / LOUPE_ZOOM;
+    const sx = nx * source.w - span / 2;
+    const sy = ny * source.h - span / 2;
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, LOUPE_DIAMETER, LOUPE_DIAMETER);
+    ctx.drawImage(source.el, sx, sy, span, span, 0, 0, LOUPE_DIAMETER, LOUPE_DIAMETER);
+  }
 </script>
 
 <main
   use:trackDevelopViewport
   class="zoom-{zoomMode}"
   class:panning
-  onpointerdown={onPhotoPointerDown}
-  onpointermove={onPhotoPointerMove}
-  onpointerup={onPhotoPointerUp}
-  onpointercancel={onPhotoPointerUp}
+  onpointerdown={(e) => { onPhotoPointerDown(e); onLoupePointerDown(e); }}
+  onpointermove={(e) => { onPhotoPointerMove(e); onLoupePointerMove(e); }}
+  onpointerup={(e) => { onPhotoPointerUp(e); onLoupePointerUp(e); }}
+  onpointercancel={(e) => { onPhotoPointerUp(e); onLoupePointerUp(e); }}
   oncontextmenu={(e) => e.preventDefault()}
 >
   {#if inflight || pendingPx !== null || status || (!loaded && imgUrl && !imgFailed && !useCanvas)}
@@ -495,7 +582,52 @@
   {/if}
 </main>
 
+{#if loupeActive}
+  <div class="loupe" style="left: {loupePos.x}px; top: {loupePos.y}px;">
+    <canvas bind:this={loupeCanvasEl} width={LOUPE_DIAMETER} height={LOUPE_DIAMETER}></canvas>
+    <div class="loupe-crosshair"></div>
+  </div>
+{/if}
+
 <style>
+  .loupe {
+    position: fixed;
+    width: 220px;
+    height: 220px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 50;
+    border: 2px solid rgba(255, 255, 255, 0.85);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 8px 32px rgba(0, 0, 0, 0.5);
+    background: #000;
+  }
+  .loupe canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .loupe-crosshair {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 1px;
+    height: 11px;
+    background: rgba(255, 255, 255, 0.7);
+    box-shadow: 0 0 1px rgba(0, 0, 0, 0.6);
+  }
+  .loupe-crosshair::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 11px;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.7);
+    box-shadow: 0 0 1px rgba(0, 0, 0, 0.6);
+  }
+
   main {
     flex: 1;
     display: flex;
