@@ -90,6 +90,13 @@
     // DevelopView in the same window; detached: relayed over main-dev-state
     // — see routes/dev-panel/+page.svelte) straight into DevTab's histogram.
     histogram = null,
+    // The Photo Size slider's own value — bindable for instant local echo
+    // (mirrors exportEdge/exportBorder's pattern), onPhotoScaleChanged is
+    // what actually makes it stick: a no-op when docked (this panel shares
+    // memory with the window that owns the photo), a relay emit when
+    // detached (see routes/dev-panel/+page.svelte).
+    photoScale = $bindable(90),
+    onPhotoScaleChanged = () => {},
   } = $props();
 
   // developEngine holds the Rust engine id ("spektra" | "rapid" | null).
@@ -201,6 +208,8 @@
         {onExport}
         {photoPath}
         {histogram}
+        bind:photoScale
+        {onPhotoScaleChanged}
       />
     {:else if activeTab === 'crop'}
       <CropTab bind:recipe {edited} />

@@ -22,7 +22,6 @@
     developPhotoPercent = 90,
     recipe = null,
     renderAspect = null,
-    trackDevelopViewport = () => {},
     showCropOverlay = false,
     onPhotoPointerDown = () => {},
     onPhotoPointerMove = () => {},
@@ -412,7 +411,10 @@
 
   /** @param {PointerEvent & { currentTarget: HTMLElement }} e */
   function onLoupePointerDown(e) {
-    if (zoomMode !== "frame" || isCropping || imgFailed || e.button !== 0) return;
+    // Above 100% the photo already overflows its frame — that drag now pans
+    // it instead (see onPhotoPointerDown in +page.svelte), so the loupe only
+    // claims the gesture while the photo still fits inside its margin.
+    if (zoomMode !== "frame" || developPhotoPercent > 100 || isCropping || imgFailed || e.button !== 0) return;
     const source = loupeSource();
     // Only clicks landing ON the actual photo element start the loupe — not
     // the empty margin around it inside this flex-centered <main>.
@@ -476,9 +478,9 @@
 </script>
 
 <main
-  use:trackDevelopViewport
   class="zoom-{zoomMode}"
   class:panning
+  class:frame-overflow={zoomMode === "frame" && developPhotoPercent > 100}
   onpointerdown={(e) => { onPhotoPointerDown(e); onLoupePointerDown(e); }}
   onpointermove={(e) => { onPhotoPointerMove(e); onLoupePointerMove(e); }}
   onpointerup={(e) => { onPhotoPointerUp(e); onLoupePointerUp(e); }}
@@ -853,6 +855,17 @@
   main.zoom-fill .photo-mat {
     max-width: 100%;
     max-height: 100%;
+  }
+
+  /* Photo Size slider (DevTab) pushed past 100% — same drag-to-pan
+     mechanism as zoom-actual (scrollLeft/scrollTop, see onPhotoPointerDown
+     in +page.svelte), just gated to when there's actually somewhere to pan. */
+  main.frame-overflow {
+    overflow: auto;
+    cursor: grab;
+  }
+  main.frame-overflow.panning {
+    cursor: grabbing;
   }
 
   main.zoom-actual {

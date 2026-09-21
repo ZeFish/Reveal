@@ -50,6 +50,11 @@
   let showClipping = $state(false);
   /** @type {{r: number[], g: number[], b: number[], luma: number[]} | null} */
   let histogram = $state(null);
+  let photoScale = $state(90);
+
+  function photoScaleChanged() {
+    emit("dev-panel-photo-scale-changed", { photoScale });
+  }
 
   function toggleClipping() {
     showClipping = !showClipping;
@@ -153,6 +158,7 @@
       caption = state.caption;
       rating = state.rating ?? 0;
       histogram = state.histogram ?? null;
+      photoScale = state.photoScale ?? 90;
     }).then(() => {
       emit("dev-panel-ready", {});
     });
@@ -304,6 +310,8 @@
   bind:publishing
   bind:publishStatus
   {histogram}
+  bind:photoScale
+  onPhotoScaleChanged={photoScaleChanged}
   {showClipping}
   {toggleClipping}
   {edited}

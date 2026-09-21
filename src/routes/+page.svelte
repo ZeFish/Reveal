@@ -187,19 +187,17 @@
   // it → the photo filling the viewport edge-to-edge → 1:1 actual pixels → back.
   const ZOOM_CYCLE = ["frame", "fill", "actual"];
   let zoomMode = $state("frame"); // one of ZOOM_CYCLE
-  let developViewport = $state({ width: 0, height: 0 });
   let fullscreen = $state(false);
   /** @type {string | null} */ let fullscreenUrl = $state(null);
   let fullscreenRequest = 0;
   // Pointer/focus presence for the window — drives focus mode AND the
   // fullscreen traffic-light hint, which fades out when the mouse leaves.
   let pointerInside = $state(false);
-  const developPhotoPercent = $derived.by(() => {
-    const minDimension = Math.min(developViewport.width, developViewport.height);
-    const progress = Math.min(Math.max((minDimension - 500) / 600, 0), 1);
-    const factor = 1.05 + (1.618 - 1.05) * progress;
-    return 100 / factor;
-  });
+  // The "frame" zoom's own size, as a % of the viewport — used to be an
+  // auto golden-ratio formula off developViewport; now a plain slider in
+  // DevTab (Francis: "so we can choose... the photo size"). >100 lets the
+  // photo outgrow the frame on purpose — see the loupe/pan split below.
+  let developPhotoPercent = $state(90);
   /** @type {Record<"cull" | "dev", Record<string, boolean>>} */
   let layouts = $state({
     cull: { sidebar: true, focus: false, devPanel: false },
@@ -951,6 +949,9 @@
           exportBorder = e.payload.exportBorder;
           saveExportPrefs();
         });
+        listen("dev-panel-photo-scale-changed", (e) => {
+          developPhotoPercent = e.payload.photoScale;
+        });
         listen("dev-panel-choose-export-folder", () => {
           chooseExportFolder();
         });
@@ -1183,7 +1184,11 @@
 
   /** @param {PointerEvent & { currentTarget: HTMLElement }} e */
   function onPhotoPointerDown(e) {
-    if (zoomMode !== "actual" || e.button !== 0) return;
+    // "actual" (1:1 pixels) always pans on drag; "frame" only once the Photo
+    // Size slider has pushed the photo past 100% and it actually overflows —
+    // below that, the same drag is the loupe's gesture instead (DevelopView).
+    const canPan = zoomMode === "actual" || (zoomMode === "frame" && developPhotoPercent > 100);
+    if (!canPan || e.button !== 0) return;
     const el = e.currentTarget;
     panning = true;
     panOrigin = { x: e.clientX, y: e.clientY, left: el.scrollLeft, top: el.scrollTop };
@@ -1285,6 +1290,7 @@
         engines: engines,
         caption: caption,
         showClipping: showClipping,
+        photoScale: developPhotoPercent,
         // Typed arrays don't survive Tauri's JSON emit as themselves — plain
         // arrays round-trip fine and index identically in Histogram.svelte.
         histogram: histogram
@@ -1443,7 +1449,7 @@
   $effect(() => {
     if (currentMode === "dev" && isTauri) {
       // Establish dependency on Svelte reactive variables
-      const trigger = [photoPath, picked, recipe, developEngine, renderMs, status, installedEditors, exportEdge, exportBorder, films, papers, luts, caption, currentRating, histogram];
+      const trigger = [photoPath, picked, recipe, developEngine, renderMs, status, installedEditors, exportEdge, exportBorder, films, papers, luts, caption, currentRating, histogram, developPhotoPercent];
       sendDevStateToPanel();
     }
   });
@@ -1837,22 +1843,6 @@
   function toggleFullscreen() {
     if (fullscreen) exitFullscreen();
     else enterFullscreen();
-  }
-
-  /** @param {HTMLElement} node */
-  function trackDevelopViewport(node) {
-    const observer = new ResizeObserver(([entry]) => {
-      developViewport = {
-        width: entry.contentRect.width,
-        height: entry.contentRect.height,
-      };
-    });
-    observer.observe(node);
-    return {
-      destroy() {
-        observer.disconnect();
-      },
-    };
   }
 
   /** @param {string} path */
@@ -4403,7 +4393,6 @@
       {zoomMode}
       {panning}
       {developPhotoPercent}
-      {trackDevelopViewport}
       {onPhotoPointerDown}
       {onPhotoPointerMove}
       {onPhotoPointerUp}
@@ -4632,6 +4621,7 @@
         bind:publishing={devPublishing}
         bind:publishStatus={devPublishStatus}
         {histogram}
+        bind:photoScale={developPhotoPercent}
         {showClipping}
         toggleClipping={dockedToggleClipping}
         edited={dockedEdited}
@@ -4679,11 +4669,10 @@
 {#if fullscreen && view[sel]}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="fullscreen-photo" onclick={exitFullscreen} role="presentation">
-    <!-- The real single-photo viewer, so fullscreen is identical to dev mode.
-         trackDevelopViewport is intentionally omitted here: it drives the dev
-         render resolution off the underlying (grid/dev) viewport, and letting
-         the fullscreen surface feed it would re-render the dev image at screen
-         size. Fullscreen just shows the pre-developed `fullscreenUrl`. -->
+    <!-- The real single-photo viewer, so fullscreen is identical to dev mode
+         — including the same developPhotoPercent (the size slider in DevTab),
+         so a photo sized to overflow its dev-panel frame overflows here too.
+         Fullscreen just shows the pre-developed `fullscreenUrl`. -->
     <DevelopView
       picked={view[sel].name}
       imgUrl={fullscreenUrl ?? undefined}
