@@ -193,16 +193,18 @@
               <div class="frow" class:disabled={isControlDisabled(group, control)}>
                 <span class="din frow-label" title={control.label}>{control.label}</span>
                 <span class="spacer"></span>
-                <input
-                  type="checkbox"
-                  role="switch"
-                  aria-label={control.label}
-                  checked={recipe[control.id]}
-                  onchange={() => {
-                    recipe[control.id] = !recipe[control.id];
-                    edited();
-                  }}
-                />
+                <span class="val toggle-wrap">
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    aria-label={control.label}
+                    checked={recipe[control.id]}
+                    onchange={() => {
+                      recipe[control.id] = !recipe[control.id];
+                      edited();
+                    }}
+                  />
+                </span>
               </div>
 
             {:else if control.kind === "slider"}
@@ -507,6 +509,14 @@
     text-align: right;
     color: color-mix(in srgb, var(--color-foreground) 80%, transparent);
     font-variant-numeric: tabular-nums;
+  }
+  /* A toggle row has no .val text, so nothing forced it into the same fixed
+     44px column a slider row's value sits in — the switch just ended
+     wherever its own intrinsic width happened to land, short of the value
+     column's shared right edge. Same box, flex-end instead of text-align. */
+  .val.toggle-wrap {
+    display: flex;
+    justify-content: flex-end;
   }
 
   /* Sizing only from here down — range-slider/select/button identity
