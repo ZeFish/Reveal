@@ -45,7 +45,12 @@
         // the time the render comes back — still cache it (harmless, and
         // cheap if revisited), just don't bother if it's now stale.
         if (path !== photoPath) continue;
-        thumbCache.set(key, URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" })));
+        // Reassigning a new Map (rather than mutating thumbCache in place)
+        // is deliberate: a plain `$state(new Map())` only proxies the
+        // Map REFERENCE, not calls to its own .set()/.delete() — Svelte 5
+        // needs SvelteMap (svelte/reactivity) for that, or a fresh
+        // reference each write, which is what this does.
+        thumbCache = new Map(thumbCache).set(key, URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" })));
       } catch (_) {
         // leave uncached — the card falls back to its skeleton placeholder
       }
