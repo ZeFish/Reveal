@@ -179,3 +179,16 @@ html:has(img:active)::before {
   display: none !important;
   content: none !important;
 }
+
+/* A color-scheme change (theme pick, or macOS system light/dark) recolors
+   dozens of elements at once, and every one of them has its OWN hover-
+   transition duration (120/150/180ms, some none at all) — synced() in
+   app-theme.js toggles this class for the ~250ms the swap takes. Only
+   -duration, not the whole `transition` shorthand: overriding that would
+   wipe out each element's own transition-property list (transform for a
+   chevron rotate, a toggle knob sliding, a hover scale) along with it —
+   this just makes whatever they already animate share one timing, briefly. */
+.theme-transitioning,
+.theme-transitioning * {
+  transition-duration: 200ms !important;
+}

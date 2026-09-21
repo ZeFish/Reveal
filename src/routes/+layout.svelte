@@ -3,7 +3,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { isTauri } from "$lib/api.js";
-  import { applyTheme } from "$lib/app-theme.js";
+  import { applyTheme, syncThemeTransition } from "$lib/app-theme.js";
   // The Standard visual identity — framework-agnostic pieces of the monorepo.
   import "@stnd/styles/standard.scss";
   // Fonts and theme are not reachable through their packages' exports maps
@@ -33,7 +33,19 @@
     const unlisten = listen("app-theme-changed", (e) => {
       applyTheme(/** @type {any} */ (e.payload)?.app_theme);
     });
-    return () => { unlisten.then((fn) => fn()); };
+
+    // Themes carry a --color-light-*/--color-dark-* pair each, resolved by
+    // the media query below — so a macOS system light/dark toggle recolors
+    // just as much of the UI as picking a whole new theme does, and needs
+    // the same transition sync.
+    const scheme = window.matchMedia("(prefers-color-scheme: dark)");
+    const onSchemeChange = () => syncThemeTransition();
+    scheme.addEventListener("change", onSchemeChange);
+
+    return () => {
+      unlisten.then((fn) => fn());
+      scheme.removeEventListener("change", onSchemeChange);
+    };
   });
 </script>
 

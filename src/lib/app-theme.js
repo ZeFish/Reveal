@@ -33,6 +33,21 @@ export const DEFAULT_THEME = "reveal";
 // "reveal" is imported statically by +layout.svelte already — never re-fetch it.
 const loadedThemes = new Set([DEFAULT_THEME]);
 
+// Every component picks its own hover-transition timing (120ms here, 150ms
+// there, some with no transition at all) — fine for a hover, but a color
+// SCHEME change (theme pick, or macOS system light/dark) recolors dozens of
+// them at once, and those mismatched durations turn one swap into a visible
+// wave instead of a single fade. This forces one shared, synchronized
+// duration for color-ish properties for the ~250ms the swap takes, then
+// gets out of the way so hover transitions go back to their own timing.
+let transitionSyncTimer = /** @type {ReturnType<typeof setTimeout> | undefined} */ (undefined);
+export function syncThemeTransition() {
+  const root = document.documentElement;
+  root.classList.add("theme-transitioning");
+  clearTimeout(transitionSyncTimer);
+  transitionSyncTimer = setTimeout(() => root.classList.remove("theme-transitioning"), 260);
+}
+
 /**
  * Switches the app's active theme, loading its token file on first use.
  * @param {string | null | undefined} id
@@ -43,5 +58,6 @@ export async function applyTheme(id) {
     await THEME_LOADERS[theme]();
     loadedThemes.add(theme);
   }
+  syncThemeTransition();
   document.documentElement.dataset.theme = theme;
 }
