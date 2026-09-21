@@ -21,13 +21,13 @@
 </script>
 
 <div class="tools-strip">
-  <button class="tool-btn" title="Recadrer (Crop)" onclick={onCropClick}>
+  <button class="tool-btn" title="Crop" onclick={onCropClick}>
     <Icon name="crop" size="14px" />
   </button>
   <button
     class="tool-btn clipping-btn"
     class:active={showClipping}
-    title="Avertissement d'écrêtage (Blancs & Noirs)"
+    title="Clipping warning (highlights & shadows)"
     onclick={toggleClipping}
   >
     <Icon name="circle-half" size="14px" />
@@ -41,7 +41,7 @@
   <button class="tool-btn" title="Presets" onclick={onPresetClick}>
     <Icon name="sliders-horizontal" size="14px" />
   </button>
-  <button class="tool-btn" title="Exporter sur le Bureau" onclick={onExportDesktopClick}>
+  <button class="tool-btn" title="Export to Desktop" onclick={onExportDesktopClick}>
     <Icon name="download-simple" size="14px" />
   </button>
 </div>

@@ -155,8 +155,8 @@
       e.stopPropagation();
       onToggleStory();
     }}
-    title={inStory ? "Retirer de l'histoire" : "Ajouter à l'histoire"}
-    aria-label={inStory ? "Retirer de l'histoire" : "Ajouter à l'histoire"}
+    title={inStory ? "Remove from story" : "Add to story"}
+    aria-label={inStory ? "Remove from story" : "Add to story"}
   ></button>
 
   {#if isExporting || isRendering}

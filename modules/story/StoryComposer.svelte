@@ -524,11 +524,11 @@
     {:else if blocks.filter((b) => b.isPhoto).length > 1}
       <div class="row-tools">
         {#if rows.some((r) => r.type === "photos" && r.blocks.length > 1)}
-          <button class="split-all-btn" onclick={splitAll} title="Placer chaque photo sur sa propre ligne">
-            <Icon name="rows" size="12px" /><span>Séparer en lignes individuelles</span>
+          <button class="split-all-btn" onclick={splitAll} title="Place each photo on its own row">
+            <Icon name="rows" size="12px" /><span>Split into individual rows</span>
           </button>
         {/if}
-        <button class="split-all-btn" onclick={sortByDate} title="Réordonner les photos chronologiquement">
+        <button class="split-all-btn" onclick={sortByDate} title="Reorder photos chronologically">
           <Icon name="arrows-down-up" size="12px" /><span>Chronologie</span>
         </button>
       </div>
@@ -571,7 +571,7 @@
         }}
       >
         <!-- Hover the space between two rows to drop a paragraph in there. -->
-        <button class="gap-add" onclick={() => addProseAt(r)} title="Insérer un paragraphe ici">
+        <button class="gap-add" onclick={() => addProseAt(r)} title="Insert a paragraph here">
           <Icon name="plus" size="10px" /><span>Paragraphe</span>
         </button>
       </div>
@@ -589,8 +589,8 @@
               draggable="true"
               ondragstart={(e) => onDragStart(row.block.id, e)}
               ondragend={onDragEnd}
-              title="Glisser pour déplacer ce texte"
-              aria-label="Déplacer ce paragraphe"
+              title="Drag to move this text"
+              aria-label="Move this paragraph"
             >
               <Icon name="dots-six-vertical" size="14px" />
             </button>
@@ -599,7 +599,7 @@
               use:autoExpand
               class="prose"
               rows="1"
-              placeholder="Écrire un paragraphe, une pensée ou le récit d'un instant…"
+              placeholder="Write a paragraph, a thought, or the story of a moment…"
               value={row.block.text}
               oninput={(e) => setText(row.block.id, e.currentTarget.value)}
             ></textarea>
@@ -610,8 +610,8 @@
                   type="button"
                   class="row-action-btn"
                   onclick={() => moveRow(r, r - 1)}
-                  title="Monter ce paragraphe"
-                  aria-label="Monter ce paragraphe"
+                  title="Move this paragraph up"
+                  aria-label="Move this paragraph up"
                 >
                   <Icon name="caret-up" size="10px" />
                 </button>
@@ -621,8 +621,8 @@
                   type="button"
                   class="row-action-btn"
                   onclick={() => moveRow(r, r + 1)}
-                  title="Descendre ce paragraphe"
-                  aria-label="Descendre ce paragraphe"
+                  title="Move this paragraph down"
+                  aria-label="Move this paragraph down"
                 >
                   <Icon name="caret-down" size="10px" />
                 </button>
@@ -631,8 +631,8 @@
                 type="button"
                 class="row-action-btn row-remove"
                 onclick={() => remove(row.block.id)}
-                title="Retirer ce texte"
-                aria-label="Supprimer ce paragraphe"
+                title="Remove this text"
+                aria-label="Delete this paragraph"
               >
                 <Icon name="x" size="10px" />
               </button>
@@ -668,10 +668,10 @@
                     onload={(e) => onImgLoad(cell.block.stem, e)}
                   />
                 {:else}
-                  <div class="missing" title="Photo absente du dossier">{cell.block.stem}</div>
+                  <div class="missing" title="Photo missing from the folder">{cell.block.stem}</div>
                 {/if}
                 {#if row.blocks.length > 1}
-                  <button class="cell-break" onclick={() => breakOut(cell.block.id)} title="Séparer sur sa propre ligne">
+                  <button class="cell-break" onclick={() => breakOut(cell.block.id)} title="Split onto its own row">
                     <Icon name="rows" size="11px" />
                   </button>
                 {/if}
@@ -681,7 +681,7 @@
               </div>
               <input
                 class="caption"
-                placeholder="Ajouter une légende…"
+                placeholder="Add a caption…"
                 value={cell.block.text}
                 oninput={(e) => setText(cell.block.id, e.currentTarget.value)}
               />

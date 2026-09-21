@@ -75,5 +75,5 @@ export function getStoryThemeName() {
       t.darkBackground?.toLowerCase() === storyTheme.darkBackground?.toLowerCase() &&
       t.darkAccent?.toLowerCase() === storyTheme.darkAccent?.toLowerCase()
   );
-  return match?.label ?? (storyTheme.darkBackground ? "Personnalisé" : "Par défaut (Garden)");
+  return match?.label ?? (storyTheme.darkBackground ? "Custom" : "Default (Garden)");
 }

@@ -3,7 +3,7 @@
   // `Controls.swift` control language: DIN section titles with chevrons
   // (collapsible, remembered), SliderField rows (88px DIN label, thin ink
   // track, round thumb, mono value), StyledMenu pills, StyledToggle capsule,
-  // and the I/D/E shape: INFO / DÉVELOPPEMENT / EXPORT.
+  // and the I/D/E shape: INFO / DEVELOP / EXPORT.
   //
   // Deliberately unaware of HOW it's hosted: docked inline (bound straight to
   // the main window's own reactive state — mutating `recipe` here just works,
@@ -145,7 +145,7 @@
       <button
         class="header-util-btn"
         onclick={() => onToggleDetached()}
-        title={detached ? "Réimbriquer le panneau" : "Détacher dans sa propre fenêtre"}
+        title={detached ? "Re-dock the panel" : "Detach into its own window"}
       >
         <Icon name={detached ? "arrows-in-simple" : "arrow-square-out"} size="12px" />
       </button>
@@ -153,7 +153,7 @@
         class="header-util-btn"
         class:active={showClipping}
         onclick={() => toggleClipping()}
-        title="Avertissement d'écrêtage (Blancs & Noirs)"
+        title="Clipping warning (highlights & shadows)"
       >
         <Icon name="circle-half" size="12px" />
         {#if showClipping}
@@ -168,7 +168,7 @@
       >
         <Icon name="subtitles" size="12px" />
       </button>
-      <button class="close" onclick={() => hidePanel()} title="Fermer le panneau (⇧D)">
+      <button class="close" onclick={() => hidePanel()} title="Close panel (⇧D)">
         <Icon name="x" size="11px" />
       </button>
     </header>

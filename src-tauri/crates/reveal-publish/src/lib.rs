@@ -26,7 +26,7 @@ pub const DEFAULT_API_URL: &str = "https://standard.garden/api";
 pub enum PublishError {
     #[error("config: {0}")]
     Config(String),
-    #[error("Clé Garden invalide ou expirée — reconnecte-toi (Connect Garden dans la barre latérale)")]
+    #[error("Garden key is invalid or expired — sign in again (Connect Garden in the sidebar)")]
     Auth,
     #[error("http: {0}")]
     Http(String),
@@ -84,12 +84,12 @@ impl GardenClient {
         let json: serde_json::Value = ureq::get(&format!("{api_url}/me"))
             .set("x-api-key", api_key)
             .call()
-            .map_err(|e| http_error("clé", e))?
+            .map_err(|e| http_error("key", e))?
             .into_json()
-            .map_err(|e| PublishError::Http(format!("réponse /me invalide: {e}")))?;
+            .map_err(|e| PublishError::Http(format!("invalid /me response: {e}")))?;
         let username = json["username"]
             .as_str()
-            .ok_or_else(|| PublishError::Http("réponse /me sans username".into()))?
+            .ok_or_else(|| PublishError::Http("/me response has no username".into()))?
             .to_string();
         let id = json["id"].as_str().unwrap_or_default().to_string();
         Ok(AccountInfo {
@@ -105,15 +105,15 @@ impl GardenClient {
     pub fn from_vault(vault: &Path) -> Result<Self, PublishError> {
         let path = vault.join(".obsidian/plugins/garden/data.json");
         let raw = std::fs::read_to_string(&path).map_err(|e| {
-            PublishError::Config(format!("garden data.json introuvable ({}): {e}", path.display()))
+            PublishError::Config(format!("garden data.json not found ({}): {e}", path.display()))
         })?;
         let data: serde_json::Value = serde_json::from_str(&raw)
-            .map_err(|e| PublishError::Config(format!("data.json invalide: {e}")))?;
+            .map_err(|e| PublishError::Config(format!("invalid data.json: {e}")))?;
         let field = |k: &str| {
             data.get(k)
                 .and_then(|v| v.as_str())
                 .map(str::to_string)
-                .ok_or_else(|| PublishError::Config(format!("clé {k} absente de data.json")))
+                .ok_or_else(|| PublishError::Config(format!("key {k} missing from data.json")))
         };
         Ok(Self {
             api_url: field("apiUrl")?.trim_end_matches('/').to_string(),
@@ -180,7 +180,7 @@ impl GardenClient {
         resp["url"]
             .as_str()
             .map(|u| self.absolute(u))
-            .ok_or_else(|| PublishError::Http("réponse upload sans url".into()))
+            .ok_or_else(|| PublishError::Http("upload response has no url".into()))
     }
 
     pub fn put_note(&self, slug: &str, title: &str, content: &str) -> Result<String, PublishError> {

@@ -73,13 +73,13 @@
              belongs here too (reproduced 2026-08-03, portability audit). -->
         <p>ajoute un dossier de photos pour commencer</p>
         <button class="add-library" onclick={() => onAddLibraryFolder()} disabled={!isTauri || scanning}>
-          {scanning ? "indexation…" : "Ajouter un dossier"}
+          {scanning ? "indexing…" : "Add a folder"}
         </button>
       {:else}
         <p>
           {curDir && minRating
-            ? "aucune photo à ce filtre"
-            : "indexe ta bibliothèque ou ouvre un dossier"}
+            ? "no photos match this filter"
+            : "index your library or open a folder"}
         </p>
       {/if}
       {#if !isTauri}<p><em>ouvre l'app Tauri</em></p>{/if}

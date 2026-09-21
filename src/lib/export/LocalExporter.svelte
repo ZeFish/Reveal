@@ -8,11 +8,11 @@
 </script>
 
 <div class="export-target-card">
-  <h3>EXPORTATION LOCAL (HTML / PDF)</h3>
-  <p class="desc">Génère un portfolio HTML auto-hébergé avec des images optimisées et mise en page réactive.</p>
+  <h3>LOCAL EXPORT (HTML / PDF)</h3>
+  <p class="desc">Generates a self-hosted HTML portfolio with optimized images and a responsive layout.</p>
   <div class="target-actions">
     <button class="publish-btn" onclick={exportLocalStory} disabled={!!progress || !storySet.size}>
-      Exporter ({storySet.size} images)
+      Export ({storySet.size} images)
     </button>
   </div>
 </div>

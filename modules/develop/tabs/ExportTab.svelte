@@ -51,14 +51,14 @@
   <div class="sec-body">
     {#if installedEditors.length > 0}
       <div class="frow">
-        <span class="din frow-label">Éditeur</span>
+        <span class="din frow-label">Editor</span>
         <span class="spacer"></span>
         <select
           class="panel-select"
           onchange={(e) => openInEditor(e.currentTarget.value)}
           value=""
         >
-          <option value="" disabled selected>Ouvrir dans…</option>
+          <option value="" disabled selected>Open in…</option>
           {#each installedEditors as [name, path]}
             <option value={path}>{name}</option>
           {/each}
@@ -66,14 +66,14 @@
       </div>
     {/if}
     <div class="frow">
-      <span class="din frow-label">Dossier</span>
+      <span class="din frow-label">Folder</span>
       <span class="spacer"></span>
       <button
         class="ghost folder-pick"
         onclick={() => onChooseExportFolder()}
-        title="Choisir le dossier d'export"
+        title="Choose the export folder"
       >
-        <span class="mono">{exportFolder ? exportFolder.split("/").pop() : "Bureau"}</span>
+        <span class="mono">{exportFolder ? exportFolder.split("/").pop() : "Desktop"}</span>
         <Icon name="folder-open" size="10px" />
       </button>
     </div>

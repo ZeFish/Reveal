@@ -24,9 +24,9 @@
 
 <!-- Floating panel, not a modal: no backdrop, so the grid/develop canvas
      behind it stays fully clickable while an activity is in flight. -->
-<div class="queue-panel" role="dialog" aria-label="Activité">
+<div class="queue-panel" role="dialog" aria-label="Activity">
   <div class="modal-header">
-    <h3>ACTIVITÉ</h3>
+    <h3>ACTIVITY</h3>
     {#if canCancelActive}
       <button class="queue-cancel" onclick={onCancelQueue}>Cancel Queue</button>
     {/if}
@@ -34,7 +34,7 @@
   </div>
   <div class="modal-body queue-list">
     {#if activityQueue.length === 0}
-      <p class="empty-queue">Aucune activité cette session.</p>
+      <p class="empty-queue">No activity this session.</p>
     {:else}
       {#each activityQueue.slice().reverse() as item (item.id)}
         <div class="queue-item" class:active={item.id === activeActivityId}>

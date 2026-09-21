@@ -1,8 +1,8 @@
 <script>
-  // ÉPINGLÉES (pinned) + RÉCENTES (recent) story-note lists — a port of
-  // Swift `StoryNotesSidebar` (CullView.swift:2150-2280). Pinned rows are
-  // drag-reorderable; the reorder callback rewrites `pinned-at` ordering.
-  // RÉCENTES is read-only, sorted by mtime (top 12, sliced in the parent).
+  // Pinned + Recent story-note lists — a port of Swift `StoryNotesSidebar`
+  // (CullView.swift:2150-2280). Pinned rows are drag-reorderable; the
+  // reorder callback rewrites `pinned-at` ordering. Recent is read-only,
+  // sorted by mtime (top 12, sliced in the parent).
 
   import Icon from "$lib/components/Icon.svelte";
 
@@ -41,25 +41,25 @@
   /** @param {number} mtime */
   function relMtime(mtime) {
     const diff = Date.now() / 1000 - mtime;
-    if (diff < 60) return "à l'instant";
-    if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`;
-    if (diff < 86400) return `il y a ${Math.floor(diff / 3600)} h`;
-    if (diff < 172800) return "hier";
-    if (diff < 604800) return `il y a ${Math.floor(diff / 86400)} j`;
-    return new Date(mtime * 1000).toLocaleDateString("fr-CA", { month: "short", day: "numeric" });
+    if (diff < 60) return "just now";
+    if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)} h ago`;
+    if (diff < 172800) return "yesterday";
+    if (diff < 604800) return `${Math.floor(diff / 86400)} d ago`;
+    return new Date(mtime * 1000).toLocaleDateString("en-CA", { month: "short", day: "numeric" });
   }
 </script>
 
 <div class="notes-list">
   <section class="group">
     <div class="group-header">
-      <span class="group-title">Épinglées</span>
+      <span class="group-title">Pinned</span>
       {#if pinned.length > 0}
         <span class="badge">{pinned.length}</span>
       {/if}
     </div>
     {#if pinned.length === 0}
-      <p class="empty">Aucun récit épinglé</p>
+      <p class="empty">No pinned stories</p>
     {:else}
       <div class="notes-items" role="list">
         {#each pinned as note, i (note.notePath)}
@@ -74,20 +74,20 @@
             ondrop={(e) => onDrop(e, i)}
             ondragend={onDragEnd}
           >
-            <span class="grip" title="Glisser pour réordonner" aria-hidden="true">
+            <span class="grip" title="Drag to reorder" aria-hidden="true">
               <Icon name="dots-six-vertical" size="12px" />
             </span>
-            <button type="button" class="note-open" aria-label={`Ouvrir ${note.folderName}`} onclick={() => onOpen(note.folderPath)}>
+            <button type="button" class="note-open" aria-label={`Open ${note.folderName}`} onclick={() => onOpen(note.folderPath)}>
               <div class="note-meta">
                 <span class="folder-name">{note.folderName}</span>
-                <span class="thumbs">{note.thumbStems.length} cliché{note.thumbStems.length > 1 ? "s" : ""}</span>
+                <span class="thumbs">{note.thumbStems.length} photo{note.thumbStems.length > 1 ? "s" : ""}</span>
               </div>
             </button>
             <button
               type="button"
               class="action-btn unpin"
-              aria-label={`Détacher ${note.folderName}`}
-              title="Détacher des épingles"
+              aria-label={`Unpin ${note.folderName}`}
+              title="Unpin"
               onclick={() => onUnpin(note.notePath)}
             >
               <Icon name="x" size="10px" />
@@ -100,13 +100,13 @@
 
   <section class="group">
     <div class="group-header">
-      <span class="group-title">Récents</span>
+      <span class="group-title">Recent</span>
       {#if recent.length > 0}
         <span class="badge">{recent.length}</span>
       {/if}
     </div>
     {#if recent.length === 0}
-      <p class="empty">Aucun récit récent</p>
+      <p class="empty">No recent stories</p>
     {:else}
       <div class="notes-items" role="list">
         {#each recent as note (note.notePath)}
@@ -115,7 +115,7 @@
             class:current={note.folderPath === curDir}
             role="listitem"
           >
-            <button type="button" class="note-open" aria-label={`Ouvrir ${note.folderName}`} onclick={() => onOpen(note.folderPath)}>
+            <button type="button" class="note-open" aria-label={`Open ${note.folderName}`} onclick={() => onOpen(note.folderPath)}>
               <div class="note-meta">
                 <span class="folder-name">{note.folderName}</span>
                 <span class="mtime">{relMtime(note.mtime)}</span>
@@ -125,8 +125,8 @@
               <button
                 class="action-btn pin"
                 type="button"
-                aria-label={`Épingler ${note.folderName}`}
-                title="Épingler"
+                aria-label={`Pin ${note.folderName}`}
+                title="Pin"
                 onclick={() => onPin(note.notePath)}
               >
                 <Icon name="plus" size="10px" />

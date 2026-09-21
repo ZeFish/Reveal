@@ -1,5 +1,5 @@
 <script>
-  // The THÈME panel — editorial styling for Storytelling.
+  // The THEME panel — editorial styling for Storytelling.
   // Writes Garden theme tokens into the note's frontmatter via the Rust
   // `story_set_theme` command. Includes quick visual theme chips, a specimen
   // preview card, and fine-tuning controls for colors & typography.
@@ -38,7 +38,7 @@
   let customizeOpen = $state(false);
 
   const FONTS = [
-    { label: "Système", value: null },
+    { label: "System", value: null },
     { label: "Söhne", value: "Sohne" },
     { label: "Avenir Next", value: "Avenir Next" },
     { label: "Lexend", value: "Lexend" },
@@ -126,7 +126,7 @@
         t.darkBackground?.toLowerCase() === darkBg?.toLowerCase() &&
         t.darkAccent?.toLowerCase() === accent?.toLowerCase()
     );
-    return match?.label ?? (darkBg ? "Personnalisé" : "Par défaut (Garden)");
+    return match?.label ?? (darkBg ? "Custom" : "Default (Garden)");
   });
 </script>
 
@@ -134,7 +134,7 @@
   <!-- Specimen card: live atmosphere preview -->
   <div class="specimen" style="background: {previewBg};">
     <div class="specimen-header">
-      <span class="specimen-tag" style="color: {previewFg}; opacity: 0.65;">ATMOSPHÈRE</span>
+      <span class="specimen-tag" style="color: {previewFg}; opacity: 0.65;">ATMOSPHERE</span>
       <span class="specimen-dot" style="background: {previewAccent};"></span>
     </div>
     <div class="specimen-body">
@@ -144,7 +144,7 @@
       <div class="specimen-meta">
         <span class="specimen-name" style="color: {previewFg};">{currentThemeName}</span>
         <span class="specimen-fonts" style="color: {previewFg}; opacity: 0.7;">
-          {fontHeader || "Système"} · {fontText || "Système"}
+          {fontHeader || "System"} · {fontText || "System"}
         </span>
       </div>
     </div>
@@ -153,10 +153,10 @@
   <!-- Quick curated themes grid -->
   <div class="section-block">
     <div class="section-title-row">
-      <span class="section-label">THÈMES ÉDITORIAUX</span>
+      <span class="section-label">EDITORIAL THEMES</span>
       <div class="more-dropdown-wrap">
-        <select onchange={onMoreThemePick} aria-label="Tous les thèmes">
-          <option value="">Tous les thèmes…</option>
+        <select onchange={onMoreThemePick} aria-label="All themes">
+          <option value="">All themes…</option>
           {#each THEMES as t}
             <option value={t.id}>{t.label}</option>
           {/each}
@@ -175,7 +175,7 @@
           class="theme-chip"
           class:active={isActive}
           onclick={() => applyTheme(t)}
-          title={`Appliquer le thème ${t.label}`}
+          title={`Apply the ${t.label} theme`}
         >
           <span class="chip-swatch" style="background: {t.darkBackground};">
             <span class="chip-accent" style="background: {t.darkAccent};"></span>
@@ -222,7 +222,7 @@
               <button
                 type="button"
                 class="field-reset"
-                title="Rétablir le fond par défaut"
+                title="Reset to default background"
                 onclick={() => {
                   darkBg = null;
                   scheduleSave();
@@ -253,7 +253,7 @@
               <button
                 type="button"
                 class="field-reset"
-                title="Rétablir l'accent par défaut"
+                title="Reset to default accent"
                 onclick={() => {
                   accent = null;
                   scheduleSave();

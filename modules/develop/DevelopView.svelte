@@ -505,7 +505,7 @@
   {#if inflight || pendingPx !== null || status || (!loaded && imgUrl && !imgFailed && !useCanvas)}
     <div class="render-badge">
       <span class="render-spinner"></span>
-      <span class="din render-label">{status || "Rendu en cours…"}</span>
+      <span class="din render-label">{status || "Rendering…"}</span>
     </div>
   {/if}
 
@@ -513,7 +513,7 @@
     <div class="photo-mat photo-fallback">
       <Icon name="image-broken" size="44px" />
       <span class="fallback-name">{picked}</span>
-      <span class="fallback-hint">Aperçu indisponible</span>
+      <span class="fallback-hint">Preview unavailable</span>
     </div>
   {:else if useCanvas}
     <canvas
@@ -547,8 +547,8 @@
       style={matStyle}
     ></canvas>
     <div class="clip-legend">
-      <span class="legend-item red">● Blancs écrasés</span>
-      <span class="legend-item blue">● Noirs bouchés</span>
+      <span class="legend-item red">● Blown highlights</span>
+      <span class="legend-item blue">● Blocked shadows</span>
     </div>
   {/if}
 

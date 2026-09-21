@@ -174,7 +174,7 @@
 
   /** @type {"cull" | "dev"} */
   let currentMode = $state("cull");
-  // Aperçu is a display filter on the grid, not a destination — flipping it
+  // Preview is a display filter on the grid, not a destination — flipping it
   // never changes `currentMode`. On, the grid's WYSIWYG rendering (StoryView)
   // replaces the dense grid: same photos, same interactions, laid out and
   // filtered exactly like the published page will read.
@@ -788,7 +788,7 @@
       listen("cards-changed", (e) => (cards = e.payload));
       listen("card-mounted", (e) => {
         const card = e.payload;
-        appMessage = `carte détectée · ${card.name} (${card.raw_count})`;
+        appMessage = `card detected · ${card.name} (${card.raw_count})`;
         setTimeout(() => (appMessage = ""), 4000);
         if (autoImport && !progress) importCard(card);
       });
@@ -838,12 +838,12 @@
         }
       });
       listen("import-started", (e) => {
-        progress = { verb: "import", done: 0, total: 1, current: "Démarrage..." };
+        progress = { verb: "import", done: 0, total: 1, current: "Starting..." };
         importedByFolder = new Map();
       });
       listen("import-finished", async (e) => {
         progress = null;
-        appMessage = `Import terminé ✓`;
+        appMessage = `Import complete ✓`;
         const stats = e.payload;
         if (stats?.folders?.length) {
           const lastFolder = stats.folders[stats.folders.length - 1];
@@ -864,18 +864,18 @@
       });
       listen("import-failed", (e) => {
         progress = null;
-        appMessage = `Échec de l'import : ${e.payload.message}`;
+        appMessage = `Import failed: ${e.payload.message}`;
         setTimeout(() => (appMessage = ""), 6000);
       });
       // AI cull toasts — reuses the same appMessage pattern as import/export
       // rather than a dedicated chip/modal (the flow is walk-away, no review
       // step to build UI for).
       listen("cull-started", (e) => {
-        cullTaskId = startActivity("cull", `Culling IA · ${e.payload?.total ?? "?"} photos`, e.payload?.total ?? 1);
+        cullTaskId = startActivity("cull", `AI Culling · ${e.payload?.total ?? "?"} photos`, e.payload?.total ?? 1);
       });
       listen("cull-progress", (e) => {
         const p = e.payload;
-        const phaseLabel = p.phase === "cloud" ? "analyse visuelle" : "tri local";
+        const phaseLabel = p.phase === "cloud" ? "visual analysis" : "local sort";
         // The bottom-center activity indicator already shows this live, no
         // separate toast needed — `progress` itself is still needed as the
         // concurrency guard other handlers check before starting.
@@ -885,9 +885,9 @@
       listen("cull-finished", (e) => {
         const stats = e.payload;
         const outcome = stats.exported_to
-          ? (stats.marked > 0 ? `ajoutés à l'histoire, exportés → ${stats.exported_to}` : `exportés → ${stats.exported_to}`)
-          : (stats.marked > 0 ? "ajoutés à l'histoire" : "retenus");
-        appMessage = `Culling IA ✓ ${stats.picked}/${stats.considered} conservés · ${outcome}`;
+          ? (stats.marked > 0 ? `added to story, exported → ${stats.exported_to}` : `exported → ${stats.exported_to}`)
+          : (stats.marked > 0 ? "added to story" : "kept");
+        appMessage = `AI Culling ✓ ${stats.picked}/${stats.considered} kept · ${outcome}`;
         setTimeout(() => (appMessage = ""), 6000);
         if (progress?.verb === "cull") progress = null;
         if (cullTaskId) {
@@ -897,7 +897,7 @@
         }
       });
       listen("cull-failed", (e) => {
-        appMessage = `Culling IA : ${e.payload.message}`;
+        appMessage = `AI Culling : ${e.payload.message}`;
         setTimeout(() => (appMessage = ""), 6000);
         if (progress?.verb === "cull") progress = null;
         if (cullTaskId) {
@@ -982,7 +982,7 @@
         listen("dev-panel-export-daily", () => {
           exportToDailyNote();
         });
-        // RÉINITIALISER — back to the engine defaults, like Swift's
+        // RESET — back to the engine defaults, like Swift's
         // resetSettings; the sidecar re-saves through the normal edit path.
         listen("dev-panel-reset", applyResetRecipe);
         listen("dev-panel-export-settings-changed", (e) => {
@@ -1144,7 +1144,7 @@
   async function toggleAutoImport() {
     const prefs = await invoke("toggle_auto_import");
     autoImport = !!prefs.auto_import;
-    appMessage = autoImport ? "import auto activé" : "import auto désactivé";
+    appMessage = autoImport ? "auto-import enabled" : "auto-import disabled";
     setTimeout(() => (appMessage = ""), 2500);
   }
 
@@ -1203,7 +1203,7 @@
   }
 
   /**
-   * Flip the Aperçu filter — same guards the old "story" mode had (needs a
+   * Flip the Preview filter — same guards the old "story" mode had (needs a
    * real folder; Apple Photos albums are read-only, nothing to preview).
    * @param {boolean} [value] force a value instead of toggling
    */
@@ -1211,7 +1211,7 @@
     const next = value ?? !previewFilter;
     if (next) {
       if (applePhotosActive) {
-        appMessage = "Aperçu needs a filesystem folder. You can edit and export Apple Photos directly.";
+        appMessage = "Preview needs a filesystem folder. You can edit and export Apple Photos directly.";
         return;
       }
       if (!curDir && !folder) return;
@@ -1581,7 +1581,7 @@
     }
   }
 
-  // The sidebar's red "cette journée a une histoire" dots.
+  // The sidebar's red "this day has a story" dots.
   async function refreshStoryDirs() {
     if (!isTauri || !dirs.length) return;
     try {
@@ -1950,7 +1950,7 @@
       }
       if (toVault) {
         if (!preferences.obsidian_enabled) {
-          appMessage = "L'intégration Obsidian est désactivée dans les réglages";
+          appMessage = "Obsidian integration is disabled in settings";
           setTimeout(() => (appMessage = ""), 3000);
           return;
         }
@@ -1958,7 +1958,7 @@
         return;
       }
       progress = { verb: "Developing", done: 0, total: 1, current: path.split("/").pop() };
-      devJobId = startActivity("develop", `Développer ${path.split("/").pop()}`, 1);
+      devJobId = startActivity("develop", `Developing ${path.split("/").pop()}`, 1);
       await invoke("export_photo", {
         path,
         recipe: sidecar.engine_settings,
@@ -2097,13 +2097,13 @@
     const parentOf = (p) => p.slice(0, p.lastIndexOf("/"));
     const toMove = paths.filter((p) => parentOf(p) !== destDir);
     if (!toMove.length) {
-      appMessage = "déjà dans ce dossier";
+      appMessage = "already in this folder";
       setTimeout(() => (appMessage = ""), 2500);
       return;
     }
     const srcDirs = new Set(toMove.map(parentOf));
     progress = { verb: "move", done: 0, total: toMove.length, current: "" };
-    const jobId = startActivity("move", `Déplacer ${toMove.length} photo(s)`, toMove.length);
+    const jobId = startActivity("move", `Moving ${toMove.length} photo(s)`, toMove.length);
     let moved = 0;
     const errors = [];
     for (const p of toMove) {
@@ -2127,11 +2127,11 @@
     progress = null;
     const destName = destDir.split("/").pop();
     appMessage = errors.length
-      ? `${moved} déplacée${moved > 1 ? "s" : ""} · ${errors.length} échec${errors.length > 1 ? "s" : ""}`
-      : `${moved} photo${moved > 1 ? "s" : ""} déplacée${moved > 1 ? "s" : ""} → ${destName}`;
+      ? `${moved} moved · ${errors.length} failed`
+      : `${moved} photo${moved > 1 ? "s" : ""} moved → ${destName}`;
     updateActivity(jobId, {
       current: destName,
-      phase: errors.length ? `${errors.length} échec(s)` : "Complete",
+      phase: errors.length ? `${errors.length} failed` : "Complete",
       status: errors.length ? "failed" : "completed",
     });
     if (activeActivityId === jobId) activeActivityId = null;
@@ -2178,9 +2178,9 @@
       } else if (curDir && curDir.startsWith(path + "/")) {
         await openDir(newPath + curDir.slice(path.length));
       }
-      appMessage = `Renommé → ${newName}`;
+      appMessage = `Renamed → ${newName}`;
     } catch (e) {
-      appMessage = `Renommage échoué : ${e}`;
+      appMessage = `Rename failed: ${e}`;
     }
     setTimeout(() => (appMessage = ""), 3000);
   }
@@ -2192,11 +2192,11 @@
   async function createFolder(parentDir, name) {
     try {
       const abs = await invoke("create_dir", { parentDir, name });
-      appMessage = `Dossier créé : ${name}`;
+      appMessage = `Folder created: ${name}`;
       setTimeout(() => (appMessage = ""), 2500);
       return abs;
     } catch (e) {
-      appMessage = `Création échouée : ${e}`;
+      appMessage = `Creation failed: ${e}`;
       setTimeout(() => (appMessage = ""), 4000);
       return null;
     }
@@ -2216,9 +2216,9 @@
       } else if (curDir && curDir.startsWith(path + "/")) {
         await openDir(newPath + curDir.slice(path.length));
       }
-      appMessage = `${name} déplacé`;
+      appMessage = `${name} moved`;
     } catch (e) {
-      appMessage = `Déplacement échoué : ${e}`;
+      appMessage = `Move failed: ${e}`;
     }
     setTimeout(() => (appMessage = ""), 3000);
   }
@@ -2277,7 +2277,7 @@
       const rawRows = await invoke("index_frames", { dir, minRating });
       if (request !== applePhotosRequest) return;
       const rows = (Array.isArray(rawRows) ? rawRows : []).filter(r => r.name && !r.name.startsWith('.') && !r.name.startsWith('._'));
-      debug = `reçu ${rows.length}`;
+      debug = `received ${rows.length}`;
       frames = rows;
       if (frames.length > 500 && layout === "masonry") {
         layout = "uniform"; // Fallback to virtualized grid to prevent memory/CPU explosion
@@ -2288,8 +2288,8 @@
         if (request === applePhotosRequest && curDir === dir && Array.isArray(updated)) frames = [...updated];
       });
     } catch (e) {
-      debug = `échec: ${e}`;
-      /** @type {RevealWindow} */ (window).__log?.(`openDir échec: ${e}`);
+      debug = `failed: ${e}`;
+      /** @type {RevealWindow} */ (window).__log?.(`openDir failed: ${e}`);
     }
     sel = 0;
     selectOnly(0);
@@ -2368,7 +2368,7 @@
       // but StoryComposer's `onSave(c)` call is fire-and-forget — without
       // this catch, that would be a silent, invisible failure: the edit
       // never reaches disk and nothing tells you.
-      appMessage = `Échec de sauvegarde de l'histoire : ${e}`;
+      appMessage = `Failed to save the story: ${e}`;
       setTimeout(() => (appMessage = ""), 8000);
       return;
     }
@@ -2377,7 +2377,7 @@
   }
 
   // Grid always shows filename order; the story has its own, independent
-  // order (Aperçu drag-and-drop). A paragraph's *position in Grid* has to
+  // order (Preview drag-and-drop). A paragraph's *position in Grid* has to
   // come from somewhere else — so it anchors to whichever story photo it
   // trails in the FILE, and renders after THAT photo's row in Grid. Walking
   // the file once gives every paragraph's anchor; saveGridProse (below)
@@ -2474,8 +2474,8 @@
     if (!appPath || !view[sel]) return;
     try {
       await invoke("open_in_editor", { filePath: view[sel].path, appPath });
-      status = "Ouvert avec succès ✓";
-      setTimeout(() => (status = status === "Ouvert avec succès ✓" ? "" : status), 2000);
+      status = "Opened successfully ✓";
+      setTimeout(() => (status = status === "Opened successfully ✓" ? "" : status), 2000);
     } catch (e) {
       status = `erreur : ${e}`;
     }
@@ -2483,7 +2483,7 @@
 
   function toggleLayout() {
     if (layout === "uniform" && frames.length > 500) {
-      appMessage = "Trop d'images pour le mode maçonnerie (>500)";
+      appMessage = "Too many images for masonry mode (>500)";
       setTimeout(() => (appMessage = ""), 4000);
       return;
     }
@@ -2567,8 +2567,8 @@
     publishTaskId = startActivity("publish", `Publier l'histoire · ${storySet.size} photos`, storySet.size);
     try {
       liveUrl = await invoke("publish_story", { dir: d, dryRun: false });
-      status = "publié ✓";
-      setTimeout(() => (status = status === "publié ✓" ? "" : status), 2000);
+      status = "published ✓";
+      setTimeout(() => (status = status === "published ✓" ? "" : status), 2000);
       updateActivity(publishTaskId, { done: storySet.size, phase: "Complete", status: "completed" });
     } catch (e) {
       status = `erreur : ${e}`;
@@ -2595,8 +2595,8 @@
         longEdge: exportEdge,
         borderFrac: exportBorder ? 0.04 : 0
       });
-      status = "exporté ✓";
-      setTimeout(() => (status = status === "exporté ✓" ? "" : status), 2000);
+      status = "exported ✓";
+      setTimeout(() => (status = status === "exported ✓" ? "" : status), 2000);
       updateActivity(jobId, { done: storySet.size, current: dest, phase: "Complete", status: "completed" });
     } catch (e) {
       status = `erreur : ${e}`;
@@ -2631,8 +2631,8 @@
         if (lastImportedFolder) await openDir(lastImportedFolder);
       }
       const summary = stats.cancelled
-        ? `Import arrêté · ${stats.copied} importées`
-        : `${stats.copied} importées · ${stats.skipped} ignorées · ${stats.failed} échecs`;
+        ? `Import stopped · ${stats.copied} imported`
+        : `${stats.copied} imported · ${stats.skipped} skipped · ${stats.failed} failed`;
       appMessage = summary;
       invoke("notify_user", { title: "Reveal — import", body: summary }).catch(() => {});
       setTimeout(() => (appMessage = ""), 5000);
@@ -2670,13 +2670,13 @@
         refreshStoryDirs();
       }
     } catch (error) {
-      appMessage = `Culling IA (${dir.split("/").pop()}) : ${error}`;
+      appMessage = `AI Culling (${dir.split("/").pop()}) : ${error}`;
       setTimeout(() => (appMessage = ""), 6000);
     }
   }
 
   /**
-   * The rail's manual "Culling IA" button: score the CURRENT folder's view
+   * The rail's manual "AI Culling" button: score the CURRENT folder's view
    * (same prefilter + vision ranking as the walk-away flow, via
    * `ai_cull_selection`) but instead of rating+exporting, add each pick to
    * the folder's quick collection — the same story-note mechanism the `q`
@@ -2691,8 +2691,8 @@
     const d = gridDir();
     if (!d || !view.length || progress) return;
     progress = { verb: "cull", done: 0, total: view.length, current: "" };
-    appMessage = `Culling IA · ${view.length} photos…`;
-    cullTaskId = startActivity("cull", `Culling IA · ${view.length} photos`, view.length);
+    appMessage = `AI Culling · ${view.length} photos…`;
+    cullTaskId = startActivity("cull", `AI Culling · ${view.length} photos`, view.length);
     try {
       const result = await invoke("ai_cull_selection", { dir: d, paths: view.map((f) => f.path) });
       const currentStems = new Set(await invoke("story_stems", { dir: d }));
@@ -2707,13 +2707,13 @@
       }
       await loadStory();
       refreshStoryDirs();
-      appMessage = `Culling IA ✓ ${added} ajoutés à la collection rapide (${result.picked.length}/${result.considered} retenus)`;
+      appMessage = `AI Culling ✓ ${added} added to the quick collection (${result.picked.length}/${result.considered} kept)`;
       updateActivity(cullTaskId, {
         done: result.picked.length, total: result.considered,
-        current: `${added} ajoutés`, phase: "Complete", status: "completed",
+        current: `${added} added`, phase: "Complete", status: "completed",
       });
     } catch (error) {
-      appMessage = `Culling IA : ${error}`;
+      appMessage = `AI Culling : ${error}`;
       updateActivity(cullTaskId, { phase: String(error), status: "failed" });
     } finally {
       progress = null;
@@ -2730,10 +2730,10 @@
     try {
       await invoke("eject_card", { volume: card.volume });
       ejectableCard = null;
-      appMessage = `${card.name} éjectée · tu peux retirer la carte`;
+      appMessage = `${card.name} ejected · you can remove the card`;
       setTimeout(() => (appMessage = ""), 5000);
     } catch (e) {
-      appMessage = `Éjection échouée : ${typeof e === "string" ? e : String(e)}`;
+      appMessage = `Eject failed: ${typeof e === "string" ? e : String(e)}`;
       setTimeout(() => (appMessage = ""), 6000);
     } finally {
       ejecting = false;
@@ -2913,8 +2913,8 @@
       setTimeout(() => (appMessage = ""), 4000);
       setTimeout(() => (status = ""), 3000);
     } catch (e) {
-      status = `Échec journal : ${e}`;
-      appMessage = `Échec export journal : ${e}`;
+      status = `Journal failed: ${e}`;
+      appMessage = `Journal export failed: ${e}`;
       setTimeout(() => (appMessage = ""), 4000);
     }
   }
@@ -2941,13 +2941,13 @@
       });
       const noteName = notePath.split("/").slice(-2).join("/");
       status = `Dans le journal → ${noteName}`;
-      appMessage = `Dans le journal → ${targets.length} photos ajoutées à ${noteName} ✓`;
+      appMessage = `Added to the journal → ${targets.length} photos added to ${noteName} ✓`;
       setTimeout(() => (appMessage = ""), 4000);
       setTimeout(() => (status = ""), 3000);
       updateActivity(jobId, { done: targets.length, current: noteName, phase: "Complete", status: "completed" });
     } catch (e) {
-      status = `Échec journal : ${e}`;
-      appMessage = `Échec export journal : ${e}`;
+      status = `Journal failed: ${e}`;
+      appMessage = `Journal export failed: ${e}`;
       setTimeout(() => (appMessage = ""), 4000);
       updateActivity(jobId, { phase: String(e), status: "failed" });
     } finally {
@@ -2974,8 +2974,8 @@
     sel = 0;
     selectOnly(0);
     if (typeof localStorage !== "undefined") {
-      // A stale "story" value from before Aperçu became a filter just falls
-      // through to "cull" here — the grid, with Aperçu off, is correct either way.
+      // A stale "story" value from before Preview became a filter just falls
+      // through to "cull" here — the grid, with Preview off, is correct either way.
       const savedMode = localStorage.getItem(`reveal.mode.${path}`);
       if (savedMode === "cull" || savedMode === "dev") {
         await switchMode(savedMode);
@@ -3017,9 +3017,9 @@
   /** @param {string} path */
   function showCopiedMessage(path) {
     const filename = path.split("/").pop();
-    appMessage = `Image copiée dans le presse-papier (${filename}) ✓`;
+    appMessage = `Image copied to the clipboard (${filename}) ✓`;
     setTimeout(() => {
-      if (appMessage.startsWith("Image copiée")) appMessage = "";
+      if (appMessage.startsWith("Image copied")) appMessage = "";
     }, 2500);
   }
 
@@ -3057,7 +3057,7 @@
       showCopiedMessage(path);
     } catch (err) {
       console.error("Could not copy image to clipboard:", err);
-      appMessage = `Échec de la copie de l'image : ${err}`;
+      appMessage = `Failed to copy the image: ${err}`;
       setTimeout(() => (appMessage = ""), 3000);
     }
   }
@@ -3508,10 +3508,10 @@
       if (developEngine) {
         scheduleRender(PREVIEW_PX);
       } else {
-        // Moteur « Aucun » : on affiche l'aperçu as-shot (le JPEG caméra / le
-        // .reveal.jpg que la grille montre déjà via reveal://thumb), pas un
-        // développement couleur du RAW. Toucher un réglage réengage le moteur
-        // via edited(). Ça évite aussi de polluer le cache .reveal.jpg.
+        // Engine "None": show the as-shot preview (the camera JPEG / the
+        // .reveal.jpg the grid already shows via reveal://thumb), not a
+        // color-developed RAW. Touching a control re-engages the engine via
+        // edited(). Also avoids polluting the .reveal.jpg cache.
         status = "";
       }
       if (currentMode !== "dev") {
@@ -4068,14 +4068,14 @@
                 class="chrome-btn"
                 class:on={layouts[currentMode].focus}
                 onclick={toggleFocusMode}
-                title="Mode Focus — estompe l'arrière-plan (o)"
+                title="Focus mode — dims the background (o)"
               >
                 <span class="focus-glyph" class:on={layouts[currentMode].focus}></span>
               </button>
-              <button class="chrome-btn" onclick={toggleAppearance} title="Basculer le mode clair / sombre du système (l)">
+              <button class="chrome-btn" onclick={toggleAppearance} title="Toggle system light / dark mode (l)">
                 <Icon name="circle-half" size="12px" />
               </button>
-              <button class="wordmark" onclick={() => (shortcutsOpen = true)} title="Raccourcis clavier">
+              <button class="wordmark" onclick={() => (shortcutsOpen = true)} title="Keyboard shortcuts">
                 {curDir && curDir !== root ? (dirLabel(curDir) ?? "").toUpperCase() : "REVEAL"}
               </button>
             </div>
@@ -4159,7 +4159,7 @@
 
           {#if !root && !applePhotosActive}
             <button class="rail-action" onclick={indexRoot} disabled={!isTauri || scanning}>
-              {scanning ? "indexation…" : "Indexer une bibliothèque"}
+              {scanning ? "indexing…" : "Index a library"}
             </button>
           {/if}
           <!-- Idle cards: one import button each. The card mid-import shows
@@ -4167,7 +4167,7 @@
           {#each cards as card (card.dcim)}
             {#if !importingCard || importingCard.dcim !== card.dcim}
               <button class="import rail-action" onclick={() => importCard(card)} disabled={!!progress}>
-                Importer {card.name} ({card.raw_count})
+                Import {card.name} ({card.raw_count})
               </button>
             {/if}
           {/each}
@@ -4179,7 +4179,7 @@
               onclick={() => { if (ejectableCard) ejectCard(ejectableCard); }}
               disabled={ejecting}
             >
-              {ejecting ? "Éjection…" : `Éjecter ${ejectableCard.name}`}
+              {ejecting ? "Ejecting…" : `Eject ${ejectableCard.name}`}
             </button>
           {/if}
 
@@ -4194,7 +4194,7 @@
                   <img class="chip-thumb" src={thumbUrl(progress.path)} alt="" />
                 {/key}
               {/if}
-              <span class="chip-label">Importe</span>
+              <span class="chip-label">Importing</span>
               <span class="chip-count">{progress.done}/{progress.total}</span>
               <span class="chip-bar">
                 <span
@@ -4202,7 +4202,7 @@
                   style="width: {progress.total ? (progress.done / progress.total) * 100 : 0}%"
                 ></span>
               </span>
-              <button class="chip-stop" onclick={stopImport} title="Arrêter l'import">
+              <button class="chip-stop" onclick={stopImport} title="Stop the import">
                 <Icon name="x" size="9px" />
               </button>
             </span>
@@ -4212,7 +4212,7 @@
                bar filling as frames finish; gone when the batch ends. -->
           {#if progress && progress.verb === "export"}
             <span class="export-chip">
-              <span class="chip-label">Développe</span>
+              <span class="chip-label">Developing</span>
               <span class="chip-count">{progress.done}/{progress.total}</span>
               <span class="chip-bar">
                 <span
@@ -4228,7 +4228,7 @@
               class="rail-btn"
               onclick={exportSelection}
               disabled={!!progress}
-              title={selectedPaths.size > 1 ? (selectedPaths.size === view.length ? `Exporter toutes les photos (${view.length}) (r)` : `Exporter les ${selectedPaths.size} photos sélectionnées (r)`) : `Exporter la photo sélectionnée (r)`}
+              title={selectedPaths.size > 1 ? (selectedPaths.size === view.length ? `Export all photos (${view.length}) (r)` : `Export the ${selectedPaths.size} selected photos (r)`) : `Export the selected photo (r)`}
             >
               <Icon name="export" size="12px" />
             </button>
@@ -4283,7 +4283,7 @@
                     }}
                     disabled={!!progress}
                   >
-                    <span class="item-label">Culling IA</span>
+                    <span class="item-label">AI Culling</span>
                     <Icon name="lightning" size="10px" />
                   </button>
                 {/if}
@@ -4306,7 +4306,7 @@
                 <div class="std-menu-separator"></div>
                 <span class="pop-label">Format</span>
                 <button class="std-menu-item" onclick={toggleLayout}>
-                  <span class="item-label">Mosaïque</span>
+                  <span class="item-label">Masonry</span>
                   {#if layout === "masonry"}<Icon name="check" size="10px" />{/if}
                 </button>
                 {#if layout !== "masonry"}
@@ -4329,7 +4329,7 @@
                       saveGridPrefs();
                     }}
                   >
-                    <span class="item-label">{fillCells ? "Remplir les cases" : "Garder les proportions"}</span>
+                    <span class="item-label">{fillCells ? "Fill cells" : "Keep aspect ratio"}</span>
                     {#if !fillCells}<Icon name="check" size="10px" />{/if}
                   </button>
                 {/if}
@@ -4522,7 +4522,7 @@
           <h2>Caption</h2>
           <textarea
             rows="2"
-            placeholder="légende…"
+            placeholder="caption…"
             bind:value={caption}
             oninput={captionEdited}
           ></textarea>
@@ -4547,10 +4547,10 @@
           <button onclick={() => exportCurrent()}>Exporter cette photo</button>
         </section>
 
-        <!-- Section: Tonalité -->
+        <!-- Section: Tone -->
         <section class="collapsible">
           <button class="section-toggle" onclick={() => tonalityOpen = !tonalityOpen}>
-            <span>TONALITÉ</span>
+            <span>TONE</span>
             <span class="chevron">{tonalityOpen ? "▼" : "▶"}</span>
           </button>
           {#if tonalityOpen}
@@ -4600,7 +4600,7 @@
                 <code>{fmt(recipe.shadows)}</code>
               </label>
               <label class="row">
-                <span>RÉDUC. HL</span>
+                <span>HL RECOVERY</span>
                 <input type="range" min="0" max="1" step="0.05" bind:value={recipe.rolloff} style="--f: {pct(recipe.rolloff, 0, 1)}" oninput={() => edited(true)} onchange={() => edited(false)} />
                 <code>{fmt(recipe.rolloff)}</code>
               </label>
@@ -4671,7 +4671,7 @@
                 <code>{fmt(recipe.diffusion)}</code>
               </label>
               <label class="row">
-                <span>NETTETÉ</span>
+                <span>SHARPNESS</span>
                 <input type="range" min="0" max="1" step="0.05" bind:value={recipe.sharpen} style="--f: {pct(recipe.sharpen, 0, 1)}" oninput={() => edited(true)} onchange={() => edited(false)} />
                 <code>{fmt(recipe.sharpen)}</code>
               </label>

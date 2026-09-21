@@ -145,10 +145,10 @@
       // — per-file failures are reported in the summary line.
       outcome = stats?.cancelled ? "stopped" : "success";
       const parts: string[] = [];
-      if (stats?.copied) parts.push(`${stats.copied} importées`);
-      if (stats?.skipped) parts.push(`${stats.skipped} ignorées`);
-      if (stats?.failed) parts.push(`${stats.failed} échecs`);
-      summary = parts.join(" · ") || "Terminé";
+      if (stats?.copied) parts.push(`${stats.copied} imported`);
+      if (stats?.skipped) parts.push(`${stats.skipped} skipped`);
+      if (stats?.failed) parts.push(`${stats.failed} failed`);
+      summary = parts.join(" · ") || "Done";
       if (importingCard && importingCard.volume) {
         ejectableCard = importingCard;
       }
@@ -159,7 +159,7 @@
 
     const unlistenFailed = await listen<{ message?: string }>("import-failed", (e) => {
       outcome = "failure";
-      summary = e.payload?.message || "Import échoué";
+      summary = e.payload?.message || "Import failed";
       importingCard = null;
       scheduleAutoHide();
     });
@@ -223,9 +223,9 @@
     return "download-simple"; // importing
   });
   let headerText = $derived.by(() => {
-    if (outcome === "success") return "Import terminé";
-    if (outcome === "stopped") return "Import arrêté";
-    if (outcome === "failure") return "Import échoué";
+    if (outcome === "success") return "Import complete";
+    if (outcome === "stopped") return "Import stopped";
+    if (outcome === "failure") return "Import failed";
     return "Importation";
   });
 
@@ -287,10 +287,10 @@
               {:else}
                 <div></div>
               {/if}
-              <button class="ghost-cancel-btn" onclick={cancelImport}>Arrêter</button>
+              <button class="ghost-cancel-btn" onclick={cancelImport}>Stop</button>
             </div>
           {:else}
-            <p class="status-text">Préparation...</p>
+            <p class="status-text">Preparing...</p>
           {/if}
         </div>
       </div>
@@ -313,7 +313,7 @@
           <div></div>
           {#if ejectableCard}
             <button class="ghost-cancel-btn eject" onclick={() => ejectCard(ejectableCard!)} disabled={ejecting}>
-              {ejecting ? "Éjection..." : "Éjecter"}
+              {ejecting ? "Ejecting..." : "Eject"}
             </button>
           {:else}
             <button class="ghost-cancel-btn" onclick={() => getCurrentWindow().hide()}>OK</button>
@@ -323,7 +323,7 @@
     {:else if idleCard}
       <div class="content">
         <div class="header">
-          <span class="title">Carte détectée</span>
+          <span class="title">Card detected</span>
           <span class="subtitle">{idleCard.name}</span>
         </div>
         <p class="status-text">{idleCard.raw_count} RAWs disponibles</p>

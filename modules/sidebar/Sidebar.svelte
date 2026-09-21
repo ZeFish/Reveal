@@ -8,9 +8,9 @@
   // The floating sidebar — a 1:1 port of the Swift `sidebarCard` +
   // `folderBrowser` + `FolderTree` (CullView.swift / FolderTree.swift):
   // full-height elevated card, the brand cluster (traffic lights + toggles +
-  // wordmark) riding its top, FRAMES/APERÇU tabs, "TOUTE LA BIBLIOTHÈQUE",
+  // wordmark) riding its top, FRAMES/PREVIEW tabs, "ALL LIBRARY",
   // one section per catalogue, the tree with status dots and story dots,
-  // then BIBLIOTHÈQUE and the Garden account row at the bottom.
+  // then LIBRARY and the Garden account row at the bottom.
   import Icon from "$lib/components/Icon.svelte";
   import StoryThemePanel from "./StoryThemePanel.svelte";
   import StoryNotesList from "./StoryNotesList.svelte";
@@ -24,11 +24,11 @@
     scanning,
     indexProgress = null, // {dirs, frames} while a scan walks the library
     // Grid is the only mode; this is a display filter on top of it — not a
-    // destination. `true` swaps the folder tree for the Aperçu body (thème +
+    // destination. `true` swaps the folder tree for the Preview body (theme +
     // publish actions + notes list), same content, same interactivity.
     previewFilter = false,
     storyDirs = new Set(),
-    // Aperçu body props — passed by +page.svelte (Task 10); defaulted so the
+    // Preview body props — passed by +page.svelte (Task 10); defaulted so the
     // sidebar renders cleanly until then. onSetPinned is (notePath, pinned),
     // onReorderPinned is (fromIndex, toIndex) — both return promises upstream.
     pinnedStories = [],
@@ -477,7 +477,7 @@
   let ghosts = $state([]); // { abs, name, parentAbs }
   /** @type {string | null} */
   let creatingIn = $state(null); // parent abs path currently showing the "new folder" input
-  let createValue = $state("Nouveau dossier");
+  let createValue = $state("New Folder");
 
   $effect(() => {
     // Once a ghost's path shows up in the real (index-derived) dirs, drop it.
@@ -490,7 +490,7 @@
   /** @param {string} parentAbs */
   function beginCreateFolder(parentAbs) {
     creatingIn = parentAbs;
-    createValue = "Nouveau dossier";
+    createValue = "New Folder";
     ensureExpanded(parentAbs);
   }
   async function commitCreateFolder() {
@@ -565,7 +565,7 @@
     node.select();
   };
 
-  // Aperçu pin toggles — typed thin wrappers over the defaulted callback
+  // Preview pin toggles — typed thin wrappers over the defaulted callback
   // props so the inline arrow params aren't implicit `any` under strict mode.
   /** @param {string} notePath */
   const unpinStory = (notePath) => onSetPinned(notePath, false);
@@ -732,8 +732,8 @@
     <button class="wordmark" onclick={onShowShortcuts} title="Keyboard shortcuts">REVEAL</button>
   </div>
 
-  <!-- FRAMES ↔ APERÇU — a display filter on the same grid, not a mode. Both
-       tabs call the same toggle; only Aperçu is guarded (nothing to preview
+  <!-- FRAMES ↔ PREVIEW — a display filter on the same grid, not a mode. Both
+       tabs call the same toggle; only Preview is guarded (nothing to preview
        without a folder or in the read-only Apple Photos library). -->
   <div class="tabs">
     <button class="tab" class:active={!previewFilter} onclick={() => previewFilter && onTogglePreview()}>Frames</button>
@@ -742,8 +742,8 @@
       class:active={previewFilter}
       disabled={isLibrary || applePhotos?.active}
       onclick={() => !previewFilter && onTogglePreview()}
-      title={isLibrary ? "Choisis un dossier pour composer une histoire" : "Aperçu (S)"}
-    >Aperçu</button>
+      title={isLibrary ? "Choose a folder to compose a story" : "Preview (S)"}
+    >Preview</button>
   </div>
 
   {#if !previewFilter}
@@ -856,10 +856,10 @@
     {/each}
   </div>
 
-  <!-- The library's live state — below DOSSIERS, out of the way. -->
+  <!-- The library's live state — below the folder tree, out of the way. -->
   <div class="lib-section">
     <button class="lib-toggle" onclick={() => (libOpen = !libOpen)}>
-      <span>Bibliothèque</span>
+      <span>Library</span>
       <span class="disc" class:open={libOpen}><Icon name="caret-right" size="9px" /></span>
     </button>
     {#if libOpen}
@@ -877,38 +877,39 @@
     {/if}
     </div>
   {:else}
-    <!-- Aperçu filter body: THÈME + ÉPINGLÉES + RÉCENTES — port of Swift
+    <!-- Preview filter body: THEME + PINNED + RECENT — port of Swift
          `folderBrowser` STORY branch (CullView.swift:531-578). Brand cluster
          + tabs unchanged; this only ever swaps in over the SAME grid. -->
     <div class="story-body">
       <details open class="theme-section">
-        <summary class="section-toggle">Thème</summary>
+        <summary class="section-toggle">Theme</summary>
         <div class="theme-inner">
           <StoryThemePanel dir={curDir} />
           <div class="story-actions">
-            <!-- Publier n'a de sens que connecté à un compte Garden — sans ça
-                 le bouton ne mène qu'à une erreur réseau. Développer et
-                 Exporter restent locaux, donc toujours disponibles : Reveal
-                 doit rester utilisable sans jamais se connecter au jardin. -->
+            <!-- Publish only makes sense signed into a Garden account —
+                 without that the button just leads to a network error.
+                 Develop and Export stay local, so they're always available:
+                 Reveal has to stay usable without ever connecting to the
+                 garden. -->
             {#if signedIn}
               <button class="publish-hero-btn" onclick={() => onPublishStory()} disabled={publishing}>
                 {#if publishing}
                   <Icon name="arrows-clockwise" size="11px" class="spin" />
-                  <span>Publication…</span>
+                  <span>Publishing…</span>
                 {:else}
                   <Icon name="arrow-square-out" size="11px" />
-                  <span>Publier sur Garden</span>
+                  <span>Publish to Garden</span>
                 {/if}
               </button>
             {/if}
             <div class="secondary-actions">
-              <button class="action-btn secondary" onclick={() => onDevelopStory()} title="Développer toutes les photos de l'histoire">
+              <button class="action-btn secondary" onclick={() => onDevelopStory()} title="Develop every photo in the story">
                 <Icon name="sliders-horizontal" size="10px" />
-                <span>Développer</span>
+                <span>Develop</span>
               </button>
-              <button class="action-btn secondary" onclick={() => onExportLocalStory()} disabled={publishing} title="Exporter les photos localement">
+              <button class="action-btn secondary" onclick={() => onExportLocalStory()} disabled={publishing} title="Export the photos locally">
                 <Icon name="export" size="10px" />
-                <span>Exporter</span>
+                <span>Export</span>
               </button>
             </div>
           </div>
@@ -958,10 +959,10 @@
       {#if !signedIn}
         <span class="pop-title">Garden account</span>
         <button class="pop-primary" onclick={() => onOpenUrl?.("https://standard.garden/connect/reveal")}>
-          Se connecter avec le navigateur
+          Connect via browser
         </button>
-        <span class="pop-or">ou</span>
-        <span class="pop-hint">Collez une clé API existante (Compte → Clé API sur standard.garden).</span>
+        <span class="pop-or">or</span>
+        <span class="pop-hint">Paste an existing API key (Account → API Key on standard.garden).</span>
         <input
           class="pop-key"
           type="password"
@@ -976,7 +977,7 @@
           <div role="alert"><Alert class="error">{accountError}</Alert></div>
         {/if}
         <button class="pop-primary" disabled={!pastedKey.trim() || verifying} onclick={submitKey}>
-          {verifying ? "Vérification…" : "Se connecter"}
+          {verifying ? "Verifying…" : "Connect"}
         </button>
       {:else}
         <span class="pop-title">Garden account</span>
@@ -984,9 +985,9 @@
         {#if garden?.tier}
           <span class="pop-meta">{garden.tier.toUpperCase()}</span>
         {/if}
-        <span class="pop-meta">{garden?.notes_count ?? 0} notes · {garden?.total_views ?? 0} vues</span>
+        <span class="pop-meta">{garden?.notes_count ?? 0} notes · {garden?.total_views ?? 0} views</span>
         <div class="pop-divider"></div>
-        <button class="pop-danger" onclick={signOut}>Se déconnecter</button>
+        <button class="pop-danger" onclick={signOut}>Disconnect</button>
       {/if}
       </div>
     </Popover>
@@ -1622,8 +1623,8 @@
     color: var(--color-accent);
   }
 
-  /* Aperçu filter body (THÈME + ÉPINGLÉES + RÉCENTES) — replaces the folder
-     tree + Bibliothèque when previewFilter is on. */
+  /* Preview filter body (THEME + PINNED + RECENT) — replaces the folder
+     tree + Library when previewFilter is on. */
   .story-body {
     display: flex;
     flex-direction: column;

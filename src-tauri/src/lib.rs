@@ -1925,30 +1925,30 @@ async fn move_photo(path: String, dest_dir: String) -> Result<String, String> {
         let dest_dir = std::path::PathBuf::from(&dest_dir);
         let src_dir = src
             .parent()
-            .ok_or_else(|| "photo sans dossier parent".to_string())?;
+            .ok_or_else(|| "photo has no parent folder".to_string())?;
         if src_dir == dest_dir {
             return Err("the photo is already in this folder".to_string());
         }
         if !dest_dir.is_dir() {
             return Err(format!(
-                "dossier destination introuvable : {}",
+                "destination folder not found: {}",
                 dest_dir.display()
             ));
         }
         let file_name = src
             .file_name()
-            .ok_or_else(|| "nom de fichier invalide".to_string())?;
+            .ok_or_else(|| "invalid file name".to_string())?;
         let new_path = dest_dir.join(file_name);
         if new_path.exists() {
             return Err(format!(
-                "un fichier « {} » existe déjà dans le dossier destination",
+                "a file named \u{201c}{}\u{201d} already exists in the destination folder",
                 file_name.to_string_lossy()
             ));
         }
 
         // The RAW must move; its companions are best-effort so a missing
         // sidecar or jpg never blocks the frame from landing.
-        move_one(&src, &new_path).map_err(|e| format!("déplacement : {e}"))?;
+        move_one(&src, &new_path).map_err(|e| format!("move failed: {e}"))?;
 
         let sidecar = reveal_meta::sidecar_path(&src);
         if sidecar.exists() {
@@ -1980,7 +1980,7 @@ fn validate_dir_name(name: &str) -> Result<&str, String> {
         return Err("the name cannot be empty".to_string());
     }
     if trimmed.contains('/') || trimmed == "." || trimmed == ".." {
-        return Err("nom de dossier invalide".to_string());
+        return Err("invalid folder name".to_string());
     }
     Ok(trimmed)
 }
@@ -1997,7 +1997,7 @@ async fn rename_dir(path: String, new_name: String) -> Result<String, String> {
         let name = validate_dir_name(&new_name)?;
         let old_name = src
             .file_name()
-            .ok_or_else(|| "dossier invalide".to_string())?
+            .ok_or_else(|| "invalid folder".to_string())?
             .to_string_lossy()
             .into_owned();
         if name == old_name {
@@ -2005,12 +2005,12 @@ async fn rename_dir(path: String, new_name: String) -> Result<String, String> {
         }
         let parent = src
             .parent()
-            .ok_or_else(|| "dossier sans parent".to_string())?;
+            .ok_or_else(|| "folder has no parent".to_string())?;
         let dest = parent.join(name);
         if dest.exists() {
-            return Err(format!("« {name} » existe déjà"));
+            return Err(format!("\u{201c}{name}\u{201d} already exists"));
         }
-        std::fs::rename(&src, &dest).map_err(|e| format!("renommage : {e}"))?;
+        std::fs::rename(&src, &dest).map_err(|e| format!("rename failed: {e}"))?;
 
         // Best-effort: the folder rename already succeeded, so a note that
         // fails to follow along is a smaller problem than pretending the
@@ -2038,9 +2038,9 @@ async fn create_dir(parent_dir: String, name: String) -> Result<String, String> 
         let name = validate_dir_name(&name)?;
         let dest = std::path::PathBuf::from(&parent_dir).join(name);
         if dest.exists() {
-            return Err(format!("« {name} » existe déjà"));
+            return Err(format!("\u{201c}{name}\u{201d} already exists"));
         }
-        std::fs::create_dir(&dest).map_err(|e| format!("création : {e}"))?;
+        std::fs::create_dir(&dest).map_err(|e| format!("creation failed: {e}"))?;
         eprintln!("créé: {}", dest.display());
         Ok(dest.to_string_lossy().into_owned())
     })
@@ -2062,7 +2062,7 @@ async fn move_dir(path: String, dest_parent_dir: String) -> Result<String, Strin
         let dest_parent = std::path::PathBuf::from(&dest_parent_dir);
         let name = src
             .file_name()
-            .ok_or_else(|| "dossier invalide".to_string())?;
+            .ok_or_else(|| "invalid folder".to_string())?;
         let dest = dest_parent.join(name);
 
         if dest_parent == src {
@@ -2078,12 +2078,12 @@ async fn move_dir(path: String, dest_parent_dir: String) -> Result<String, Strin
         }
         if dest.exists() {
             return Err(format!(
-                "un dossier « {} » existe déjà à destination",
+                "a folder named \u{201c}{}\u{201d} already exists at the destination",
                 name.to_string_lossy()
             ));
         }
         if !dest_parent.is_dir() {
-            return Err("dossier destination introuvable".to_string());
+            return Err("destination folder not found".to_string());
         }
 
         match std::fs::rename(&src, &dest) {
@@ -2092,7 +2092,7 @@ async fn move_dir(path: String, dest_parent_dir: String) -> Result<String, Strin
                 Ok(dest.to_string_lossy().into_owned())
             }
             Err(e) => Err(format!(
-                "déplacement échoué (volumes différents non pris en charge pour les dossiers) : {e}"
+                "move failed (cross-volume moves aren\u{2019}t supported for folders): {e}"
             )),
         }
     })
@@ -2416,7 +2416,7 @@ async fn export_local_story(
         let destp = std::path::Path::new(&dest);
         let stems = story::stems(dirp);
         if stems.is_empty() {
-            return Err("aucune photo dans la story".to_string());
+            return Err("no photos in the story".to_string());
         }
         let images_dir = destp.join("images");
         std::fs::create_dir_all(&images_dir).map_err(|e| e.to_string())?;
@@ -2429,7 +2429,7 @@ async fn export_local_story(
         };
         let mut urls: Vec<(String, String)> = Vec::new();
         for (i, stem) in stems.iter().enumerate() {
-            emit(i, stem, "développement");
+            emit(i, stem, "developing");
             let raw = reveal_decode::RAW_EXTENSIONS
                 .iter()
                 .map(|e| dirp.join(format!("{stem}.{e}")))
@@ -2439,7 +2439,7 @@ async fn export_local_story(
                         .map(|e| dirp.join(format!("{stem}.{}", e.to_uppercase()))),
                 )
                 .find(|p| p.exists())
-                .ok_or_else(|| format!("RAW introuvable pour {stem}"))?;
+                .ok_or_else(|| format!("RAW not found for {stem}"))?;
             let recipe = reveal_meta::read(&raw)
                 .ok()
                 .flatten()
@@ -2448,7 +2448,7 @@ async fn export_local_story(
                 .unwrap_or_default();
             let (jpeg, _, _) = engine
                 .export_jpeg(&raw, &recipe, long_edge, border_frac)
-                .map_err(|e| format!("développement {stem}: {e:#}"))?;
+                .map_err(|e| format!("develop {stem}: {e:#}"))?;
             let jpg_path = images_dir.join(format!("{stem}.jpg"));
             std::fs::write(&jpg_path, &jpeg).map_err(|e| e.to_string())?;
             urls.push((stem.clone(), format!("images/{stem}.jpg")));
@@ -2589,7 +2589,7 @@ async fn publish_story(
         let dirp = std::path::Path::new(&dir);
         let stems = story::stems(dirp);
         if stems.is_empty() {
-            return Err("aucune photo dans la story".to_string());
+            return Err("no photos in the story".to_string());
         }
         let total = stems.len();
         let emit = |done: usize, current: &str, phase: &str| {
@@ -2602,7 +2602,7 @@ async fn publish_story(
         // 1. resolve each marked photo to <stem>.jpg beside the RAW
         let mut urls: Vec<(String, String)> = Vec::new();
         for (i, stem) in stems.iter().enumerate() {
-            emit(i, stem, "préparation");
+            emit(i, stem, "preparing");
 
             // Look for pre-developed preview sidecar first (<stem>.preview.jpg, <stem>.jpg, etc.)
             let candidates = [
@@ -2651,11 +2651,11 @@ async fn publish_story(
             let jpeg = match existing_jpeg {
                 Some(bytes) => bytes,
                 None => {
-                    let raw = raw_opt.ok_or_else(|| format!("RAW introuvable pour {stem}"))?;
-                    emit(i, stem, "développement");
+                    let raw = raw_opt.ok_or_else(|| format!("RAW not found for {stem}"))?;
+                    emit(i, stem, "developing");
                     let (bytes, _, _) = engine
                         .export_jpeg(&raw, &recipe, 2048, 0.0)
-                        .map_err(|e| format!("développement {stem}: {e:#}"))?;
+                        .map_err(|e| format!("develop {stem}: {e:#}"))?;
                     bytes
                 }
             };
@@ -2670,7 +2670,7 @@ async fn publish_story(
             }
 
             // 2. upload (dedup) — dry run stops at the existence check
-            emit(i, stem, if dry_run { "vérification" } else { "envoi" });
+            emit(i, stem, if dry_run { "verifying" } else { "uploading" });
             if dry_run {
                 urls.push((stem.clone(), format!("dry-run://{stem}.jpg")));
             } else {
@@ -2688,7 +2688,7 @@ async fn publish_story(
         emit(total, &name, "note");
         if dry_run {
             eprintln!("publish dry-run: slug={slug}, {} photos, note ok", urls.len());
-            return Ok(format!("dry-run — slug {slug}, {} photos prêtes", urls.len()));
+            return Ok(format!("dry-run — slug {slug}, {} photos ready", urls.len()));
         }
         let live = client.put_note(&slug, &name, &content).map_err(|e| e.to_string())?;
         let _ = story::stamp_garden_url(dirp, &live);
@@ -2724,7 +2724,7 @@ async fn publish_photo(
             );
         };
 
-        emit("développement");
+        emit("developing");
         let sidecar = reveal_meta::read(&apple_photos::metadata_path(&path)?).map_err(|e| e.to_string())?;
         let recipe = sidecar
             .as_ref()
@@ -2733,9 +2733,9 @@ async fn publish_photo(
             .unwrap_or_default();
         let (jpeg, _, _) = engine
             .export_jpeg(&apple_photos::source(&path)?, &recipe, 2048, 0.0)
-            .map_err(|e| format!("développement {stem}: {e:#}"))?;
+            .map_err(|e| format!("develop {stem}: {e:#}"))?;
 
-        emit("envoi");
+        emit("uploading");
         let url = client
             .ensure_attachment(&jpeg, &format!("{stem}.jpg"))
             .map_err(|e| e.to_string())?;
@@ -2834,7 +2834,7 @@ async fn import_card(
     let archive_path = std::path::Path::new(&archive);
     if !is_writable_dir(archive_path) {
         let msg = format!(
-            "Destination introuvable : « {} ». Monte le volume ou choisis un dossier d'import.",
+            "Destination not found: \u{201c}{}\u{201d}. Mount the volume or choose an import folder.",
             archive
         );
         import_state.0.lock().unwrap().remove(&dcim);
@@ -2957,7 +2957,7 @@ async fn eject_card(volume: String) -> Result<(), String> {
         if status.success() {
             Ok(())
         } else {
-            Err(format!("éjection échouée ({volume})"))
+            Err(format!("eject failed ({volume})"))
         }
     })
     .await
@@ -3552,14 +3552,14 @@ async fn ai_cull(
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
             let outcome = match (&stats.exported_to, stats.marked) {
-                (Some(dest), m) if m > 0 => format!("ajoutés à l'histoire, exportés vers {dest}"),
-                (Some(dest), _) => format!("exportés vers {dest}"),
-                (None, m) if m > 0 => "ajoutés à l'histoire".to_string(),
-                (None, _) => "retenus".to_string(),
+                (Some(dest), m) if m > 0 => format!("added to story, exported to {dest}"),
+                (Some(dest), _) => format!("exported to {dest}"),
+                (None, m) if m > 0 => "added to story".to_string(),
+                (None, _) => "kept".to_string(),
             };
             let _ = notify_user(
                 "Culling IA — Reveal".to_string(),
-                format!("{folder_name} : {} de {} conservés, {outcome}", stats.picked, stats.considered),
+                format!("{folder_name}: {} of {} kept, {outcome}", stats.picked, stats.considered),
             )
             .await;
             let _ = app.emit("cull-finished", stats);

@@ -5,8 +5,8 @@
 
   const aspects = [
     ["Original", "original"],
-    ["Libre", "free"],
-    ["1:1 Carré", "1:1"],
+    ["Free", "free"],
+    ["1:1 Square", "1:1"],
     ["3:2", "3:2"],
     ["4:3", "4:3"],
     ["16:9", "16:9"],
@@ -48,7 +48,7 @@
   <section class="section">
     <div class="section-title">
       <span class="din">Proportions</span>
-      <button class="reset-btn" onclick={resetCrop} title="Réinitialiser le recadrage">Réinit.</button>
+      <button class="reset-btn" onclick={resetCrop} title="Reset the crop">Reset</button>
     </div>
     <div class="aspect-grid">
       {#each aspects as [label, a]}

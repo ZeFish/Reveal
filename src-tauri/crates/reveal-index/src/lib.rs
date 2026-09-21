@@ -340,10 +340,9 @@ impl Index {
         {
             drop(tx); // uncommitted — rolls back, nothing pruned
             return Err(IndexError::Io(std::io::Error::other(format!(
-                "refus de reindexer « {} » : {removed} des {known_under_root} photos déjà indexées \
-                 semblent avoir disparu d'un coup — ça ressemble à un montage réseau qui vient juste \
-                 de se reconnecter, pas à une vraie suppression. Rien n'a été modifié ; réessaie une \
-                 fois le volume stable.",
+                "refusing to reindex \u{201c}{}\u{201d}: {removed} of {known_under_root} already-indexed \
+                 photos appear to have vanished all at once — this looks like a network mount that just \
+                 reconnected, not a real deletion. Nothing was changed; retry once the volume is stable.",
                 root.display()
             ))));
         }
@@ -424,7 +423,7 @@ impl Index {
         let conn = self.conn.lock().unwrap();
         // Recursive on purpose (the Swift app's navigate semantics): a folder
         // shows its own frames AND every subfolder's — so the root shows the
-        // whole library ("Toute la bibliothèque").
+        // whole library ("All Library").
         let mut stmt = conn.prepare(
             "SELECT path, name, rating, capture_at FROM frames
              WHERE (dir=?1 OR dir LIKE ?1 || '/%') AND rating>=?2 AND name NOT LIKE '.%' AND name NOT LIKE '._%'

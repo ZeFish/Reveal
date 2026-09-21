@@ -133,28 +133,28 @@
     <div class="save-row">
       <input
         class="panel-input name-input"
-        placeholder="Nom du preset"
+        placeholder="Preset name"
         bind:value={newName}
         onkeydown={(e) => e.key === "Enter" && saveCurrent()}
       />
       <button class="secondary save-btn" onclick={saveCurrent} disabled={!newName.trim() || !recipe || busy}>
-        Enregistrer
+        Save
       </button>
     </div>
-    <p class="hint">Clic : photo courante · ⌥-clic : toute la sélection · ★ : préset par défaut à l'import</p>
+    <p class="hint">Click: current photo · ⌥-click: whole selection · ★: default preset on import</p>
   </section>
 
   <div class="hairline-inner"></div>
 
   <section class="list">
     {#if presets.length === 0}
-      <p class="empty-text">Aucun preset. Enregistre le réglage courant ci-dessus.</p>
+      <p class="empty-text">No presets yet. Save the current settings above.</p>
     {:else}
       {#each presets as entry (entry.name)}
         <div class="preset-row">
           <button
             class="apply"
-            title="Appliquer ce preset"
+            title="Apply this preset"
             onclick={(e) => applyPreset(entry, e)}
             onmouseenter={() => previewPreset(entry)}
             onmouseleave={clearPresetPreview}
@@ -165,13 +165,13 @@
             class="ghost icon default-btn"
             class:active={defaultPresetName === entry.name}
             title={defaultPresetName === entry.name
-              ? "Preset par défaut à l'import — clic pour retirer"
-              : "Définir comme preset par défaut à l'import"}
+              ? "Default preset on import — click to unset"
+              : "Set as default preset on import"}
             onclick={() => toggleDefaultForImport(entry)}
           >
             <Icon name="star" size="11px" />
           </button>
-          <button class="ghost icon" title="Supprimer" onclick={() => deletePreset(entry)}>×</button>
+          <button class="ghost icon" title="Delete" onclick={() => deletePreset(entry)}>×</button>
         </div>
       {/each}
     {/if}

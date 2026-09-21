@@ -48,15 +48,15 @@
     <div class="header-main">
       <div class="title-wrap">
         <Icon name="note-pencil" size="14px" />
-        <h2>RÉCIT VISUEL</h2>
+        <h2>VISUAL STORY</h2>
       </div>
       <div class="meta-pills">
-        <span class="count-pill" title="Photos intégrées à l'histoire">
+        <span class="count-pill" title="Photos in this story">
           <Icon name="image" size="11px" />
-          {storySet.size} cliché{storySet.size > 1 ? "s" : ""}
+          {storySet.size} photo{storySet.size > 1 ? "s" : ""}
         </span>
         {#if themeLabel}
-          <span class="theme-pill" title="Thème éditorial actif">
+          <span class="theme-pill" title="Active editorial theme">
             <span class="theme-pill-dot" style="background: var(--theme-accent, var(--color-accent));"></span>
             <span class="theme-pill-text">{themeLabel}</span>
           </span>

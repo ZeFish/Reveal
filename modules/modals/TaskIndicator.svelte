@@ -14,7 +14,7 @@
     return (sum / running.length) * 100;
   });
   const label = $derived(
-    running.length > 1 ? `${running.length} activités` : (running[0]?.label ?? "")
+    running.length > 1 ? `${running.length} activities` : (running[0]?.label ?? "")
   );
 </script>
 

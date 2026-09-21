@@ -10,7 +10,7 @@
     <div class="hairline-inner"></div>
     <LutStack stage="post" bind:recipe {luts} {edited} />
   {:else}
-    <span class="din empty">Aucune sélection</span>
+    <span class="din empty">No selection</span>
   {/if}
 </div>
 

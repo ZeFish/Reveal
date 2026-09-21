@@ -9,14 +9,14 @@
 </script>
 
 <div class="export-target-card">
-  <h3>PUBLICATION GARDEN (CDN)</h3>
-  <p class="desc">Publie ton histoire en ligne sur le réseau Garden avec CDN haute vitesse et galeries réactives.</p>
+  <h3>GARDEN PUBLISHING (CDN)</h3>
+  <p class="desc">Publishes your story live on the Garden network with a high-speed CDN and responsive galleries.</p>
   {#if liveUrl}
-    <p class="live-link">En ligne : <a href={liveUrl} target="_blank" rel="noreferrer">{liveUrl}</a></p>
+    <p class="live-link">Live: <a href={liveUrl} target="_blank" rel="noreferrer">{liveUrl}</a></p>
   {/if}
   <div class="target-actions">
     <button class="publish-btn" onclick={publishStory} disabled={!!progress || !storySet.size}>
-      Publier sur Garden ({storySet.size} images)
+      Publish to Garden ({storySet.size} images)
     </button>
   </div>
 </div>

@@ -3,7 +3,7 @@
   // 360px, slack flows into equal gutters, explicit column count), now
   // VIRTUALIZED: cell size is pure geometry (width/cols, height by aspect),
   // so only the rows in the viewport (± a small buffer) exist in the DOM.
-  // "Toute la bibliothèque" is ~22k frames — rendering them all is why the
+  // "All Library" is ~22k frames — rendering them all is why the
   // root froze. Masonry keeps natural ratios (no fixed geometry) and is NOT
   // virtualized; it's the opt-in layout for day-sized folders. Keep the
   // container class app-specific: Standard's global `.grid` utility flows
@@ -301,7 +301,7 @@
           {#if prose.length}
             <div class="row-gap-prose">
               {#each prose as p (p.id)}
-                <button class="row-gap-text" onclick={() => openComposer(r, p)} title="Modifier ce paragraphe">
+                <button class="row-gap-text" onclick={() => openComposer(r, p)} title="Edit this paragraph">
                   {p.text}
                 </button>
               {/each}
@@ -310,7 +310,7 @@
           {#if dwellingRow === r && canAddAt(r)}
             <button
               class="row-gap-add"
-              title="Ajouter un paragraphe ici"
+              title="Add a paragraph here"
               onclick={() => openComposer(r)}
             >
               <Icon name="plus" size="10px" />
