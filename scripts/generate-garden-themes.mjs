@@ -182,6 +182,14 @@ for (const dirName of fs.readdirSync(themesDir).sort()) {
     continue;
   }
 
+  // meta.fonts lists this theme's font packages as "@stnd/fonts/<slug>" —
+  // the actual package to @font-face-load, sidestepping any mismatch
+  // between a theme's font-header/font-text DISPLAY name (e.g. "Jimmy Serif
+  // Pro") and that package's own folder/label (jimmy/"Jimmy Sans Pro").
+  const fontPackages = Array.isArray(meta.fonts)
+    ? meta.fonts.map((f) => String(f).split("/").pop()).filter(Boolean)
+    : [];
+
   entries.push({
     id,
     label,
@@ -189,6 +197,7 @@ for (const dirName of fs.readdirSync(themesDir).sort()) {
     darkAccent,
     fontHeader: firstFontFamily(tokens["font-header"]),
     fontText: firstFontFamily(tokens["font-text"]),
+    fontPackages,
   });
 }
 

@@ -33,6 +33,43 @@ export const DEFAULT_THEME = "reveal";
 // "reveal" is imported statically by +layout.svelte already — never re-fetch it.
 const loadedThemes = new Set([DEFAULT_THEME]);
 
+// A theme's own tokens.yaml (meta.fonts) names the font packages it wants —
+// see generate-garden-themes.mjs, which copies that array straight into
+// garden-themes.generated.json as `fontPackages`. Loading fonts by package
+// reference (not by the font-header/font-text DISPLAY name) sidesteps a real
+// mismatch: Chalky's font-text is "Jimmy Serif Pro" but the package is
+// packages/fonts/jimmy/, whose own @font-face declares yet a third name
+// ("Jimmy Sans Pro") — none of the three strings match by slugifying.
+import gardenThemesData from "./garden-themes.generated.json";
+/** @type {Record<string, string[]>} */
+const THEME_FONT_PACKAGES = Object.fromEntries(
+  gardenThemesData.themes.map((t) => [String(t.id), t.fontPackages ?? []]),
+);
+
+const fontModules = import.meta.glob(["../../../../packages/fonts/*/*.css"]);
+/** @type {Record<string, () => Promise<unknown>>} */
+const FONT_LOADERS = {};
+for (const [path, loader] of Object.entries(fontModules)) {
+  const m = path.match(/\/([^/]+)\/\1\.css$/);
+  if (m) FONT_LOADERS[m[1]] = loader;
+}
+// "reveal"'s fonts are imported statically by +layout.svelte already (see
+// its own comment — fonts aren't reachable through package export maps).
+const loadedFontPackages = new Set(THEME_FONT_PACKAGES[DEFAULT_THEME] ?? []);
+
+/** @param {string} theme */
+async function loadThemeFonts(theme) {
+  const packages = THEME_FONT_PACKAGES[theme] ?? [];
+  await Promise.all(
+    packages
+      .filter((pkg) => !loadedFontPackages.has(pkg) && FONT_LOADERS[pkg])
+      .map((pkg) => {
+        loadedFontPackages.add(pkg);
+        return FONT_LOADERS[pkg]();
+      }),
+  );
+}
+
 // Every component picks its own hover-transition timing (120ms here, 150ms
 // there, some with no transition at all) — fine for a hover, but a color
 // SCHEME change (theme pick, or macOS system light/dark) recolors dozens of
@@ -60,6 +97,7 @@ export async function applyTheme(id) {
     await THEME_LOADERS[theme]();
     loadedThemes.add(theme);
   }
+  await loadThemeFonts(theme);
   syncThemeTransition();
   document.documentElement.dataset.theme = theme;
 }

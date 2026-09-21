@@ -7,7 +7,12 @@
       "darkBackground": "#1c1c1a",
       "darkAccent": "#C7A540",
       "fontHeader": "Avant Garde Pro",
-      "fontText": "Berkeley Mono"
+      "fontText": "Berkeley Mono",
+      "fontPackages": [
+        "inter",
+        "cargo-diatype",
+        "berkeley-mono"
+      ]
     },
     {
       "id": "academic",
@@ -15,7 +20,11 @@
       "darkBackground": "#211f1d",
       "darkAccent": "#7fb4cc",
       "fontHeader": "Source Serif 4",
-      "fontText": "Source Serif 4"
+      "fontText": "Source Serif 4",
+      "fontPackages": [
+        "source-serif-4",
+        "ibm-plex"
+      ]
     },
     {
       "id": "apex",
@@ -23,7 +32,11 @@
       "darkBackground": "#1b1b1b",
       "darkAccent": "#e4e0d6",
       "fontHeader": "Herbus",
-      "fontText": "Herbus"
+      "fontText": "Herbus",
+      "fontPackages": [
+        "herbus",
+        "monolisa"
+      ]
     },
     {
       "id": "avantgarde",
@@ -31,7 +44,11 @@
       "darkBackground": "#262421",
       "darkAccent": "#d0a215",
       "fontHeader": "Avant Garde Pro",
-      "fontText": "Sohne Mono"
+      "fontText": "Sohne Mono",
+      "fontPackages": [
+        "avant-garde-pro",
+        "sohne"
+      ]
     },
     {
       "id": "blueprint",
@@ -39,7 +56,10 @@
       "darkBackground": "#1a4d7a",
       "darkAccent": "#5e409d",
       "fontHeader": null,
-      "fontText": null
+      "fontText": null,
+      "fontPackages": [
+        "monolisa"
+      ]
     },
     {
       "id": "book",
@@ -47,7 +67,13 @@
       "darkBackground": "#171410",
       "darkAccent": "#d95547",
       "fontHeader": "Fern",
-      "fontText": "Fern"
+      "fontText": "Fern",
+      "fontPackages": [
+        "fern",
+        "source-serif-4",
+        "sohne",
+        "graveur"
+      ]
     },
     {
       "id": "calm",
@@ -55,15 +81,23 @@
       "darkBackground": "#1e1d1b",
       "darkAccent": "#6f8c7e",
       "fontHeader": "Quicksand",
-      "fontText": "Quicksand"
+      "fontText": "Quicksand",
+      "fontPackages": [
+        "oktah",
+        "quicksand"
+      ]
     },
     {
       "id": "chalky",
       "label": "Chalky",
-      "darkBackground": "#28201b",
+      "darkBackground": "#3d3826",
       "darkAccent": "#d08a49",
       "fontHeader": "Fern",
-      "fontText": "Jimmy Serif Pro"
+      "fontText": "Jimmy Serif Pro",
+      "fontPackages": [
+        "jimmy",
+        "brixton"
+      ]
     },
     {
       "id": "claude",
@@ -71,7 +105,10 @@
       "darkBackground": "#262626",
       "darkAccent": "#d87757",
       "fontHeader": null,
-      "fontText": null
+      "fontText": null,
+      "fontPackages": [
+        "monolisa"
+      ]
     },
     {
       "id": "contrast",
@@ -79,7 +116,11 @@
       "darkBackground": "#000000",
       "darkAccent": "#ffff00",
       "fontHeader": "Inter",
-      "fontText": "Sohne"
+      "fontText": "Sohne",
+      "fontPackages": [
+        "atkinson-hyperlegible-next",
+        "oktah"
+      ]
     },
     {
       "id": "dev",
@@ -87,7 +128,12 @@
       "darkBackground": "#1c1c1b",
       "darkAccent": "#c7a540",
       "fontHeader": null,
-      "fontText": null
+      "fontText": null,
+      "fontPackages": [
+        "inter",
+        "berkeley-mono",
+        "monolisa"
+      ]
     },
     {
       "id": "documentation",
@@ -95,7 +141,12 @@
       "darkBackground": "#111216",
       "darkAccent": "#9dbcfb",
       "fontHeader": "IBM Plex Serif",
-      "fontText": "iA Writer Quattro"
+      "fontText": "iA Writer Quattro",
+      "fontPackages": [
+        "ia-writer",
+        "ibm-plex",
+        "berkeley-mono"
+      ]
     },
     {
       "id": "dyslexia",
@@ -103,7 +154,11 @@
       "darkBackground": "#242526",
       "darkAccent": "#1f6690",
       "fontHeader": "Atkinson Hyperlegible Next",
-      "fontText": "Atkinson Hyperlegible Next"
+      "fontText": "Atkinson Hyperlegible Next",
+      "fontPackages": [
+        "atkinson-hyperlegible-next",
+        "atkinson-hyperlegible-mono"
+      ]
     },
     {
       "id": "editorial",
@@ -111,7 +166,12 @@
       "darkBackground": "#292827",
       "darkAccent": "#8fb4ff",
       "fontHeader": "Tiempos Headline",
-      "fontText": "Literata"
+      "fontText": "Literata",
+      "fontPackages": [
+        "tiempos-headline",
+        "literata",
+        "instrument-sans"
+      ]
     },
     {
       "id": "federal",
@@ -119,7 +179,11 @@
       "darkBackground": "#17191c",
       "darkAccent": "#ee6b47",
       "fontHeader": "Helvetica Now",
-      "fontText": "Helvetica Now"
+      "fontText": "IBM Plex Sans",
+      "fontPackages": [
+        "helvetica-now",
+        "IBM Plex"
+      ]
     },
     {
       "id": "forest",
@@ -127,7 +191,12 @@
       "darkBackground": "#231e1a",
       "darkAccent": "#f9a61a",
       "fontHeader": "Forrest",
-      "fontText": "Forrest"
+      "fontText": "Forrest",
+      "fontPackages": [
+        "forrest",
+        "monaspace-xenon",
+        "national-park"
+      ]
     },
     {
       "id": "frank",
@@ -135,7 +204,11 @@
       "darkBackground": "#040301",
       "darkAccent": "#0d6594",
       "fontHeader": "Inter",
-      "fontText": "Cargo Diatype"
+      "fontText": "Cargo Diatype",
+      "fontPackages": [
+        "inter",
+        "cargo-diatype"
+      ]
     },
     {
       "id": "gallery",
@@ -143,7 +216,10 @@
       "darkBackground": "#101010",
       "darkAccent": "#c1443c",
       "fontHeader": "Cargo Diatype",
-      "fontText": "Cargo Diatype"
+      "fontText": "Cargo Diatype",
+      "fontPackages": [
+        "cargo-diatype"
+      ]
     },
     {
       "id": "humanist",
@@ -151,7 +227,12 @@
       "darkBackground": "#262626",
       "darkAccent": "#d87757",
       "fontHeader": "Kalice",
-      "fontText": "National Park"
+      "fontText": "National Park",
+      "fontPackages": [
+        "Kalice",
+        "inter",
+        "instrument-sans"
+      ]
     },
     {
       "id": "international",
@@ -159,7 +240,10 @@
       "darkBackground": "#111111",
       "darkAccent": "#db6057",
       "fontHeader": "Inter",
-      "fontText": "Cargo Diatype"
+      "fontText": "Cargo Diatype",
+      "fontPackages": [
+        "cargo-diatype"
+      ]
     },
     {
       "id": "kernel",
@@ -167,7 +251,11 @@
       "darkBackground": "#231e1a",
       "darkAccent": "#8b7ec8",
       "fontHeader": "Fraunces",
-      "fontText": "MonoLisa"
+      "fontText": "MonoLisa",
+      "fontPackages": [
+        "monolisa",
+        "fraunces"
+      ]
     },
     {
       "id": "manifeste",
@@ -175,7 +263,13 @@
       "darkBackground": "#1b1a18",
       "darkAccent": "#9ecaa3",
       "fontHeader": "Tiempos Headline",
-      "fontText": "Fern"
+      "fontText": "Fern",
+      "fontPackages": [
+        "tiempos-headline",
+        "joly",
+        "futura-now",
+        "sohne"
+      ]
     },
     {
       "id": "mono",
@@ -183,7 +277,10 @@
       "darkBackground": "#0a0a0a",
       "darkAccent": "#ff5a1f",
       "fontHeader": "Sohne Mono",
-      "fontText": "Sohne Mono"
+      "fontText": "Sohne Mono",
+      "fontPackages": [
+        "sohne"
+      ]
     },
     {
       "id": "occult",
@@ -191,7 +288,11 @@
       "darkBackground": "#0f0f0f",
       "darkAccent": "#725e3b",
       "fontHeader": "Fern",
-      "fontText": "Fern"
+      "fontText": "Fern",
+      "fontPackages": [
+        "fern",
+        "monaspace-xenon"
+      ]
     },
     {
       "id": "reveal",
@@ -199,7 +300,12 @@
       "darkBackground": "#1f1f1e",
       "darkAccent": "#d6202c",
       "fontHeader": "DIN Condensed",
-      "fontText": "Inter"
+      "fontText": "Inter",
+      "fontPackages": [
+        "din-condensed",
+        "inter",
+        "ibm-plex"
+      ]
     },
     {
       "id": "technical",
@@ -207,7 +313,14 @@
       "darkBackground": "#1d2027",
       "darkAccent": "#8b7ec8",
       "fontHeader": "Monosten",
-      "fontText": "Courier Prime"
+      "fontText": "Courier Prime",
+      "fontPackages": [
+        "courier-prime",
+        "futura-now",
+        "monosten",
+        "gorton-perfected",
+        "berkeley-mono"
+      ]
     },
     {
       "id": "venetian",
@@ -215,7 +328,10 @@
       "darkBackground": "#1c120a",
       "darkAccent": "#be9e68",
       "fontHeader": "adobe-jenson-pro",
-      "fontText": "adobe-jenson-pro"
+      "fontText": "adobe-jenson-pro",
+      "fontPackages": [
+        "eb-garamond"
+      ]
     }
   ]
 }
