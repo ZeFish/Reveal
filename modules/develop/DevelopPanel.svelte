@@ -55,6 +55,8 @@
     publishStatus = $bindable(""),
     showClipping = false,
     toggleClipping = () => {},
+    showCaption = false,
+    toggleCaptionOverlay = () => {},
     /** @param {boolean} [transient] @param {string} [key] */
     edited = () => {},
     /** @param {string} key @param {number} [index] */
@@ -158,6 +160,14 @@
           <span class="clip-indicator"></span>
         {/if}
       </button>
+      <button
+        class="header-util-btn"
+        class:active={showCaption}
+        onclick={() => toggleCaptionOverlay()}
+        title="Show caption at bottom of photo"
+      >
+        <Icon name="subtitles" size="12px" />
+      </button>
       <button class="close" onclick={() => hidePanel()} title="Fermer le panneau (⇧D)">
         <Icon name="x" size="11px" />
       </button>
@@ -174,8 +184,8 @@
       <button class="tab-btn" class:active={activeTab === 'preset'} onclick={() => activeTab = 'preset'} title="Presets" aria-label="Presets">
         <Icon name="stack-simple" size="14px" />
       </button>
-      <button class="tab-btn" class:active={activeTab === 'info'} onclick={() => activeTab = 'info'} title="Info" aria-label="Info">
-        <Icon name="image" size="14px" />
+      <button class="tab-btn" class:active={activeTab === 'info'} onclick={() => activeTab = 'info'} title="Editorial" aria-label="Editorial">
+        <Icon name="newspaper" size="14px" />
       </button>
       <button class="tab-btn" class:active={activeTab === 'export'} onclick={() => activeTab = 'export'} title="Export" aria-label="Export">
         <Icon name="download-simple" size="14px" />

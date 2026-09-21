@@ -50,6 +50,7 @@
   /** @type {Recipe | null} */ // engine defaults, for double-click-to-reset
   let defaults = $state(null);
   let showClipping = $state(false);
+  let showCaption = $state(false);
   /** @type {{r: number[], g: number[], b: number[], luma: number[]} | null} */
   let histogram = $state(null);
   let photoScale = $state(90);
@@ -61,6 +62,11 @@
   function toggleClipping() {
     showClipping = !showClipping;
     emit("dev-panel-toggle-clipping", { showClipping });
+  }
+
+  function toggleCaptionOverlay() {
+    showCaption = !showCaption;
+    emit("dev-panel-toggle-caption", { showCaption });
   }
 
   function captionEdited() {
@@ -322,6 +328,8 @@
   onPhotoScaleChanged={photoScaleChanged}
   {showClipping}
   {toggleClipping}
+  {showCaption}
+  {toggleCaptionOverlay}
   {edited}
   {resetOne}
   {addLutLayer}

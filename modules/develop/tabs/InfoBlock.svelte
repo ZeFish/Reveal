@@ -24,6 +24,30 @@
   let tagInput = $state("");
   let generatingTags = $state(false);
   let tagsError = $state("");
+  let captionEl = $state(/** @type {HTMLTextAreaElement | null} */ (null));
+
+  /**
+   * Wraps the current textarea selection in markdown markers (or, with
+   * nothing selected, drops the caret between them) — the same
+   * insert-around-selection behaviour every markdown editor's B/I toolbar
+   * buttons use. Re-selects the wrapped text afterward so hitting Bold
+   * again toggles it back off intuitively.
+   * @param {string} before @param {string} after
+   */
+  function wrapSelection(before, after) {
+    const el = captionEl;
+    if (!el) return;
+    const start = el.selectionStart ?? caption.length;
+    const end = el.selectionEnd ?? caption.length;
+    const selected = caption.slice(start, end);
+    caption = caption.slice(0, start) + before + selected + after + caption.slice(end);
+    onCaptionEdited();
+    queueMicrotask(() => {
+      el.focus();
+      const caretStart = start + before.length;
+      el.setSelectionRange(caretStart, caretStart + selected.length);
+    });
+  }
 
   function copyPath() {
     if (photoPath) navigator.clipboard?.writeText(photoPath);
@@ -111,13 +135,27 @@
   {#if rating > 0}
     <span class="info-stars" aria-label="{rating} stars">{"★".repeat(rating)}</span>
   {/if}
-  <textarea
-    class="caption"
-    rows="2"
-    placeholder="Caption…"
-    bind:value={caption}
-    oninput={() => onCaptionEdited()}
-  ></textarea>
+  <div class="caption-block">
+    <div class="caption-toolbar">
+      <span class="din">Caption</span>
+      <div class="toolbar-actions">
+        <button class="ghost toolbar-btn" onclick={() => wrapSelection("**", "**")} title="Bold">
+          <Icon name="text-b" size="11px" />
+        </button>
+        <button class="ghost toolbar-btn" onclick={() => wrapSelection("*", "*")} title="Italic">
+          <Icon name="text-italic" size="11px" />
+        </button>
+      </div>
+    </div>
+    <textarea
+      bind:this={captionEl}
+      class="caption"
+      rows="6"
+      placeholder="Write a caption… **bold**, *italic* — shown as a caption callout when shared to the daily log."
+      bind:value={caption}
+      oninput={() => onCaptionEdited()}
+    ></textarea>
+  </div>
   <div class="tags-block">
     <div class="tags-header">
       <span class="din">Tags</span>
@@ -200,15 +238,43 @@
     color: color-mix(in srgb, var(--color-foreground) 85%, transparent);
   }
 
+  .caption-block {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .caption-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .toolbar-actions {
+    display: flex;
+    gap: 2px;
+  }
+  .toolbar-btn {
+    padding: 3px;
+    border-radius: 3px;
+  }
+  .toolbar-btn:hover {
+    background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
+  }
+
+  /* The editorial surface of this panel — everything else here is metadata
+     to glance at, this is the thing you actually write in. Given real
+     height and a serif/reading font (not the mono/din used everywhere
+     else) so it reads as prose, not a form field. */
   .caption {
-    font-family: var(--font-text, sans-serif);
-    font-size: 10.8px;
+    font-family: var(--font-text, serif);
+    font-size: 12px;
+    line-height: 1.5;
     color: var(--color-foreground);
     background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
     border: 1px solid var(--color-border);
+    border-left: 2px solid color-mix(in srgb, var(--color-accent, orange) 55%, transparent);
     border-radius: var(--radius);
-    padding: 6px;
-    resize: none;
+    padding: 10px 12px;
+    resize: vertical;
     outline: none;
   }
 

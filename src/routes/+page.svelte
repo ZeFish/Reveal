@@ -547,6 +547,7 @@
     sharpen: { step: 0.1, shiftStep: 0.5 },
   };
   let showClipping = $state(false);
+  let showCaption = $state(false);
   let caption = $state("");
   /** @type {string[]} */
   let tags = $state([]);
@@ -1047,6 +1048,15 @@
           }
           sendDevStateToPanel();
         });
+        listen("dev-panel-toggle-caption", (e) => {
+          const payload = e.payload || {};
+          if (typeof payload.showCaption === "boolean") {
+            showCaption = payload.showCaption;
+          } else {
+            showCaption = !showCaption;
+          }
+          sendDevStateToPanel();
+        });
 
         // The Preset palette asks the main window to apply a saved recipe. The
         // main window owns the selection, so it resolves the target set here:
@@ -1298,6 +1308,7 @@
         caption: caption,
         tags: tags,
         showClipping: showClipping,
+        showCaption: showCaption,
         photoScale: developPhotoPercent,
         // Typed arrays don't survive Tauri's JSON emit as themselves — plain
         // arrays round-trip fine and index identically in Histogram.svelte.
@@ -3772,6 +3783,10 @@
     showClipping = !showClipping;
   }
 
+  function dockedToggleCaptionOverlay() {
+    showCaption = !showCaption;
+  }
+
   function dockedHidePanel() {
     layouts.dev.devPanel = false;
     saveLayouts();
@@ -4398,6 +4413,8 @@
       imgUrl={imgUrl ?? undefined}
       {useCanvas}
       {showClipping}
+      {caption}
+      {showCaption}
       {recipe}
       {renderAspect}
       bind:canvasEl={canvasEl}
@@ -4641,6 +4658,8 @@
         bind:photoScale={developPhotoPercent}
         {showClipping}
         toggleClipping={dockedToggleClipping}
+        {showCaption}
+        toggleCaptionOverlay={dockedToggleCaptionOverlay}
         edited={dockedEdited}
         {resetOne}
         {addLutLayer}

@@ -6,6 +6,8 @@
     imgUrl = "",
     useCanvas = false,
     showClipping = false,
+    caption = "",
+    showCaption = false,
     canvasEl = $bindable(null),
     imgFailed = $bindable(false),
     // {r,g,b,luma: Uint32Array(256)} bin counts for the currently displayed
@@ -27,6 +29,19 @@
     onPhotoPointerMove = () => {},
     onPhotoPointerUp = () => {},
   } = $props();
+
+  // Minimal markdown-to-HTML for the caption overlay — just bold/italic, the
+  // two the InfoBlock toolbar writes. Escapes first since this is
+  // `{@html}`-rendered; the caption is the photographer's own text, but the
+  // escape is cheap insurance against `<`/`>` in it rendering as markup.
+  let captionHtml = $derived(
+    caption
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/\*(.+?)\*/g, "<em>$1</em>")
+  );
 
   let frameCap = $derived(
     zoomMode === "frame"
@@ -537,6 +552,12 @@
     </div>
   {/if}
 
+  {#if showCaption && caption.trim() && !imgFailed}
+    <div class="caption-overlay" style={matStyle}>
+      <div class="caption-bar">{@html captionHtml}</div>
+    </div>
+  {/if}
+
   {#if isCropping && !imgFailed}
     <div
       class="crop-overlay-container photo-mat"
@@ -830,6 +851,32 @@
   }
   .legend-item.blue {
     color: #0a84ff;
+  }
+
+  /* Sized/positioned exactly like the img/canvas it overlays — same
+     max-width/max-height/aspect-ratio/transform (matStyle) — but with none
+     of .photo-mat's own chrome (border, shadow, background), just a flex
+     box to pin the caption bar to ITS bottom edge, not the viewport's. */
+  .caption-overlay {
+    position: absolute;
+    pointer-events: none;
+    z-index: 6;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+  }
+  .caption-bar {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 16px 20px 14px;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0));
+    color: #fff;
+    font-family: var(--font-text, serif);
+    font-size: 15px;
+    line-height: 1.45;
+    text-align: center;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+    white-space: pre-wrap;
   }
 
   .photo-fallback {
