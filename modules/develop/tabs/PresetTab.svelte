@@ -1,18 +1,64 @@
 <script>
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import { listen, emit } from "@tauri-apps/api/event";
   import { invoke } from "@tauri-apps/api/core";
   import { isTauri } from "$lib/api.js";
   import Icon from "$lib/components/Icon.svelte";
 
   /** @typedef {{ id: string, label: string }} EngineInfo */
-  let { recipe = $bindable(), /** @type {EngineInfo[]} */ engines = [] } = $props();
+  let {
+    recipe = $bindable(),
+    /** @type {EngineInfo[]} */
+    engines = [],
+    photoPath = null,
+  } = $props();
 
   /** @param {string | undefined} id */
   function engineLabel(id) {
     if (!id) return null;
     return engines.find((e) => e.id === id)?.label ?? id;
   }
+
+  // Gallery thumbnails — the current photo re-developed through each
+  // preset's own recipe (the same `develop_preview` command the main
+  // canvas uses), so what you see is exactly what applying it would give
+  // you, not a generic swatch. Small max_px (Rust caches the render per
+  // exact recipe hash, so revisiting this tab or reopening the same photo
+  // is a cache hit, not a re-render). Keyed by photo+name rather than
+  // wiped on every `presets` refresh, so saving/deleting one preset
+  // doesn't throw away everyone else's already-rendered thumbnail.
+  const THUMB_PX = 160;
+  /** @type {Map<string, string>} `${path}::${name}` -> blob url */
+  let thumbCache = $state(new Map());
+  /** @param {string} path @param {string} name */
+  const thumbKey = (path, name) => `${path}::${name}`;
+
+  /** @param {string | null} path @param {Array<{name: string, recipe: any}>} list */
+  async function ensureThumbnails(path, list) {
+    if (!path || !isTauri) return;
+    for (const entry of list) {
+      const key = thumbKey(path, entry.name);
+      if (thumbCache.has(key)) continue;
+      try {
+        const bytes = await invoke("develop_preview", { path, recipe: entry.recipe, maxPx: THUMB_PX });
+        // A newer photo or a deleted preset may have superseded this by
+        // the time the render comes back — still cache it (harmless, and
+        // cheap if revisited), just don't bother if it's now stale.
+        if (path !== photoPath) continue;
+        thumbCache.set(key, URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" })));
+      } catch (_) {
+        // leave uncached — the card falls back to its skeleton placeholder
+      }
+    }
+  }
+
+  $effect(() => {
+    ensureThumbnails(photoPath, presets);
+  });
+
+  onDestroy(() => {
+    for (const url of thumbCache.values()) URL.revokeObjectURL(url);
+  });
 
   /** @type {Array<{ name: string, recipe: any }>} */
   let presets = $state([]);
@@ -168,35 +214,65 @@
         <p class="empty-text">No presets yet — save the current settings above to start a library.</p>
       </div>
     {:else}
-      {#each presets as entry (entry.name)}
-        <div class="preset-row">
-          <button
-            class="apply"
+      <div class="preset-grid">
+        {#each presets as entry (entry.name)}
+          {@const thumb = photoPath ? thumbCache.get(thumbKey(photoPath, entry.name)) : null}
+          <div
+            class="preset-card"
+            role="button"
+            tabindex="0"
             title="Apply this preset — click: current photo, ⌥-click: whole selection"
             onclick={(e) => applyPreset(entry, e)}
+            onkeydown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                applyPreset(entry);
+              }
+            }}
             onmouseenter={() => previewPreset(entry)}
             onmouseleave={clearPresetPreview}
           >
-            <span class="preset-name">{entry.name}</span>
-            {#if engineLabel(entry.recipe?.engine)}
-              <span class="engine-badge">{engineLabel(entry.recipe?.engine)}</span>
-            {/if}
-          </button>
-          <button
-            class="ghost icon default-btn"
-            class:active={defaultPresetName === entry.name}
-            title={defaultPresetName === entry.name
-              ? "Default preset on import — click to unset"
-              : "Set as default preset on import"}
-            onclick={() => toggleDefaultForImport(entry)}
-          >
-            <Icon name="star" size="11px" />
-          </button>
-          <button class="ghost icon delete-btn" title="Delete" onclick={() => deletePreset(entry)}>
-            <Icon name="x" size="10px" />
-          </button>
-        </div>
-      {/each}
+            <div class="thumb-wrap">
+              {#if thumb}
+                <img class="thumb" src={thumb} alt={entry.name} />
+              {:else}
+                <div class="thumb-skeleton"></div>
+              {/if}
+              <div class="card-actions">
+                <button
+                  class="ghost icon default-btn"
+                  class:active={defaultPresetName === entry.name}
+                  title={defaultPresetName === entry.name
+                    ? "Default preset on import — click to unset"
+                    : "Set as default preset on import"}
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    toggleDefaultForImport(entry);
+                  }}
+                >
+                  <Icon name="star" size="10px" />
+                </button>
+                <button
+                  class="ghost icon delete-btn"
+                  title="Delete"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    deletePreset(entry);
+                  }}
+                >
+                  <Icon name="x" size="9px" />
+                </button>
+              </div>
+            </div>
+            <div class="card-meta">
+              <span class="preset-name">{entry.name}</span>
+              {#if engineLabel(entry.recipe?.engine)}
+                <span class="engine-badge">{engineLabel(entry.recipe?.engine)}</span>
+              {/if}
+            </div>
+          </div>
+        {/each}
+      </div>
     {/if}
   </section>
 </div>
@@ -300,82 +376,115 @@
     text-align: center;
     margin: 0;
   }
-  .preset-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
+  /* Gallery grid — two columns of square-ish thumbnail cards, the current
+     photo re-developed through each preset (see ensureThumbnails above).
+     Star/delete ride as a top-right overlay on the thumbnail itself rather
+     than living in their own row, since a card's job now IS the image. */
+  .preset-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
   }
-  .apply {
+  .preset-card {
     all: unset;
     cursor: pointer;
-    flex: 1;
-    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    border-radius: var(--radius);
+    transition: transform var(--duration-fast) var(--ease-soft);
+  }
+  .preset-card:hover {
+    transform: translateY(-1px);
+  }
+  .thumb-wrap {
+    position: relative;
+    aspect-ratio: 1;
+    border-radius: var(--radius);
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+    background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    transition: border-color var(--duration-fast) var(--ease-soft), box-shadow var(--duration-fast) var(--ease-soft);
+  }
+  .preset-card:hover .thumb-wrap {
+    border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  }
+  .thumb {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .thumb-skeleton {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+      100deg,
+      color-mix(in srgb, var(--color-foreground) 5%, transparent) 30%,
+      color-mix(in srgb, var(--color-foreground) 10%, transparent) 50%,
+      color-mix(in srgb, var(--color-foreground) 5%, transparent) 70%
+    );
+    background-size: 200% 100%;
+    animation: preset-thumb-pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes preset-thumb-pulse {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+  .card-actions {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    display: flex;
+    gap: 3px;
+    opacity: 0;
+    transition: opacity var(--duration-fast) var(--ease-soft);
+  }
+  .preset-card:hover .card-actions,
+  .preset-card:focus-visible .card-actions,
+  .card-actions:has(.default-btn.active) {
+    opacity: 1;
+  }
+  .card-actions button.icon {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(4px);
+    color: rgba(255, 255, 255, 0.85);
+  }
+  .card-actions button.icon:hover {
+    background: rgba(0, 0, 0, 0.75);
+    color: #fff;
+  }
+  .default-btn.active {
+    color: var(--color-accent);
+  }
+  .card-meta {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
-    font-family: var(--font-text, sans-serif);
-    font-size: 11px;
-    padding: 8px 11px;
-    border-radius: var(--radius);
-    border: 1px solid var(--color-border);
-    background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
-    color: color-mix(in srgb, var(--color-foreground) 85%, transparent);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-    transition: color var(--duration-fast) var(--ease-soft), border-color var(--duration-fast) var(--ease-soft), background var(--duration-fast) var(--ease-soft), box-shadow var(--duration-fast) var(--ease-soft), transform var(--duration-fast) var(--ease-soft);
-  }
-  .apply:hover {
-    color: var(--color-foreground);
-    border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
-    background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
-    transform: translateY(-0.5px);
+    gap: 6px;
+    padding: 0 1px;
   }
   .preset-name {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-family: var(--font-text, sans-serif);
+    font-size: 10.5px;
+    color: color-mix(in srgb, var(--color-foreground) 85%, transparent);
   }
   .engine-badge {
     flex-shrink: 0;
     font-family: var(--font-header, sans-serif);
-    font-size: 8.5px;
+    font-size: 8px;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-    background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
-    padding: 2px 6px;
-    border-radius: 999px;
-  }
-  .preset-row button.icon {
-    width: 26px;
-    height: 26px;
-    padding: 0;
-    border-radius: var(--radius-sm, 6px);
-  }
-  .default-btn {
-    flex-shrink: 0;
-    color: color-mix(in srgb, var(--color-foreground) 35%, transparent);
-    transition: color var(--duration-fast) var(--ease-soft), background var(--duration-fast) var(--ease-soft);
-  }
-  .default-btn:hover {
-    color: var(--color-foreground);
-    background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
-  }
-  .default-btn.active {
-    color: var(--color-accent);
-  }
-  .default-btn.active:hover {
-    color: var(--color-accent);
-    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
-  }
-  .delete-btn {
-    color: color-mix(in srgb, var(--color-foreground) 30%, transparent);
-    transition: color var(--duration-fast) var(--ease-soft), background var(--duration-fast) var(--ease-soft);
-  }
-  .delete-btn:hover {
-    color: #ef4444;
-    background: color-mix(in srgb, #ef4444 12%, transparent);
+    color: color-mix(in srgb, var(--color-foreground) 50%, transparent);
   }
 </style>

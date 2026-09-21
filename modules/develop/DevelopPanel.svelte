@@ -222,7 +222,7 @@
     {:else if activeTab === 'crop'}
       <CropTab bind:recipe {edited} />
     {:else if activeTab === 'preset'}
-      <PresetTab bind:recipe {engines} />
+      <PresetTab bind:recipe {engines} {photoPath} />
     {:else if activeTab === 'info'}
       <InfoBlock
         {picked}
