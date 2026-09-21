@@ -525,6 +525,12 @@
      edge instead. */
   .toggle-wrap input {
     margin-inline-end: 0;
+    /* Standard's own --switch-height (_standard-11-forms.scss) is sized for
+       normal-density forms — taller than this panel's 10px text/20px rows
+       call for. Width, thumb size and travel all derive from this one
+       token, so overriding it here is enough to shrink the whole switch to
+       fit the row's own line-height instead of overflowing it. */
+    --switch-height: 11px;
   }
 
   /* Sizing only from here down — range-slider/select/button identity
