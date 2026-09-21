@@ -44,10 +44,15 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    /* Matches the sidebar nav's own --color-surface-high exactly (not
-       --color-surface, which is one step lighter) — anything less than an
-       exact match reads as a seam once the canvas is large and empty. */
-    background: var(--theme-bg, var(--color-surface-high));
+    /* Two straight guesses at a matching surface token (--color-surface,
+       then --color-surface-high) each painted a visibly different flat
+       color than the sidebar nav — something about how this wrapper
+       inherits those tokens doesn't match nav's own computed value.
+       CullView's canvas has no seam against the nav at all because it
+       paints nothing of its own and just shows .cull's real background
+       through — mirroring that (transparent when unthemed, same as
+       StoryComposer's own .composer below it) instead of guessing again. */
+    background: var(--theme-bg, transparent);
     transition: background 0.3s var(--ease-standard);
   }
 </style>
