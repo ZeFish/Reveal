@@ -546,6 +546,23 @@
   let developDefaults = $state(null);
   let devPublishing = $state(false);
   let devPublishStatus = $state("");
+  // Undo/redo for the develop recipe — scoped to whichever photo is
+  // currently open (reset on openPhoto, not a global/cross-session history).
+  // Each *settled* edit (edited(false) — every slider already distinguishes
+  // this from the continuous edited(true) fired while dragging) pushes the
+  // recipe as it was BEFORE that edit; undo/redo just replay the same
+  // edited() commit path a normal change would, so render + disk save
+  // happen for free.
+  /** @type {Recipe[]} */
+  let recipeUndoStack = $state([]);
+  /** @type {Recipe[]} */
+  let recipeRedoStack = $state([]);
+  /** @type {Recipe | null} */
+  let lastCommittedRecipe = null;
+  let restoringRecipeHistory = false;
+  const MAX_RECIPE_UNDO_STEPS = 50;
+  /** @param {Recipe | null} r */
+  const snapshotRecipe = (r) => (r ? JSON.parse(JSON.stringify(r)) : null);
   /** @type {Set<string>} */ let storySet = $state(new Set());
   /** @type {string | null} */ let liveUrl = $state(null);
   let storyContent = $state("");
@@ -3194,6 +3211,15 @@
       return;
     }
 
+    // ⌘Z — undo the last settled develop edit; ⌘⇧Z — redo. Develop only,
+    // scoped to whichever photo is open (see edited()/openPhoto).
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+      if (e.shiftKey) redoRecipeEdit();
+      else undoRecipeEdit();
+      e.preventDefault();
+      return;
+    }
+
     if (e.key.toLowerCase() === "f") {
       toggleFullscreen();
       e.preventDefault();
@@ -3429,6 +3455,11 @@
         ...defaults,
         ...(sidecar?.engine_settings ?? {}),
       };
+      // A new photo starts its own undo history — edits to the last one
+      // don't bleed into this one, and vice versa.
+      recipeUndoStack = [];
+      recipeRedoStack = [];
+      lastCommittedRecipe = snapshotRecipe(recipe);
       if (developEngine) {
         scheduleRender(PREVIEW_PX);
       } else {
@@ -3552,6 +3583,19 @@
     if (recipe) {
       recipe.engine = developEngine; // developEngine holds the Rust engine id
     }
+    // Undo history only advances on a settled commit — a slider dragging
+    // through 40 intermediate values (`live: true`) is ONE undo step, not
+    // 40. `restoringRecipeHistory` skips this while undo/redo itself is
+    // calling edited() to apply a restored snapshot, so restoring never
+    // re-pushes its own predecessor.
+    if (!live && !restoringRecipeHistory && recipe) {
+      if (lastCommittedRecipe) {
+        recipeUndoStack.push(lastCommittedRecipe);
+        if (recipeUndoStack.length > MAX_RECIPE_UNDO_STEPS) recipeUndoStack.shift();
+      }
+      recipeRedoStack = [];
+      lastCommittedRecipe = snapshotRecipe(recipe);
+    }
     scheduleRender(live ? DRAG_PX : PREVIEW_PX);
     clearTimeout(saveTimer);
     const path = photoPath;
@@ -3560,6 +3604,30 @@
       if (path && snapshot) invoke("save_recipe", { path, recipe: snapshot })
         .catch((error) => { appMessage = `Could not save development settings: ${error}`; });
     }, 300);
+  }
+
+  function undoRecipeEdit() {
+    if (!recipeUndoStack.length || !recipe || currentMode !== "dev") return;
+    const previous = /** @type {Recipe} */ (recipeUndoStack.pop());
+    recipeRedoStack.push(snapshotRecipe(recipe));
+    restoringRecipeHistory = true;
+    recipe = previous;
+    developEngine = previous.engine === "rapid" ? "rapid" : (previous.engine ? "spektra" : developEngine);
+    lastCommittedRecipe = snapshotRecipe(recipe);
+    edited(false);
+    restoringRecipeHistory = false;
+  }
+
+  function redoRecipeEdit() {
+    if (!recipeRedoStack.length || !recipe || currentMode !== "dev") return;
+    const next = /** @type {Recipe} */ (recipeRedoStack.pop());
+    recipeUndoStack.push(snapshotRecipe(recipe));
+    restoringRecipeHistory = true;
+    recipe = next;
+    developEngine = next.engine === "rapid" ? "rapid" : (next.engine ? "spektra" : developEngine);
+    lastCommittedRecipe = snapshotRecipe(recipe);
+    edited(false);
+    restoringRecipeHistory = false;
   }
 
   async function clearDevelopment() {
