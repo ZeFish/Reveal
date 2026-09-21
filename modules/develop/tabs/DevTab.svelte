@@ -127,7 +127,7 @@
     width: 90px;
     flex-shrink: 0;
     white-space: nowrap;
-    text-align: right;
+    text-align: left;
   }
   .frow input[type="range"] {
     flex: 1;

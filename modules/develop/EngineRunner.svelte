@@ -439,7 +439,7 @@
   }
   /* Indent the LABEL only (10px margin eaten from its own 90px box, not
      added on top) — padding-left on the whole row shifted the slider/value
-     columns too, breaking the right-aligned edge every other row lines up
+     columns too, breaking the shared column every other row's slider starts
      on (confirmed live: Coupleurs DIR's sub-rows started 10px right of
      everything else). */
   .frow.sub-param .frow-label {
@@ -451,17 +451,18 @@
     pointer-events: none;
     filter: grayscale(1);
   }
-  /* No overflow:hidden/ellipsis here on purpose — text-overflow always
-     truncates from the text's logical end (the right, for this LTR right-
-     aligned label), never respecting text-align, so a label longer than the
-     90px box got clipped from the WRONG side and visually crept past the
-     other labels' shared right edge instead of lining up with them. Letting
-     it overflow left instead (nothing else occupies that space) keeps every
-     label's right edge — where it meets the slider — pixel-identical. */
+  /* Left-aligned on purpose (Francis: right-align read as "center" once
+     label lengths varied — a ragged right edge next to a fixed left one
+     reads as centered, a ragged left edge next to a shared left one
+     doesn't). Left-align also means default ellipsis truncation is correct
+     again — it always clips from the text's logical end, which is the
+     right for LTR, i.e. exactly where left-aligned text would want it. */
   .frow-label {
     width: 90px;
     flex-shrink: 0;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     font-family: var(--font-header, sans-serif);
     font-size: 10px;
     font-weight: 500;
@@ -470,7 +471,7 @@
     color: color-mix(in srgb, var(--color-foreground) 60%, transparent);
     transition: color var(--duration-fast);
     cursor: default;
-    text-align: right;
+    text-align: left;
   }
   .reset-label {
     -webkit-appearance: none;
@@ -481,7 +482,7 @@
     padding: 0;
     outline: none;
     box-shadow: none;
-    text-align: right;
+    text-align: left;
   }
   .reset-label:focus-visible {
     outline: 2px solid var(--color-accent);
