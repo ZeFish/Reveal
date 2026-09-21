@@ -531,6 +531,12 @@
        token, so overriding it here is enough to shrink the whole switch to
        fit the row's own line-height instead of overflowing it. */
     --switch-height: 11px;
+    /* --switch-padding (the thumb inset) is a FIXED 2px in the framework,
+       not derived from --switch-height — at the default ~16px height that's
+       a 75%-of-track thumb, but shrunk to 11px with the same fixed 2px it
+       drops to ~64%, visibly undersized. Scaling it down alongside the
+       height here restores the framework's own intended proportion. */
+    --switch-padding: 1.5px;
   }
 
   /* Sizing only from here down — range-slider/select/button identity
