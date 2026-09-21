@@ -290,7 +290,7 @@
           <div class="row-gap-composer" role="presentation" onclick={(e) => e.stopPropagation()}>
             <textarea
               rows="1"
-              placeholder="Ajouter un paragraphe…"
+              placeholder="Add a paragraph…"
               bind:value={draftText}
               onkeydown={onComposerKey}
               onblur={() => (draftText.trim() ? submitComposer() : closeComposer())}

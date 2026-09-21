@@ -675,7 +675,7 @@
                     <Icon name="rows" size="11px" />
                   </button>
                 {/if}
-                <button class="cell-remove" onclick={() => remove(cell.block.id)} title="Retirer de l'histoire">
+                <button class="cell-remove" onclick={() => remove(cell.block.id)} title="Remove from story">
                   <Icon name="x" size="10px" />
                 </button>
               </div>
@@ -728,7 +728,7 @@
     {#if blocks.length}
       <button class="add-prose" onclick={addProse}>
         <Icon name="plus" size="12px" />
-        <span>Ajouter un paragraphe</span>
+        <span>Add a paragraph</span>
       </button>
     {/if}
   </div>

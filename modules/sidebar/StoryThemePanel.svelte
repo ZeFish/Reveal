@@ -195,7 +195,7 @@
       aria-expanded={customizeOpen}
     >
       <Icon name="sliders" size="11px" />
-      <span>Personnaliser les couleurs & polices</span>
+      <span>Customize colors & fonts</span>
       <span class="toggle-arrow" class:open={customizeOpen}>
         <Icon name="caret-right" size="9px" />
       </span>
@@ -203,9 +203,9 @@
 
     {#if customizeOpen}
       <div class="customize-fields">
-        <!-- Fond color -->
+        <!-- Background color -->
         <div class="field-row">
-          <span class="field-label">FOND</span>
+          <span class="field-label">BACKGROUND</span>
           <div class="color-picker-badge">
             <label class="swatch-button" style="background: {previewBg};">
               <input
@@ -265,9 +265,9 @@
           </div>
         </div>
 
-        <!-- Font Titres -->
+        <!-- Header font -->
         <div class="field-row">
-          <span class="field-label">TITRES</span>
+          <span class="field-label">HEADERS</span>
           <div class="custom-select-wrap">
             <select
               value={fontHeader ?? ""}
@@ -284,9 +284,9 @@
           </div>
         </div>
 
-        <!-- Font Texte -->
+        <!-- Body font -->
         <div class="field-row">
-          <span class="field-label">TEXTE</span>
+          <span class="field-label">BODY</span>
           <div class="custom-select-wrap">
             <select
               value={fontText ?? ""}
