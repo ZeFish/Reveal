@@ -4835,9 +4835,16 @@
      surface/border scale from the SAME --color-background/--color-foreground
      the framework's own dark-mode block computes them from
      (packages/styles/_standard-02-color.scss), just off our per-folder
-     override instead of the theme default. Gated behind :global(.themed) so
-     an unthemed folder's surfaces stay byte-identical to before this existed
-     — only folders with an actual story-theme note shift. */
+     override instead of the theme default. Gated behind .themed so an
+     unthemed folder's surfaces stay byte-identical to before this existed —
+     only folders with an actual story-theme note shift.
+     `background`/`color` are painted here explicitly: nothing under .cull/
+     .app actually draws with --color-background itself (only the outer
+     `html` does, per _standard-07-base.scss) — .cull/.app were always
+     transparent, relying on html's single background layer showing through.
+     Redefining the CSS VARIABLE alone on a transparent descendant changes
+     nothing visible; only html (an ANCESTOR, unreachable from here since
+     custom properties don't inherit upward) painted with it. */
   .cull.themed,
   .app.themed {
     --color-surface: color-mix(in srgb, var(--color-foreground) 6%, var(--color-background));
@@ -4846,6 +4853,8 @@
     --color-surface-lowest: color-mix(in srgb, black 7%, var(--color-surface-low));
     --color-surface-high: color-mix(in srgb, var(--color-foreground) 3%, var(--color-surface));
     --color-surface-highest: color-mix(in srgb, var(--color-foreground) 3%, var(--color-surface-high));
+    background: var(--color-background);
+    color: var(--color-foreground);
   }
   .window-controls-zone {
     position: fixed;
