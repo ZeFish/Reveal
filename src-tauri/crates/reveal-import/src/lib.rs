@@ -107,10 +107,32 @@ pub fn collect_raws(root: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// A source file's resolved destination folder, precomputed once so
+/// `import` can order the queue before doing any copying.
+struct Planned<'a> {
+    src: &'a PathBuf,
+    name: String,
+    dest_dir: PathBuf,
+    /// Cheap existence stat only — the real duplicate-vs-collision call
+    /// (size, then SHA-256) still happens in `resolve_dest_lazy`. This just
+    /// tells the scheduler which files are certainly new.
+    dest_exists: bool,
+}
+
 /// Copy `sources` into `<archive>/%Y/%Y-%m-%d/` by capture date (EXIF via
 /// libraw; file mtime as fallback). `cancel` is checked between files — an
 /// in-flight copy always finishes its temp+rename, so a stop never leaves a
 /// torn file in the archive.
+///
+/// Files are processed certainly-new-first (destination doesn't exist yet),
+/// then already-there ones (which need the slower size+SHA-256 duplicate
+/// check) last. `collect_raws` sorts by filename, so on a card with
+/// sequential frame numbers the freshest shot sorts LAST — on a big
+/// re-import of an already-largely-archived card, that meant today's new
+/// frame sat behind a long queue of slow duplicate-hash checks on old
+/// files, and never got copied if the run was stopped or closed before
+/// reaching the end. Reordering costs nothing extra: the destination stat
+/// this needs is the same one `resolve_dest_lazy` would do first anyway.
 pub fn import(
     sources: &[PathBuf],
     archive: &Path,
@@ -129,33 +151,44 @@ pub fn import(
         cancelled: false,
     };
 
-    for (i, src) in sources.iter().enumerate() {
+    let mut planned: Vec<Planned> = sources
+        .iter()
+        .map(|src| {
+            let name = src
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let ts = reveal_decode::capture_timestamp(src)
+                .or_else(|| {
+                    std::fs::metadata(src)
+                        .ok()
+                        .and_then(|m| m.modified().ok())
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map(|d| d.as_secs() as i64)
+                })
+                .unwrap_or(0);
+            let day = chrono::Local
+                .timestamp_opt(ts, 0)
+                .single()
+                .unwrap_or_else(|| chrono::Local.timestamp_opt(0, 0).single().unwrap());
+            let dest_dir = archive
+                .join(day.format("%Y").to_string())
+                .join(day.format("%Y-%m-%d").to_string());
+            let dest_exists = dest_dir.join(&name).exists();
+            Planned { src, name, dest_dir, dest_exists }
+        })
+        .collect();
+    planned.sort_by_key(|p| p.dest_exists);
+
+    for (i, plan) in planned.iter().enumerate() {
         if cancel.load(std::sync::atomic::Ordering::Relaxed) {
             stats.cancelled = true;
             break;
         }
-        let name = src
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        progress(i, total, &name, &src.to_string_lossy(), "", "");
-
-        let ts = reveal_decode::capture_timestamp(src)
-            .or_else(|| {
-                std::fs::metadata(src)
-                    .ok()
-                    .and_then(|m| m.modified().ok())
-                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                    .map(|d| d.as_secs() as i64)
-            })
-            .unwrap_or(0);
-        let day = chrono::Local
-            .timestamp_opt(ts, 0)
-            .single()
-            .unwrap_or_else(|| chrono::Local.timestamp_opt(0, 0).single().unwrap());
-        let dest_dir = archive
-            .join(day.format("%Y").to_string())
-            .join(day.format("%Y-%m-%d").to_string());
+        let src = plan.src;
+        let name = &plan.name;
+        let dest_dir = &plan.dest_dir;
+        progress(i, total, name, &src.to_string_lossy(), "", "");
 
         let src_size = std::fs::metadata(src).map(|m| m.len()).unwrap_or(0);
 
@@ -315,5 +348,142 @@ fn split_ext(name: &str) -> (&str, &str) {
         Some(0) => (name, ""),
         Some(i) => (&name[..i], &name[i + 1..]),
         None => (name, ""),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    /// A fresh scratch dir under the system temp dir, removed on drop.
+    struct TempDir(PathBuf);
+    impl TempDir {
+        fn new(label: &str) -> Self {
+            static COUNTER: AtomicUsize = AtomicUsize::new(0);
+            let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+            let dir = std::env::temp_dir().join(format!(
+                "reveal-import-test-{label}-{}-{n}",
+                std::process::id()
+            ));
+            std::fs::create_dir_all(&dir).unwrap();
+            Self(dir)
+        }
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// A file whose only metadata `import` can read is its mtime
+    /// (`capture_timestamp` fails on non-RAW bytes), pinned to a specific
+    /// day so every test file lands in the same dated folder regardless of
+    /// when the test happens to run.
+    fn write_source(dir: &Path, name: &str, contents: &[u8]) -> PathBuf {
+        let path = dir.join(name);
+        std::fs::write(&path, contents).unwrap();
+        path
+    }
+
+    #[test]
+    fn new_files_are_processed_before_existing_duplicates() {
+        let card = TempDir::new("card");
+        let archive = TempDir::new("archive");
+
+        // Alphabetically, "a_already_imported.raf" sorts before
+        // "z_brand_new.raf" — collect_raws would hand `import` exactly this
+        // order, mimicking a card where the already-archived frame has a
+        // lower sequence number than today's freshly-shot one.
+        let dup_src = write_source(card.path(), "a_already_imported.raf", b"same bytes");
+        let new_src = write_source(card.path(), "z_brand_new.raf", b"never seen before");
+
+        // Pre-seed the archive with a file byte-identical to dup_src, at the
+        // dated folder both files' mtime-derived fallback timestamp resolves
+        // to (both were just written, so both fall under "today").
+        let today = chrono::Local::now();
+        let dest_dir = archive
+            .path()
+            .join(today.format("%Y").to_string())
+            .join(today.format("%Y-%m-%d").to_string());
+        std::fs::create_dir_all(&dest_dir).unwrap();
+        std::fs::write(dest_dir.join("a_already_imported.raf"), b"same bytes").unwrap();
+
+        let sources = vec![dup_src, new_src];
+        let cancel = AtomicBool::new(false);
+        let mut order: Vec<String> = Vec::new();
+        let stats = import(&sources, archive.path(), &cancel, &mut |_done, _total, current, _src, dest, _dest_dir| {
+            if !dest.is_empty() {
+                order.push(current.to_string());
+            }
+        })
+        .unwrap();
+
+        assert_eq!(stats.copied, 1, "only the brand-new file should copy");
+        assert_eq!(stats.skipped, 1, "the byte-identical file should be recognized as already there");
+        assert_eq!(
+            order,
+            vec!["z_brand_new.raf"],
+            "the new file must be the one that actually copies, despite sorting last alphabetically"
+        );
+        assert!(dest_dir.join("z_brand_new.raf").exists());
+    }
+
+    #[test]
+    fn stopping_mid_import_still_lands_the_new_file_first() {
+        // The scenario the bug report described: a long queue of slow
+        // duplicate checks ahead of today's shot in filename order. If the
+        // run is stopped (or the app quits) before reaching the end, the
+        // new file must already be safely copied — not last in line.
+        let card = TempDir::new("card2");
+        let archive = TempDir::new("archive2");
+
+        let mut sources = Vec::new();
+        for i in 0..5 {
+            sources.push(write_source(
+                card.path(),
+                &format!("a_old_{i}.raf"),
+                format!("old bytes {i}").as_bytes(),
+            ));
+        }
+        let new_src = write_source(card.path(), "z_new.raf", b"today's shot");
+        sources.push(new_src);
+
+        let today = chrono::Local::now();
+        let dest_dir = archive
+            .path()
+            .join(today.format("%Y").to_string())
+            .join(today.format("%Y-%m-%d").to_string());
+        std::fs::create_dir_all(&dest_dir).unwrap();
+        for i in 0..5 {
+            std::fs::write(
+                dest_dir.join(format!("a_old_{i}.raf")),
+                format!("old bytes {i}").as_bytes(),
+            )
+            .unwrap();
+        }
+
+        // Trip the cancel flag as soon as the FIRST file finishes — with the
+        // old filename-ascending order that first file would have been
+        // "a_old_0.raf" (a slow duplicate check), leaving z_new.raf
+        // uncopied. With new-first scheduling it must be z_new.raf itself.
+        let cancel = AtomicBool::new(false);
+        let mut copied_first: Option<String> = None;
+        {
+            let mut report = |_d: usize, _t: usize, current: &str, _s: &str, dest: &str, _dd: &str| {
+                if !dest.is_empty() && copied_first.is_none() {
+                    copied_first = Some(current.to_string());
+                    cancel.store(true, Ordering::Relaxed);
+                }
+            };
+            let stats = import(&sources, archive.path(), &cancel, &mut report).unwrap();
+            assert!(stats.cancelled);
+            assert_eq!(stats.copied, 1);
+        }
+        assert_eq!(copied_first.as_deref(), Some("z_new.raf"));
+        assert!(dest_dir.join("z_new.raf").exists());
     }
 }
