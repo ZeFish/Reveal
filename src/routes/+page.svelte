@@ -3970,15 +3970,6 @@
           onRenameDir={renameDir}
           onCreateFolder={createFolder}
           onMoveDir={moveDir}
-          {pinnedStories}
-          {recentStories}
-          onDevelopStory={exportLocalStory}
-          onPublishStory={publishStory}
-          onExportLocalStory={exportLocalStory}
-          onSetPinned={setStoryPinned}
-          onReorderPinned={reorderPinned}
-          publishing={!!progress}
-          publishStatus={status}
         />
       {/if}
       {#if sidebarPeek && !sidebarVisible}
@@ -4036,16 +4027,6 @@
             onRenameDir={renameDir}
             onCreateFolder={createFolder}
             onMoveDir={moveDir}
-            {pinnedStories}
-            {recentStories}
-            onDevelopStory={exportLocalStory}
-            onPublishStory={publishStory}
-            onExportLocalStory={exportLocalStory}
-            onSetPinned={setStoryPinned}
-            onReorderPinned={reorderPinned}
-            publishing={!!progress}
-            publishStatus={status}
-            {gardenUrl}
           />
         </div>
       {/if}
