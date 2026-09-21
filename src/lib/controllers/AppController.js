@@ -41,7 +41,7 @@ export class AppController {
         return { action: "SWITCH_MODE", to: "cull", spaceLook: false };
       }
     } else {
-      // If we are in the grid (Preview on or off), jump to full dev mode with panel
+      // If we are in the grid (Editorial on or off), jump to full dev mode with panel
       return { action: "SWITCH_MODE", to: "dev", spaceLook: false, openDevPanel: true };
     }
   }
@@ -49,7 +49,7 @@ export class AppController {
   /**
    * G always means "show me the plain working grid" — toggling the sidebar
    * when you're already there, otherwise collapsing back to it (out of
-   * Develop, or dropping the Preview filter).
+   * Develop, or dropping the Editorial filter).
    * @param {{ previewFilter?: boolean }} args
    */
   handleG({ previewFilter = false } = {}) {
@@ -60,8 +60,8 @@ export class AppController {
   }
 
   /**
-   * S flips the Preview filter. From Develop it always lands in the grid
-   * WITH Preview on — same "S jumps to storytelling" muscle memory as the old
+   * S flips the Editorial filter. From Develop it always lands in the grid
+   * WITH Editorial on — same "S jumps to storytelling" muscle memory as the old
    * mode switch, just expressed as a filter now.
    */
   handleS() {

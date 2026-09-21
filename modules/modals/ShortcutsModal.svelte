@@ -42,7 +42,7 @@
         <div class="shortcut-row"><kbd>d</kbd> <span>Develop</span></div>
         <div class="shortcut-row"><kbd>⇧</kbd> <kbd>D</kbd> <span>Develop panel</span></div>
         <div class="shortcut-row"><kbd>z</kbd> / <kbd>⇧</kbd> <kbd>z</kbd> <span>Zoom: frame → fit → 100% (⇧ reverses)</span></div>
-        <div class="shortcut-row"><kbd>s</kbd> <span>Preview (filter on the grid)</span></div>
+        <div class="shortcut-row"><kbd>s</kbd> <span>Editorial (filter on the grid)</span></div>
         <div class="shortcut-row"><kbd>b</kbd> <span>Folder panel</span></div>
         <div class="shortcut-row"><kbd>o</kbd> <span>Focus mode</span></div>
         <div class="shortcut-row"><kbd>Esc</kbd> <span>Back to grid</span></div>

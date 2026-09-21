@@ -174,7 +174,7 @@
 
   /** @type {"cull" | "dev"} */
   let currentMode = $state("cull");
-  // Preview is a display filter on the grid, not a destination — flipping it
+  // Editorial is a display filter on the grid, not a destination — flipping it
   // never changes `currentMode`. On, the grid's WYSIWYG rendering (StoryView)
   // replaces the dense grid: same photos, same interactions, laid out and
   // filtered exactly like the published page will read.
@@ -1203,7 +1203,7 @@
   }
 
   /**
-   * Flip the Preview filter — same guards the old "story" mode had (needs a
+   * Flip the Editorial filter — same guards the old "story" mode had (needs a
    * real folder; Apple Photos albums are read-only, nothing to preview).
    * @param {boolean} [value] force a value instead of toggling
    */
@@ -1211,7 +1211,7 @@
     const next = value ?? !previewFilter;
     if (next) {
       if (applePhotosActive) {
-        appMessage = "Preview needs a filesystem folder. You can edit and export Apple Photos directly.";
+        appMessage = "Editorial needs a filesystem folder. You can edit and export Apple Photos directly.";
         return;
       }
       if (!curDir && !folder) return;
@@ -2377,7 +2377,7 @@
   }
 
   // Grid always shows filename order; the story has its own, independent
-  // order (Preview drag-and-drop). A paragraph's *position in Grid* has to
+  // order (Editorial drag-and-drop). A paragraph's *position in Grid* has to
   // come from somewhere else — so it anchors to whichever story photo it
   // trails in the FILE, and renders after THAT photo's row in Grid. Walking
   // the file once gives every paragraph's anchor; saveGridProse (below)
@@ -2974,8 +2974,8 @@
     sel = 0;
     selectOnly(0);
     if (typeof localStorage !== "undefined") {
-      // A stale "story" value from before Preview became a filter just falls
-      // through to "cull" here — the grid, with Preview off, is correct either way.
+      // A stale "story" value from before Editorial became a filter just falls
+      // through to "cull" here — the grid, with Editorial off, is correct either way.
       const savedMode = localStorage.getItem(`reveal.mode.${path}`);
       if (savedMode === "cull" || savedMode === "dev") {
         await switchMode(savedMode);
@@ -3970,6 +3970,15 @@
           onRenameDir={renameDir}
           onCreateFolder={createFolder}
           onMoveDir={moveDir}
+          {pinnedStories}
+          {recentStories}
+          onDevelopStory={exportLocalStory}
+          onPublishStory={publishStory}
+          onExportLocalStory={exportLocalStory}
+          onSetPinned={setStoryPinned}
+          onReorderPinned={reorderPinned}
+          publishing={!!progress}
+          publishStatus={status}
         />
       {/if}
       {#if sidebarPeek && !sidebarVisible}
@@ -4027,6 +4036,16 @@
             onRenameDir={renameDir}
             onCreateFolder={createFolder}
             onMoveDir={moveDir}
+            {pinnedStories}
+            {recentStories}
+            onDevelopStory={exportLocalStory}
+            onPublishStory={publishStory}
+            onExportLocalStory={exportLocalStory}
+            onSetPinned={setStoryPinned}
+            onReorderPinned={reorderPinned}
+            publishing={!!progress}
+            publishStatus={status}
+            {gardenUrl}
           />
         </div>
       {/if}

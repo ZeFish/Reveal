@@ -8,13 +8,12 @@
   // The floating sidebar — a 1:1 port of the Swift `sidebarCard` +
   // `folderBrowser` + `FolderTree` (CullView.swift / FolderTree.swift):
   // full-height elevated card, the brand cluster (traffic lights + toggles +
-  // wordmark) riding its top, FRAMES/PREVIEW tabs, "ALL LIBRARY",
+  // wordmark) riding its top, FRAMES/EDITORIAL tabs, "ALL LIBRARY",
   // one section per catalogue, the tree with status dots and story dots,
   // then LIBRARY and the Garden account row at the bottom.
-  import { invoke } from "@tauri-apps/api/core";
   import Icon from "$lib/components/Icon.svelte";
-  import gardenThemes from "$lib/garden-themes.generated.json";
-  import { storyTheme, updateStoryTheme } from "$lib/story-theme.svelte.js";
+  import StoryThemePanel from "./StoryThemePanel.svelte";
+  import StoryNotesList from "./StoryNotesList.svelte";
   import { APPLE_PHOTOS_ROOT, photoCollectionAncestors } from "./applePhotosTree.js";
 
   let {
@@ -25,11 +24,24 @@
     scanning,
     indexProgress = null, // {dirs, frames} while a scan walks the library
     // Grid is the only mode; this is a display filter on top of it — not a
-    // destination. `true` swaps the center content to the story/preview
-    // layout (StoryView, owned by +page.svelte) — the sidebar itself never
-    // swaps for it, just the Frames/Preview tab highlight below.
+    // destination. `true` swaps the folder tree for the Editorial body
+    // (theme + publish actions + notes list), same content, same
+    // interactivity.
     previewFilter = false,
     storyDirs = new Set(),
+    // Editorial body props — passed by +page.svelte. onSetPinned is
+    // (notePath, pinned), onReorderPinned is (fromIndex, toIndex) — both
+    // return promises upstream.
+    pinnedStories = [],
+    recentStories = [],
+    onDevelopStory = () => {},
+    onPublishStory = () => {},
+    onExportLocalStory = () => {},
+    onSetPinned = () => {},
+    onReorderPinned = () => {},
+    publishing = false,
+    publishStatus = null,
+    gardenUrl = null,
     focusOn = false,
     catalogContent = "",
     importDir = null, // chosen import folder (null → no accent); set via context menu
@@ -98,44 +110,6 @@
   let accountError = $state(null);
 
   const signedIn = $derived(!!garden?.signed_in);
-
-  // Folder theme — deliberately just a dropdown here (the full color/font
-  // picker lives in StoryThemePanel if that ever comes back). Options match
-  // by darkBackground/darkAccent against storyTheme, the same reactive
-  // singleton +page.svelte's own curDir effect already populates via
-  // story_load_theme — this reads it rather than loading a second time.
-  const THEMES = gardenThemes.themes;
-  const currentThemeId = $derived.by(() => {
-    const match = THEMES.find(
-      (t) =>
-        t.darkBackground?.toLowerCase() === storyTheme.darkBackground?.toLowerCase() &&
-        t.darkAccent?.toLowerCase() === storyTheme.darkAccent?.toLowerCase()
-    );
-    return match ? String(match.id) : "";
-  });
-
-  /** @param {Event & { currentTarget: HTMLSelectElement }} e */
-  async function onThemePick(e) {
-    const id = e.currentTarget.value;
-    const t = id ? THEMES.find((theme) => String(theme.id) === id) : null;
-    const tokens = {
-      darkBackground: t?.darkBackground ?? null,
-      darkForeground: null,
-      lightBackground: null,
-      lightForeground: null,
-      darkAccent: t?.darkAccent ?? null,
-      lightAccent: null,
-      fontHeader: t?.fontHeader ?? null,
-      fontText: t?.fontText ?? null,
-    };
-    updateStoryTheme({
-      darkBackground: tokens.darkBackground,
-      darkAccent: tokens.darkAccent,
-      fontHeader: tokens.fontHeader,
-      fontText: tokens.fontText,
-    });
-    if (curDir) await invoke("story_set_theme", { dir: curDir, tokens });
-  }
 
   async function submitKey() {
     if (!pastedKey.trim() || verifying) return;
@@ -592,6 +566,12 @@
     node.select();
   };
 
+  // Editorial pin toggles — typed thin wrappers over the defaulted callback
+  // props so the inline arrow params aren't implicit `any` under strict mode.
+  /** @param {string} notePath */
+  const unpinStory = (notePath) => onSetPinned(notePath, false);
+  /** @param {string} notePath */
+  const pinStory = (notePath) => onSetPinned(notePath, true);
 
 </script>
 
@@ -754,9 +734,9 @@
     <button class="wordmark" onclick={onShowShortcuts} title="Keyboard shortcuts">REVEAL</button>
   </div>
 
-  <!-- FRAMES ↔ PREVIEW — a display filter on the same grid, not a mode. Both
-       tabs call the same toggle; only Preview is guarded (nothing to preview
-       without a folder or in the read-only Apple Photos library). -->
+  <!-- FRAMES ↔ EDITORIAL — a display filter on the same grid, not a mode.
+       Both tabs call the same toggle; only Editorial is guarded (nothing to
+       compose without a folder or in the read-only Apple Photos library). -->
   <div class="tabs">
     <button class="tab" class:active={!previewFilter} onclick={() => previewFilter && onTogglePreview()}>Frames</button>
     <button
@@ -764,33 +744,12 @@
       class:active={previewFilter}
       disabled={isLibrary || applePhotos?.active}
       onclick={() => !previewFilter && onTogglePreview()}
-      title={isLibrary ? "Choose a folder to compose a story" : "Preview (S)"}
-    >Preview</button>
+      title={isLibrary ? "Choose a folder to compose a story" : "Editorial (S)"}
+    >Editorial</button>
   </div>
 
-  <!-- Folder theme — always visible, not gated behind Preview: it drives
-       Reveal's own working chrome (see +page.svelte's curDir effect) as
-       much as the exported preview, so it shouldn't hide when you're just
-       browsing. Disabled with nothing to theme (All Library, Apple Photos). -->
-  <div class="theme-row">
-    <span class="theme-row-label">Theme</span>
-    <div class="theme-select-wrap">
-      <select
-        value={currentThemeId}
-        onchange={onThemePick}
-        disabled={!curDir || isLibrary || applePhotos?.active}
-        aria-label="Folder theme"
-      >
-        <option value="">Default</option>
-        {#each THEMES as t}
-          <option value={t.id}>{t.label}</option>
-        {/each}
-      </select>
-      <Icon name="caret-down" size="9px" class="select-caret" />
-    </div>
-  </div>
-
-  <div class="tree">
+  {#if !previewFilter}
+    <div class="tree">
       <!-- The index-wide view — the base of everything. -->
       <div
         class="lib-row"
@@ -919,6 +878,66 @@
       </button>
     {/if}
     </div>
+  {:else}
+    <!-- Editorial filter body: THEME + PINNED + RECENT — port of Swift
+         `folderBrowser` STORY branch (CullView.swift:531-578). Brand cluster
+         + tabs unchanged; this only ever swaps in over the SAME grid. -->
+    <div class="story-body">
+      <details open class="theme-section">
+        <summary class="section-toggle">Theme</summary>
+        <div class="theme-inner">
+          <StoryThemePanel dir={curDir} />
+          <div class="story-actions">
+            <!-- Publish only makes sense signed into a Garden account —
+                 without that the button just leads to a network error.
+                 Develop and Export stay local, so they're always available:
+                 Reveal has to stay usable without ever connecting to the
+                 garden. -->
+            {#if signedIn}
+              <button class="publish-hero-btn" onclick={() => onPublishStory()} disabled={publishing}>
+                {#if publishing}
+                  <Icon name="arrows-clockwise" size="11px" class="spin" />
+                  <span>Publishing…</span>
+                {:else}
+                  <Icon name="arrow-square-out" size="11px" />
+                  <span>Publish to Garden</span>
+                {/if}
+              </button>
+            {/if}
+            <div class="secondary-actions">
+              <button class="action-btn secondary" onclick={() => onDevelopStory()} title="Develop every photo in the story">
+                <Icon name="sliders-horizontal" size="10px" />
+                <span>Develop</span>
+              </button>
+              <button class="action-btn secondary" onclick={() => onExportLocalStory()} disabled={publishing} title="Export the photos locally">
+                <Icon name="export" size="10px" />
+                <span>Export</span>
+              </button>
+            </div>
+          </div>
+          {#if signedIn && gardenUrl}
+            <button class="open-page-banner" onclick={() => onOpenUrl(gardenUrl)}>
+              <Icon name="check-circle" size="12px" class="banner-check" />
+              <span class="banner-text">Live on Garden</span>
+              <Icon name="arrow-square-out" size="10px" class="banner-arrow" />
+            </button>
+          {/if}
+          {#if signedIn && publishStatus}
+            <p class="publish-status">{publishStatus}</p>
+          {/if}
+        </div>
+      </details>
+      <StoryNotesList
+        pinned={pinnedStories}
+        recent={recentStories}
+        {curDir}
+        onOpen={onOpenDir}
+        onUnpin={unpinStory}
+        onPin={pinStory}
+        onReorder={onReorderPinned}
+      />
+    </div>
+  {/if}
 
   <div class="divider"></div>
 
@@ -1606,56 +1625,128 @@
     color: var(--color-accent);
   }
 
-  /* The folder-theme dropdown — always visible above the tree, never a
-     body swap. Same select chrome as the other dropdowns in this file
-     (.more-dropdown-wrap in StoryThemePanel, if that's ever consulted
-     again for the fuller picker). */
-  .theme-row {
+  /* Editorial filter body (THEME + PINNED + RECENT) — replaces the folder
+     tree + Library when previewFilter is on. */
+  .story-body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 0 14px;
+    flex: 1;
+    overflow-y: auto;
+  }
+  .theme-section > summary {
+    cursor: pointer;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    opacity: 0.5;
+    text-transform: uppercase;
+    font-weight: 500;
+    list-style: none;
+    margin-bottom: 8px;
+  }
+  .theme-section > summary::-webkit-details-marker {
+    display: none;
+  }
+  .theme-inner {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .story-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .publish-hero-btn {
+    all: unset;
+    box-sizing: border-box;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 0 14px 10px;
-  }
-  .theme-row-label {
+    justify-content: center;
+    gap: 7px;
+    width: 100%;
+    padding: 7px 12px;
     font-family: var(--font-header, sans-serif);
     font-size: 10px;
+    font-weight: 600;
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    opacity: 0.55;
-  }
-  .theme-select-wrap {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    min-width: 0;
-  }
-  .theme-select-wrap select {
-    appearance: none;
-    -webkit-appearance: none;
-    width: 100%;
-    background: var(--color-surface-high, #222);
-    color: var(--color-foreground);
-    border: 1px solid var(--color-border, rgba(255, 255, 255, 0.12));
     border-radius: var(--radius-sm, 6px);
-    padding: 3px 20px 3px 8px;
-    font-size: 10px;
     cursor: pointer;
-    outline: none;
-    font-family: inherit;
-    transition: border-color 0.15s ease;
+    background: var(--color-accent, #d6202c);
+    color: #ffffff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    transition: all 0.15s var(--ease-standard);
   }
-  .theme-select-wrap select:hover {
-    border-color: rgba(255, 255, 255, 0.25);
+  .publish-hero-btn:hover:not(:disabled) {
+    filter: brightness(1.1);
+    box-shadow: 0 4px 12px rgba(214, 32, 44, 0.35);
   }
-  .theme-select-wrap select:disabled {
-    opacity: 0.4;
+  .publish-hero-btn:disabled {
+    opacity: 0.6;
     cursor: default;
   }
-  :global(.theme-select-wrap .select-caret) {
-    position: absolute;
-    right: 7px;
-    pointer-events: none;
+  .secondary-actions {
+    display: flex;
+    gap: 6px;
+  }
+  .action-btn.secondary {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 5px 8px;
+    font-size: 9.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border-radius: var(--radius-sm, 6px);
+    cursor: pointer;
+    border: 1px solid var(--color-border, rgba(255, 255, 255, 0.12));
+    background: var(--color-surface-low, rgba(255, 255, 255, 0.04));
+    color: var(--color-foreground);
+    transition: all 0.15s ease;
+  }
+  .action-btn.secondary:hover:not(:disabled) {
+    background: var(--color-surface-high, rgba(255, 255, 255, 0.1));
+    border-color: rgba(255, 255, 255, 0.25);
+  }
+  .action-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .open-page-banner {
+    all: unset;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: color-mix(in srgb, #4caf50 12%, transparent);
+    border: 1px solid color-mix(in srgb, #4caf50 35%, transparent);
+    border-radius: var(--radius-sm, 6px);
+    cursor: pointer;
+    font-size: 10px;
+    color: #4caf50;
+    font-weight: 500;
+    transition: all 0.15s ease;
+  }
+  .open-page-banner:hover {
+    background: color-mix(in srgb, #4caf50 20%, transparent);
+    border-color: #4caf50;
+  }
+  :global(.banner-check) {
+    color: #4caf50;
+  }
+  :global(.banner-arrow) {
+    margin-left: auto;
+    opacity: 0.8;
+  }
+  .publish-status {
+    font-size: 10px;
     opacity: 0.6;
+    margin: 0;
   }
 </style>
