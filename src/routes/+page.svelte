@@ -1,5 +1,6 @@
 <script>
   import { tick, untrack } from "svelte";
+  import { thumbUrl } from "$lib/thumbUrl.js";
   import { invoke } from "@tauri-apps/api/core";
   import { listen as tauriListen, emit } from "@tauri-apps/api/event";
   import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -3221,21 +3222,22 @@
   // millisecond, while the 2048 behind it arrives from the NAS in ~55ms
   // measured. Opening now goes cache → sidecar → RAW render, three steps
   // that each replace a blurrier one, rather than one wait.
-  /** @param {string} path @param {number} [version] @param {number} [size] */
-  function thumbUrl(path, version = 0, size = 768) {
-    return `reveal://thumb?p=${encodeURIComponent(path)}&v=${version}&size=${size}`;
-  }
+
   /** The full-resolution developed sidecar, for single-photo views.
    * @param {string} path @param {number} [version] */
   function previewUrl(path, version = 0) {
     return `${thumbUrl(path, version, 2048)}&priority=1`;
   }
-  /** The grid-size copy, but for a SINGLE-photo view — it jumps the thumb
-   * queue, because it is the image the photographer is waiting on rather
-   * than one cell among a hundred.
+  /** The grid-size copy for a single-photo view.
+   *
+   * Deliberately the SAME url the grid cell used, `priority=1` and all: a
+   * different string would miss the webview cache and refetch pixels that
+   * are already painted a few centimetres away. The queue-jumping matters on
+   * a restore, where the grid is not mounted at all and this is the only
+   * request in flight.
    * @param {string} path @param {number} [version] */
   function openingUrl(path, version = 0) {
-    return `${thumbUrl(path, version)}&priority=1`;
+    return thumbUrl(path, version);
   }
 
 

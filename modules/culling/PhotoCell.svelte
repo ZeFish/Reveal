@@ -5,6 +5,7 @@
   // mode re-colours the ring to a visible gray — never an accent border, the
   // chrome must not pull the eye off the image.
   import Icon from "$lib/components/Icon.svelte";
+  import { thumbUrl } from "$lib/thumbUrl.js";
 
   /**
    * @typedef {Object} Props
@@ -73,13 +74,6 @@
     }
   });
 
-  /**
-   * @param {string} p
-   * @param {number} version
-   */
-  function thumbUrl(p, version) {
-    return `reveal://thumb?p=${encodeURIComponent(p)}&v=${version}`;
-  }
 
   /** @param {string} n */
   function stem(n) {

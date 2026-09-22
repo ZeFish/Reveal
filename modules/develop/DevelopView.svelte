@@ -1138,11 +1138,14 @@
       opacity: 0;
     }
   }
+  /* The theme's own ink, not white. Hardcoded white was invisible in a light
+     theme, which is why the busy mark read as "there is no busy mark"
+     (Francis, 2026-09-22) — it was spinning the whole time. */
   .render-spinner {
     width: 9px;
     height: 9px;
-    border: 1.5px solid rgba(255, 255, 255, 0.18);
-    border-top-color: rgba(255, 255, 255, 0.7);
+    border: 1.5px solid color-mix(in srgb, var(--color-foreground) 18%, transparent);
+    border-top-color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
     border-radius: 50%;
     animation: spin 0.7s linear infinite;
   }
