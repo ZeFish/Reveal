@@ -10,6 +10,7 @@ mod daily_note;
 mod photo_cache;
 mod preset;
 mod story;
+mod xmp_preset;
 
 #[cfg(target_os = "macos")]
 mod macos;
@@ -3774,6 +3775,60 @@ fn delete_preset(app: tauri::AppHandle, name: String) -> Result<(), String> {
     preset::delete(&presets_dir_for(&app)?, &name)
 }
 
+/// Import Lightroom / Camera Raw `.xmp` presets as Reveal presets. Opens a
+/// multi-select picker; each file that converts is saved under its own name
+/// from the XMP. Returns one report per file so the UI can say what came
+/// across and what Reveal has no equivalent for (see xmp_preset.rs) — a
+/// preset built mostly out of masks and lens profiles can import "fine" and
+/// still look nothing like it did in Lightroom.
+#[tauri::command]
+async fn import_xmp_presets(app: tauri::AppHandle) -> Result<Vec<xmp_preset::ImportReport>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let Some(files) = app
+        .dialog()
+        .file()
+        .add_filter("Lightroom / Camera Raw preset", &["xmp"])
+        .blocking_pick_files()
+    else {
+        return Ok(Vec::new()); // cancelled
+    };
+
+    let dir = presets_dir_for(&app)?;
+    let mut reports = Vec::new();
+    let mut errors = Vec::new();
+    for file in files {
+        let Ok(path) = file.into_path() else { continue };
+        let label = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let text = match std::fs::read_to_string(&path) {
+            Ok(t) => t,
+            Err(e) => {
+                errors.push(format!("{label}: {e}"));
+                continue;
+            }
+        };
+        match xmp_preset::parse(&text) {
+            Ok((recipe, report)) => {
+                if let Err(e) = preset::save(&dir, &report.name, &recipe) {
+                    errors.push(format!("{label}: {e}"));
+                } else {
+                    reports.push(report);
+                }
+            }
+            Err(e) => errors.push(format!("{label}: {e}")),
+        }
+    }
+
+    // Some files failing shouldn't discard the ones that worked — only a
+    // run where NOTHING imported is worth surfacing as an error.
+    if reports.is_empty() && !errors.is_empty() {
+        return Err(errors.join("\n"));
+    }
+    Ok(reports)
+}
+
 /// Read the photo's sidecar (rating, tags, saved recipe). Null when none.
 #[tauri::command]
 async fn load_sidecar(path: String) -> Result<Option<reveal_meta::Sidecar>, String> {
@@ -4284,6 +4339,7 @@ pub fn run() {
             list_presets,
             save_preset,
             delete_preset,
+            import_xmp_presets,
             load_sidecar,
             save_recipe,
             clear_recipe,

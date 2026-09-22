@@ -122,6 +122,33 @@
     }
   }
 
+  // Lightroom / Camera Raw presets, converted to Reveal recipes by
+  // xmp_preset.rs. What Reveal has no equivalent for (noise reduction,
+  // masks, lens profiles) is dropped rather than approximated, so the note
+  // below reports it — a preset can import "fine" and still not look like
+  // it did in Lightroom, and it's better to say so than to let it puzzle.
+  let importNote = $state("");
+  async function importXmp() {
+    if (!isTauri || busy) return;
+    busy = true;
+    importNote = "";
+    try {
+      /** @type {Array<{name: string, applied: string[], skipped: string[]}>} */
+      const reports = await invoke("import_xmp_presets");
+      if (!reports.length) return; // cancelled
+      await refresh();
+      emit("presets-changed", {});
+      const dropped = [...new Set(reports.flatMap((r) => r.skipped))];
+      importNote =
+        `Imported ${reports.length} preset${reports.length > 1 ? "s" : ""}.` +
+        (dropped.length ? ` Not carried over: ${dropped.join(", ")}.` : "");
+    } catch (e) {
+      importNote = String(e);
+    } finally {
+      busy = false;
+    }
+  }
+
   async function saveCurrent() {
     const name = newName.trim();
     if (!name || !recipe || busy) return;
@@ -202,6 +229,13 @@
       </button>
     </div>
     <p class="hint">Click applies to the current photo · ⌥-click applies to the whole selection</p>
+    <button class="outline import-btn" onclick={importXmp} disabled={busy}>
+      <Icon name="download-simple" size="10px" />
+      <span>{busy ? "Importing…" : "Import .xmp presets…"}</span>
+    </button>
+    {#if importNote}
+      <p class="hint import-note">{importNote}</p>
+    {/if}
   </section>
 
   <div class="hairline-inner"></div>
@@ -351,6 +385,19 @@
     gap: 5px;
     font-size: 10px;
     padding: 7px 13px;
+  }
+  .import-btn {
+    width: 100%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    font-size: 10px;
+    padding: 6px 12px;
+    margin-top: 6px;
+  }
+  .import-note {
+    margin-top: 5px;
   }
 
   .hint {
