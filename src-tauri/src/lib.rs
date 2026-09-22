@@ -2388,6 +2388,42 @@ async fn add_catalog_root(
     scan_root(app, index, path).await
 }
 
+/// Park the open photo's decoded frame so a restart can reopen it instantly.
+///
+/// Develop holds one photo; parking it costs ~33 MB of local disk and turns
+/// the next launch's ~3.1s network read plus ~1.0s decode into a local read.
+/// Best-effort and off the caller's thread — failing to park just means the
+/// next launch pays what it pays today.
+#[tauri::command]
+async fn park_working_frame(
+    state: tauri::State<'_, EngineState>,
+    path: String,
+) -> Result<(), String> {
+    let engine = state.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let source = match apple_photos::source(&path) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("park working frame {path}: {e}");
+                return;
+            }
+        };
+        if let Err(e) = engine.park_working(&source, 2048) {
+            eprintln!("park working frame {path}: {e:#}");
+        }
+    });
+    Ok(())
+}
+
+/// Drop the parked frame — leaving Develop for the grid, where one photo's
+/// decode is just tens of megabytes of disk doing nothing.
+#[tauri::command]
+async fn release_working_frame(state: tauri::State<'_, EngineState>) -> Result<(), String> {
+    let engine = state.0.clone();
+    tauri::async_runtime::spawn_blocking(move || engine.clear_working());
+    Ok(())
+}
+
 /// Can we reach the folder this photo lives in right now?
 ///
 /// The UI marks a photo as coming from cache while its source is unreachable;
@@ -4401,6 +4437,11 @@ pub fn run() {
             let engine = reveal_engine::Engine::new(&data_dir, &luts_dir)
                 .map_err(|e| format!("engine init ({}): {e:#}", data_dir.display()))?;
             eprintln!("engine ready — backend: {}", engine.backend_name());
+            // Where a Develop session parks its decoded frame so a restart
+            // skips the NAS read and the decode entirely.
+            if let Ok(cache) = app.handle().path().app_cache_dir() {
+                engine.set_working_dir(Some(cache.join("WorkingFrame")));
+            }
             app.manage(EngineState(std::sync::Arc::new(engine)));
 
             let db = app
@@ -4729,6 +4770,8 @@ pub fn run() {
             add_catalog_root,
             catalog_roots,
             source_reachable,
+            park_working_frame,
+            release_working_frame,
             remove_catalog_root,
             index_dirs,
             story_dirs,

@@ -1294,7 +1294,13 @@
    */
   async function switchMode(to, { openDevPanel = true } = {}) {
     closePhotoMenu();
-    if (to !== "dev") zoomMode = "frame"; // always re-enter develop framed
+    if (to !== "dev") {
+      zoomMode = "frame"; // always re-enter develop framed
+      // Leaving Develop: the parked decode is one photo's worth of local disk
+      // kept only so a restart can resume THAT photo. A grid session has no
+      // use for it.
+      if (isTauri) invoke("release_working_frame").catch(() => {});
+    }
     if (to === "dev" && openDevPanel) {
       // Develop always opens as a complete workspace. A deliberate entry ends
       // any lingering quick look, so the panel obeys its stored preference.
@@ -3799,6 +3805,10 @@
       recipeRedoStack = [];
       lastCommittedRecipe = snapshotRecipe(recipe);
       prefetchNeighbours(path);
+      // Park this photo's decode so relaunching lands straight back in
+      // Develop without the NAS read or the decode. Replaces whatever was
+      // parked before: only the photo you are editing is worth keeping.
+      if (isTauri) invoke("park_working_frame", { path }).catch(() => {});
       if (developEngine) {
         scheduleRender(PREVIEW_PX);
       } else {

@@ -439,6 +439,13 @@ pub struct Engine {
     decoded: Mutex<Vec<((PathBuf, bool), Arc<ImageBuf>)>>,
     /// Downscaled pipeline inputs for previews, same MRU-first ordering.
     preview_input: Mutex<Vec<((PathBuf, u32), Arc<ImageBuf>)>>,
+    /// Where a decoded frame may be parked so it survives a restart. Both
+    /// caches above die with the process, so reopening the photo you were
+    /// editing meant paying the full read and decode again — measured on a
+    /// NAS-hosted library, ~3.1s of network then ~1.0s of CPU. Held on disk
+    /// it comes back in the time a local read takes. Only ever one photo:
+    /// the one open in Develop.
+    working_dir: Mutex<Option<PathBuf>>,
     /// Plugin engine registry.
     registry: EngineRegistry,
 }
@@ -474,6 +481,7 @@ impl Engine {
             decoder: DecoderRegistry,
             decoded: Mutex::new(Vec::new()),
             preview_input: Mutex::new(Vec::new()),
+            working_dir: Mutex::new(None),
             registry,
         })
     }
@@ -692,6 +700,14 @@ impl Engine {
     /// The (possibly downscaled) ProPhoto pipeline input for a photo,
     /// through both caches. Returns (input, decode_ms — 0 on cache hit).
     fn pipeline_input(&self, path: &Path, max_px: u32) -> Result<(Arc<ImageBuf>, u128)> {
+        // A frame parked on disk by `park_working` beats everything below it:
+        // no network, no decode, just a local read of exactly the buffer the
+        // pipeline wants.
+        if let Some(img) = self.unpark_working(path, max_px) {
+            let key = (path.to_path_buf(), max_px);
+            self.store_preview_input(key, img.clone());
+            return Ok((img, 0));
+        }
         // Previews (max_px > 0) take the fast half-res decode; the export path
         // (max_px == 0) takes the full-quality decode.
         let fast = max_px != 0;
@@ -783,6 +799,58 @@ impl Engine {
     /// Decode a photo into the cache without rendering it, so stepping to it
     /// costs nothing. Errors are swallowed: a prefetch that fails just means
     /// the real open pays what it would have paid anyway.
+    /// Where decoded frames may be parked across restarts. `None` disables it.
+    pub fn set_working_dir(&self, dir: Option<PathBuf>) {
+        if let Some(d) = &dir {
+            let _ = std::fs::create_dir_all(d);
+        }
+        *self.working_dir.lock().unwrap() = dir;
+    }
+
+    /// Park this photo's pipeline input so a restart can skip read and decode.
+    ///
+    /// Exactly one photo is ever parked — the one open in Develop — so this
+    /// clears whatever was there first. Best-effort: failing to park costs
+    /// the next launch the read it costs today, nothing more.
+    pub fn park_working(&self, path: &Path, max_px: u32) -> Result<()> {
+        let Some(dir) = self.working_dir.lock().unwrap().clone() else {
+            return Ok(());
+        };
+        let (img, _) = self.pipeline_input(path, max_px)?;
+        self.clear_working();
+        let dest = dir.join(working_name(path, max_px));
+        let tmp = dest.with_extension("part");
+        let mut out = Vec::with_capacity(8 + img.data.len() * 4);
+        out.extend_from_slice(&img.width.to_le_bytes());
+        out.extend_from_slice(&img.height.to_le_bytes());
+        for v in &img.data {
+            out.extend_from_slice(&v.to_le_bytes());
+        }
+        std::fs::write(&tmp, &out)?;
+        std::fs::rename(&tmp, &dest)?;
+        Ok(())
+    }
+
+    /// Drop whatever is parked. Called on leaving Develop — a grid session has
+    /// no use for one frame's decode, and it is tens of megabytes.
+    pub fn clear_working(&self) {
+        let Some(dir) = self.working_dir.lock().unwrap().clone() else {
+            return;
+        };
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for e in entries.filter_map(|e| e.ok()) {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
+
+    /// Read a parked frame back, if this photo is the one that was parked.
+    fn unpark_working(&self, path: &Path, max_px: u32) -> Option<Arc<ImageBuf>> {
+        let dir = self.working_dir.lock().unwrap().clone()?;
+        let bytes = std::fs::read(dir.join(working_name(path, max_px))).ok()?;
+        parse_parked(&bytes).map(Arc::new)
+    }
+
     pub fn prefetch(&self, path: &Path, max_px: u32) {
         let _ = self.pipeline_input(path, max_px);
     }
@@ -791,6 +859,37 @@ impl Engine {
 /// How much decoded, ProPhoto-f32 image data to keep around. Sized so a
 /// handful of frames from a high-megapixel body fit: stepping back to the
 /// previous photo is the common move in a cull, and it used to re-decode.
+/// Read a parked frame back from its bytes.
+///
+/// The header carries the dimensions so a park interrupted mid-write, or
+/// copied half-way, is REFUSED rather than fed to the pipeline as a short
+/// buffer — that reads as garbage pixels, not as an error.
+fn parse_parked(bytes: &[u8]) -> Option<ImageBuf> {
+    if bytes.len() < 8 {
+        return None;
+    }
+    let width = u32::from_le_bytes(bytes[0..4].try_into().ok()?);
+    let height = u32::from_le_bytes(bytes[4..8].try_into().ok()?);
+    let pixels = &bytes[8..];
+    let expected = (width as usize).checked_mul(height as usize)?.checked_mul(3)?;
+    if pixels.len() != expected * 4 {
+        return None;
+    }
+    let data: Vec<f32> = pixels
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect();
+    Some(ImageBuf::from_data(width, height, data))
+}
+
+/// Parked-frame filename: the photo and the size it was parked at.
+fn working_name(path: &Path, max_px: u32) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    path.hash(&mut h);
+    format!("{:016x}-{max_px}.buf", h.finish())
+}
+
 const DECODE_CACHE_BUDGET_BYTES: usize = 3 * 1024 * 1024 * 1024;
 
 /// Downscaled pipeline inputs are small (a 2048px frame is ~37 MB), so this
@@ -1075,5 +1174,52 @@ mod perf_probe {
         let t = Instant::now();
         let (jpeg, w, h) = engine.export_jpeg(&raw, &recipe, 0, 0.0).expect("export");
         eprintln!("export full: {:?} -> {}x{} ({} KB)", t.elapsed(), w, h, jpeg.len() / 1024);
+    }
+}
+
+#[cfg(test)]
+mod working_park_tests {
+    use super::*;
+
+    /// A park is keyed by the photo AND the size it was parked at. Serving one
+    /// photo's buffer for another, or a 2048 buffer to a request for something
+    /// else, would hand the pipeline pixels from the wrong image.
+    #[test]
+    fn a_parked_frame_is_keyed_by_photo_and_size() {
+        let a = Path::new("/nas/2026/A.RAF");
+        let b = Path::new("/nas/2026/B.RAF");
+        assert_ne!(working_name(a, 2048), working_name(b, 2048));
+        assert_ne!(working_name(a, 2048), working_name(a, 768));
+        assert_eq!(working_name(a, 2048), working_name(a, 2048));
+    }
+
+    /// The reason the header carries dimensions: a park interrupted mid-write,
+    /// or copied half-way, must be refused rather than fed to the pipeline as
+    /// a short buffer — that reads as garbage pixels, not as an error.
+    #[test]
+    fn a_truncated_park_is_refused() {
+        // A well-formed 2x2 RGB frame: 8 bytes of header, then 12 floats.
+        let mut whole = Vec::new();
+        whole.extend_from_slice(&2u32.to_le_bytes());
+        whole.extend_from_slice(&2u32.to_le_bytes());
+        for i in 0..12 {
+            whole.extend_from_slice(&(i as f32).to_le_bytes());
+        }
+        assert_eq!(whole.len(), 56);
+
+        let loaded = super::parse_parked(&whole).expect("a whole park loads");
+        assert_eq!((loaded.width, loaded.height), (2, 2));
+        assert_eq!(loaded.data.len(), 12);
+        assert_eq!(loaded.data[11], 11.0, "pixels survive the round trip");
+
+        assert!(super::parse_parked(&whole[..40]).is_none(), "cut mid-pixels");
+        assert!(super::parse_parked(&whole[..4]).is_none(), "cut inside the header");
+        assert!(super::parse_parked(&[]).is_none(), "empty");
+        // Claims 4000x3000 but carries two pixels.
+        let mut lying = Vec::new();
+        lying.extend_from_slice(&4000u32.to_le_bytes());
+        lying.extend_from_slice(&3000u32.to_le_bytes());
+        lying.extend_from_slice(&[0u8; 24]);
+        assert!(super::parse_parked(&lying).is_none(), "header must match the body");
     }
 }
