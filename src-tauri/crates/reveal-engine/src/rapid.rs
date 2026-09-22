@@ -395,6 +395,89 @@ fn zone_tone_controls() -> Vec<EngineControl> {
     }]
 }
 
+/// Kelvin the temperature slider means at each end. The UI already labels the
+/// slider in Kelvin with exactly this mapping (EngineRunner's `formatVal`),
+/// so this makes the number on screen the number the maths uses.
+const WB_BASE_KELVIN: f32 = 5500.0;
+const WB_COOL_PER_UNIT: f32 = 35.0; // slider -100 -> 2000 K
+const WB_WARM_PER_UNIT: f32 = 45.0; // slider +100 -> 10000 K
+
+/// xy chromaticity of a blackbody at `kelvin` (Kim et al.'s cubic fit to the
+/// Planckian locus, valid 1667–25000 K).
+fn planckian_xy(kelvin: f32) -> (f32, f32) {
+    let t = 1000.0 / kelvin.clamp(1667.0, 25000.0);
+    let x = if kelvin <= 4000.0 {
+        -0.2661239 * t * t * t - 0.2343589 * t * t + 0.8776956 * t + 0.179910
+    } else {
+        -3.0258469 * t * t * t + 2.1070379 * t * t + 0.2226347 * t + 0.240390
+    };
+    let y = if kelvin <= 2222.0 {
+        -1.1063814 * x * x * x - 1.34811020 * x * x + 2.18555832 * x - 0.20219683
+    } else if kelvin <= 4000.0 {
+        -0.9549476 * x * x * x - 1.37418593 * x * x + 2.09137015 * x - 0.16748867
+    } else {
+        3.0817580 * x * x * x - 5.87338670 * x * x + 3.75112997 * x - 0.37001483
+    };
+    (x, y)
+}
+
+/// CIE XYZ -> ProPhoto RGB, the space this pipeline actually works in. Equal
+/// to `SRGB_TO_PROPHOTO · XYZ_TO_SRGB` (see lib.rs for the former), folded
+/// into one matrix so a white point can be taken straight to pipe primaries.
+const XYZ_TO_PROPHOTO: [[f32; 3]; 3] = [
+    [1.3974796, -0.2141992, -0.1045309],
+    [-0.5346504, 1.4943374, 0.0126436],
+    [-0.0015093, -0.0041227, 0.9237237],
+];
+
+/// Per-channel gains for the temperature slider, in pipe (ProPhoto) primaries.
+///
+/// The old model was `R = 1 + 0.6t`, `B = 1 - 0.6t`, green untouched. Two
+/// things were wrong with it. The Planckian locus is a curve, but that is a
+/// straight line, so it pinned green to the exact midpoint of red and blue at
+/// every temperature — whereas the real locus needs green slightly above the
+/// midpoint when warming and well below it when cooling. And the constants
+/// were sRGB-shaped while the multiply happens in ProPhoto, whose very wide
+/// red primary needs almost no boost to warm an image: at 7188 K the correct
+/// red gain is 1.043, not the 1.225 that model applied. That excess red on
+/// top of a blue sky is what Francis saw as "beaucoup vers le magenta, pas le
+/// chaud" (2026-09-22).
+///
+/// Now: convert both the base and target temperature to a white point on the
+/// locus, take each to ProPhoto, and divide.
+///
+/// Returns the red and blue gains only — green is normalised to exactly 1, so
+/// the control stays a pure chromaticity move and leaves brightness to
+/// exposure. Green still *moves relative to* red and blue, which is the whole
+/// correction; it just does so by them moving around it.
+fn temperature_gains(slider: f32) -> (f32, f32) {
+    if slider == 0.0 {
+        return (1.0, 1.0);
+    }
+    let kelvin = WB_BASE_KELVIN
+        + slider * if slider <= 0.0 { WB_COOL_PER_UNIT } else { WB_WARM_PER_UNIT };
+
+    let white = |k: f32| {
+        let (x, y) = planckian_xy(k);
+        let xyz = [x / y, 1.0, (1.0 - x - y) / y];
+        let mut rgb = [0.0f32; 3];
+        for (i, row) in XYZ_TO_PROPHOTO.iter().enumerate() {
+            rgb[i] = row[0] * xyz[0] + row[1] * xyz[1] + row[2] * xyz[2];
+        }
+        rgb
+    };
+
+    let base = white(WB_BASE_KELVIN);
+    let target = white(kelvin);
+    // Guard the divide: the fit can't return zero in the clamped range, but a
+    // NaN here would poison every pixel rather than one.
+    let gain = |i: usize| {
+        if target[i].abs() < 1e-6 { 1.0 } else { (base[i] / target[i]).clamp(0.05, 20.0) }
+    };
+    let (r, g, b) = (gain(0), gain(1), gain(2));
+    (r / g, b / g)
+}
+
 /// ProPhoto RGB (D50) -> Rec.709 / linear sRGB (D65). This is the exact
 /// inverse of the pipeline's `SRGB_TO_PROPHOTO` (colour-science CAT02), so the
 /// round-trip sRGB→ProPhoto→Rec709 is the identity. The previous matrix here
@@ -712,12 +795,11 @@ pub(crate) fn develop_rapid_with(
     let contrast = recipe.contrast;
     let saturation = (recipe.saturation + 1.0).max(0.0);
 
-    // Temperature (-100 to 100): multiplier from ~0.4 to ~1.6
-    let temp_shift = recipe.temperature / 100.0;
-    let r_temp = (1.0 + temp_shift * 0.6).max(0.1);
-    let b_temp = (1.0 - temp_shift * 0.6).max(0.1);
+    let (r_temp, b_temp) = temperature_gains(recipe.temperature);
 
-    // Tint (-100 to 100): G/M shift
+    // Tint (-100 to 100): the off-locus green/magenta axis. Unlike
+    // temperature this genuinely is a simple push — "tint" is by definition
+    // the deviation perpendicular to the Planckian curve.
     let tint_shift = recipe.tint / 100.0;
     let g_tint = (1.0 - tint_shift * 0.5).max(0.1);
     let r_tint = (1.0 + tint_shift * 0.25).max(0.1);
@@ -1820,6 +1902,85 @@ mod tests {
         assert_eq!(checked, 33, "both mixers should have been reached");
     }
 
+    /// The gains must land on the Planckian locus, not on a straight line.
+    /// Reference values computed independently from the CIE fit and the
+    /// pipeline's own sRGB→ProPhoto matrix.
+    #[test]
+    fn temperature_follows_the_planckian_locus() {
+        for (slider, want_r, want_b) in [
+            (-50.0f32, 0.881f32, 1.598f32), // 3750 K
+            (-25.0, 0.955, 1.208),          // 4625 K
+            (37.5, 1.043, 0.792),           // 7188 K — the setting Francis used
+            (100.0, 1.066, 0.644),          // 10000 K
+        ] {
+            let (r, b) = temperature_gains(slider);
+            assert!(
+                (r - want_r).abs() < 0.01 && (b - want_b).abs() < 0.01,
+                "slider {slider}: got R {r:.3} B {b:.3}, want R {want_r:.3} B {want_b:.3}"
+            );
+        }
+        assert_eq!(temperature_gains(0.0), (1.0, 1.0), "neutral must be untouched");
+    }
+
+    /// The failure Francis actually reported: warming pushed the image toward
+    /// magenta instead of toward yellow. On the locus, green sits ABOVE the
+    /// midpoint of red and blue when warming and well below it when cooling;
+    /// the old straight-line model pinned it to the midpoint at every
+    /// temperature, which reads as magenta one way and green the other.
+    #[test]
+    fn warming_does_not_drift_magenta() {
+        let midpoint_offset = |slider: f32| {
+            let (r, b) = temperature_gains(slider);
+            1.0 - (r + b) / 2.0 // green is 1.0 by normalisation
+        };
+        assert!(
+            midpoint_offset(37.5) > 0.02,
+            "warming must leave green above the R/B midpoint, got {:+.3}",
+            midpoint_offset(37.5)
+        );
+        assert!(
+            midpoint_offset(-50.0) < -0.1,
+            "cooling must leave green well below it, got {:+.3}",
+            midpoint_offset(-50.0)
+        );
+        // And the direction itself must stay right: warm = more red than blue.
+        let (r, b) = temperature_gains(37.5);
+        assert!(r > 1.0 && b < 1.0, "warming must raise red and lower blue");
+        let (r, b) = temperature_gains(-50.0);
+        assert!(r < 1.0 && b > 1.0, "cooling must lower red and raise blue");
+    }
+
+    /// End-to-end, which is where the complaint lived: the gains above are
+    /// only right if they survive the rest of the pipeline. A neutral grey
+    /// developed at any temperature must stay on the neutral axis — warm or
+    /// cool in the red/blue sense, never tinted green or magenta.
+    ///
+    /// Measured on the old model this read -0.034 at 7188 K and +0.080 at
+    /// 3750 K: a visible magenta cast one way and a green one the other.
+    #[test]
+    fn a_developed_neutral_never_drifts_green_or_magenta() {
+        for slider in [-50.0f32, -25.0, 0.0, 37.5, 100.0] {
+            let input = ImageBuf::from_data(1, 1, vec![0.18, 0.18, 0.18]);
+            let mut recipe = Recipe::default();
+            recipe.engine = "rapid".to_string();
+            recipe.temperature = slider;
+            let out = develop_rapid(&input, &recipe, Path::new(""));
+            let (r, g, b) = (out.data[0], out.data[1], out.data[2]);
+            let drift = g - (r + b) / 2.0;
+            assert!(
+                drift.abs() < 0.02,
+                "temperature {slider}: green sits {drift:+.4} off the R/B midpoint \
+                 (R {r:.4} G {g:.4} B {b:.4}) — that reads as a colour cast"
+            );
+            // The control must still do its job.
+            if slider > 0.0 {
+                assert!(r > b, "warming must leave red above blue");
+            } else if slider < 0.0 {
+                assert!(b > r, "cooling must leave blue above red");
+            }
+        }
+    }
+
     #[test]
     fn test_rapid_exposure_rendering() {
         let input = ImageBuf::from_data(
@@ -2254,4 +2415,6 @@ mod tests {
         );
     }
 }
+
+
 
