@@ -157,7 +157,17 @@ fn rem_euclid(a: f32, b: f32) -> f32 {
     return a - b * floor(a / b);
 }
 
+/// rapid.rs::luma — luminance in the pipeline's working space (linear
+/// ProPhoto RGB). These are the Rec.709 weights times PROPHOTO_TO_REC709,
+/// normalised to sum to 1; see PROPHOTO_LUMA in rapid.rs for why using the
+/// Rec.709 weights here was wrong and why it stayed invisible.
 fn luma_of(c: vec3<f32>) -> f32 {
+    return 0.2707707 * c.r + 0.7082119 * c.g + 0.0210174 * c.b;
+}
+
+/// rapid.rs::luma_709 — for pixels already taken to Rec.709, which here means
+/// post-AgX only.
+fn luma_709(c: vec3<f32>) -> f32 {
     return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
 }
 
@@ -602,16 +612,19 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             var sat_adj = 0.0;
             var lum_adj = 0.0;
             for (var i = 0u; i < 8u; i = i + 1u) {
+                // rapid.rs::HUE_CENTERS — must stay in step with it; the
+                // GPU/CPU equivalence test sets all three HSL vectors, so a
+                // drift here fails that test rather than going unnoticed.
                 var center = 0.0;
                 switch i {
-                    case 0u: { center = 0.0; }
-                    case 1u: { center = 30.0; }
-                    case 2u: { center = 60.0; }
-                    case 3u: { center = 120.0; }
-                    case 4u: { center = 180.0; }
-                    case 5u: { center = 240.0; }
-                    case 6u: { center = 270.0; }
-                    default: { center = 300.0; }
+                    case 0u: { center = 9.5; }
+                    case 1u: { center = 36.8; }
+                    case 2u: { center = 68.0; }
+                    case 3u: { center = 102.3; }
+                    case 4u: { center = 189.5; }
+                    case 5u: { center = 248.0; }
+                    case 6u: { center = 259.9; }
+                    default: { center = 282.3; }
                 }
                 let dist = hue_distance(hsl.x, center);
                 if (dist < 45.0) {
@@ -674,7 +687,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
                 );
             }
             case 3u: { agx = pow(agx, vec3<f32>(0.88)); }               // soft
-            case 4u: { agx = vec3<f32>(luma_of(agx)); }                 // filmic b&w
+            case 4u: { agx = vec3<f32>(luma_709(agx)); }                // filmic b&w
             default: {}
         }
 

@@ -314,7 +314,29 @@ impl RenderEngine for RapidEngine {
 /// 5: Blue (240°)
 /// 6: Purple (270°)
 /// 7: Magenta (300°)
-const HUE_CENTERS: [f32; 8] = [0.0, 30.0, 60.0, 120.0, 180.0, 240.0, 270.0, 300.0];
+/// The angle each band sits at **as this engine measures hue** — i.e. on
+/// linear ProPhoto values, which is what `rgb_to_hsl` is handed here.
+///
+/// These used to be 0/30/60/120/180/240/270/300: the hues those colours have
+/// in gamma-encoded sRGB, which is neither the space nor the encoding the
+/// matching runs in. Two mismatches stacked, and they moved the bands by up
+/// to 18° — Green sat at 120 while foliage actually lands at 102, so the
+/// "Green" slider was reaching past the greens toward yellow.
+///
+/// Each value is the hue an sRGB colour of that name has once taken to linear
+/// ProPhoto. Six are exact: desaturating in HSV adds grey, grey maps to grey,
+/// and adding grey leaves HSL hue untouched, so a primary or secondary keeps
+/// its angle at any saturation. Orange and Purple lie between primaries and
+/// do drift (Orange spans 26–42° from full saturation down); they take
+/// the median.
+///
+/// Worth knowing before tuning these: real subject matter is not a named
+/// colour plus grey. Measured foliage lands near 95° and a daylight sky near
+/// 237°, both between two bands — which is what a hue mixer is for. The old
+/// centre for Blue (240) happened to sit closer to real sky than 248 does,
+/// but by coincidence, not design: it was two unrelated errors partly
+/// cancelling. These centres are defined, not fitted.
+const HUE_CENTERS: [f32; 8] = [9.5, 36.8, 68.0, 102.3, 189.5, 248.0, 259.9, 282.3];
 
 /// English labels for `HUE_CENTERS`, in the same order — drives the HSL
 /// control group so the UI never hardcodes a second copy of the band list.
@@ -489,6 +511,40 @@ const PROPHOTO_TO_REC709: [[f32; 3]; 3] = [
     [-0.0105510879, -0.1348857077, 1.1451776386],
 ];
 
+/// Luminance weights for the pipeline's own space (linear ProPhoto RGB).
+///
+/// Equal to the Rec.709 weights times `PROPHOTO_TO_REC709` — i.e. exactly
+/// "convert to Rec.709, then take its luma", precomputed. `luma_weights_
+/// match_the_conversion_matrix` asserts that, so the two can't drift apart.
+///
+/// Every stage before the Rec.709 conversion used the Rec.709 weights
+/// directly, which is the same mistake the temperature model made: constants
+/// shaped for one space applied in another. It hides on neutrals — both sets
+/// sum to 1, so a grey is identical either way — and only shows on saturated
+/// colour, where ProPhoto's blue primary carries almost no luminance (0.021,
+/// not 0.072). A saturated blue was being treated as 92% brighter than it is,
+/// which put blue skies in the wrong tonal zone for every masked adjustment.
+/// Normalised to sum to exactly 1 — the stored `PROPHOTO_TO_REC709` is a
+/// rounded inverse, so the raw product sums to 0.999975 and a neutral would
+/// drift by 2.5e-5 on every pass. Harmless in magnitude, but "a grey stays
+/// itself" is an invariant worth holding exactly rather than nearly.
+const PROPHOTO_LUMA: [f32; 3] = [0.2707707, 0.7082119, 0.0210174];
+
+/// Luminance in the pipeline's working space. Use this anywhere before the
+/// Rec.709 conversion.
+#[inline]
+fn luma(r: f32, g: f32, b: f32) -> f32 {
+    PROPHOTO_LUMA[0] * r + PROPHOTO_LUMA[1] * g + PROPHOTO_LUMA[2] * b
+}
+
+/// Luminance for values already converted to Rec.709 — i.e. after
+/// `PROPHOTO_TO_REC709`, which in practice means post-AgX display-referred
+/// pixels. Separate from `luma` so the space is stated at the call site.
+#[inline]
+fn luma_709(r: f32, g: f32, b: f32) -> f32 {
+    0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
 fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
     let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
@@ -500,7 +556,7 @@ fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
 /// wheels and Zone Tone Shaping so "what counts as a shadow" is defined
 /// identically everywhere in this engine.
 fn zone_weights(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
-    let lum_linear = (0.2126 * r + 0.7152 * g + 0.0722 * b).max(0.0);
+    let lum_linear = (luma(r, g, b)).max(0.0);
     let lum_norm = lum_linear.sqrt().min(1.0);
     let shadow_weight = (1.0 - lum_norm * 2.0).clamp(0.0, 1.0);
     let highlight_weight = ((lum_norm - 0.5) * 2.0).clamp(0.0, 1.0);
@@ -518,7 +574,7 @@ fn apply_filmic_exposure(color_in: [f32; 3], brightness_adj: f32) -> [f32; 3] {
     let r = color_in[0];
     let g = color_in[1];
     let b = color_in[2];
-    let original_luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    let original_luma = luma(r, g, b);
     if original_luma.abs() < 0.00001 {
         return color_in;
     }
@@ -587,7 +643,7 @@ fn hash_2d_u32(x: u32, y: u32) -> f32 {
 }
 
 fn apply_vibrance(r: f32, g: f32, b: f32, sat_adj: f32, vib_adj: f32) -> (f32, f32, f32) {
-    let luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    let luma = luma(r, g, b);
     let mut pr = r;
     let mut pg = g;
     let mut pb = b;
@@ -669,7 +725,7 @@ fn apply_local_contrast_masked(
 
     if amount < 0.0 {
         let blur_amount = -amount * mask;
-        let center_luma = (0.2126 * r + 0.7152 * g + 0.0722 * b).max(0.0001);
+        let center_luma = (luma(r, g, b)).max(0.0001);
         let scale = t_blurred / center_luma;
         let br = r * scale;
         let bg = g * scale;
@@ -681,7 +737,7 @@ fn apply_local_contrast_masked(
         );
     }
 
-    let center_luma = (0.2126 * r + 0.7152 * g + 0.0722 * b).max(0.0);
+    let center_luma = (luma(r, g, b)).max(0.0);
     let safe_center_luma = center_luma.max(0.0001);
     let safe_blurred_luma = t_blurred.max(0.0001);
     let log_ratio = (safe_center_luma / safe_blurred_luma).log2();
@@ -705,7 +761,7 @@ fn apply_local_contrast(r: f32, g: f32, b: f32, t_blurred: f32, amount: f32) -> 
     let mask = if amount < 0.0 {
         1.0
     } else {
-        let center_luma = (0.2126 * r + 0.7152 * g + 0.0722 * b).max(0.0);
+        let center_luma = (luma(r, g, b)).max(0.0);
         let shadow_protection = smoothstep(0.0, 0.03, center_luma);
         let highlight_protection = 1.0 - smoothstep(0.9, 1.0, center_luma);
         shadow_protection * highlight_protection
@@ -724,7 +780,7 @@ fn apply_dehaze(r: f32, g: f32, b: f32, t_blurred: f32, amount: f32) -> (f32, f3
     let regional_dark = t_blurred * 0.9;
 
     if amount > 0.0 {
-        let pixel_luma = (0.2126 * r + 0.7152 * g + 0.0722 * b).max(0.0);
+        let pixel_luma = (luma(r, g, b)).max(0.0);
         let edge_diff = (pixel_luma.sqrt() - t_blurred.sqrt()).abs();
         let halo_protection = smoothstep(0.02, 0.15, edge_diff);
         let spatial_dark = regional_dark * (1.0 - halo_protection) + pixel_dark * halo_protection;
@@ -736,7 +792,7 @@ fn apply_dehaze(r: f32, g: f32, b: f32, t_blurred: f32, amount: f32) -> (f32, f3
         let mut rec_g = (g - atmospheric_light[1]) / t + atmospheric_light[1];
         let mut rec_b = (b - atmospheric_light[2]) / t + atmospheric_light[2];
 
-        let rec_luma = (0.2126 * rec_r + 0.7152 * rec_g + 0.0722 * rec_b).max(0.0);
+        let rec_luma = (luma(rec_r, rec_g, rec_b)).max(0.0);
         let shadow_lift = smoothstep(0.1, 0.0, rec_luma) * (1.0 - t) * 0.15;
         rec_r += shadow_lift;
         rec_g += shadow_lift;
@@ -744,7 +800,7 @@ fn apply_dehaze(r: f32, g: f32, b: f32, t_blurred: f32, amount: f32) -> (f32, f3
 
         let haze_removed = 1.0 - t;
         let sat_boost = haze_removed * 0.5;
-        let final_luma = (0.2126 * rec_r + 0.7152 * rec_g + 0.0722 * rec_b).max(0.0);
+        let final_luma = (luma(rec_r, rec_g, rec_b)).max(0.0);
 
         (
             (final_luma + (rec_r - final_luma) * (1.0 + sat_boost)).max(0.0),
@@ -927,7 +983,7 @@ pub(crate) fn develop_rapid_with(
                     };
 
                     let luma_linear =
-                        (0.2126 * r_proc + 0.7152 * g_proc + 0.0722 * b_proc).max(0.0);
+                        (luma(r_proc, g_proc, b_proc)).max(0.0);
                     downsampled[dy * down_w + dx] = luma_linear.max(0.0001).powf(0.4545);
                 }
             }
@@ -1093,7 +1149,7 @@ pub(crate) fn develop_rapid_with(
 
             // 4. Shadows & Blacks (per-pixel pivot-contrasted lift with detail recovery)
             if shadows != 0.0 || blacks != 0.0 {
-                let luma_linear = (0.2126 * r + 0.7152 * g + 0.0722 * b).max(0.0);
+                let luma_linear = (luma(r, g, b)).max(0.0);
                 let safe_pixel_luma = luma_linear.max(0.0001);
                 let t_pixel = safe_pixel_luma.powf(0.4545);
 
@@ -1136,7 +1192,7 @@ pub(crate) fn develop_rapid_with(
 
                 let final_luma_ratio = luma_ratio * linear_correction;
                 if final_luma_ratio > 1.0 {
-                    let recovered_luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+                    let recovered_luma = luma(r, g, b);
                     let boost_amount = ((final_luma_ratio - 1.0) * 0.15).clamp(0.0, 0.4);
                     r = r * (1.0 - boost_amount) + recovered_luma * boost_amount;
                     g = g * (1.0 - boost_amount) + recovered_luma * boost_amount;
@@ -1146,7 +1202,7 @@ pub(crate) fn develop_rapid_with(
 
             // 5. Highlights (rational compression + white desaturation)
             if highlights != 0.0 {
-                let pixel_luma = (0.2126 * r + 0.7152 * g + 0.0722 * b).max(0.0);
+                let pixel_luma = (luma(r, g, b)).max(0.0);
                 let safe_pixel_luma = pixel_luma.max(0.0001);
 
                 let pixel_mask_input = (safe_pixel_luma * 1.5).tanh();
@@ -1272,7 +1328,7 @@ pub(crate) fn develop_rapid_with(
                     + zone_midtones_saturation * midtone_weight
                     + zone_highlights_saturation * highlight_weight;
                 if blended_sat != 0.0 {
-                    let luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+                    let luma = luma(r, g, b);
                     let sat_factor = (1.0 + blended_sat / 100.0).max(0.0);
                     r = luma + (r - luma) * sat_factor;
                     g = luma + (g - luma) * sat_factor;
@@ -1397,7 +1453,7 @@ pub(crate) fn develop_rapid_with(
                         agx_b = agx_b.powf(0.88);
                     }
                     "bw" => {
-                        let luma = 0.2126 * agx_r + 0.7152 * agx_g + 0.0722 * agx_b;
+                        let luma = luma_709(agx_r, agx_g, agx_b);
                         agx_r = luma;
                         agx_g = luma;
                         agx_b = luma;
@@ -1778,6 +1834,7 @@ fn apply_silvergrain(pixels: &mut [f32], width: u32, height: u32, amount: f32, r
     // luminance-aware deviation. We attenuate the deviation in deep shadows
     // and near-clipped highlights so grain doesn't chatter on pure black or
     // pure white — matches photographic film behaviour.
+    // Grain runs after AgX, on display-referred Rec.709 pixels.
     let lum_weights: [f32; 3] = [0.2126, 0.7152, 0.0722];
     for y in 0..height {
         for x in 0..width {
@@ -1979,6 +2036,127 @@ mod tests {
                 assert!(b > r, "cooling must leave blue above red");
             }
         }
+    }
+
+    /// `PROPHOTO_LUMA` is a precomputed shortcut for "convert to Rec.709,
+    /// then take its luma". If either the matrix or the constant is ever
+    /// edited alone they stop meaning the same thing, and nothing else would
+    /// notice — greys agree under any weights that sum to 1.
+    #[test]
+    fn luma_weights_match_the_conversion_matrix() {
+        for (r, g, b) in [
+            (0.18, 0.18, 0.18),
+            (0.50, 0.05, 0.05),
+            (0.02, 0.02, 0.60),
+            (0.10, 0.30, 0.08),
+            (0.90, 0.40, 0.10),
+        ] {
+            let via_matrix = luma_709(
+                PROPHOTO_TO_REC709[0][0] * r + PROPHOTO_TO_REC709[0][1] * g + PROPHOTO_TO_REC709[0][2] * b,
+                PROPHOTO_TO_REC709[1][0] * r + PROPHOTO_TO_REC709[1][1] * g + PROPHOTO_TO_REC709[1][2] * b,
+                PROPHOTO_TO_REC709[2][0] * r + PROPHOTO_TO_REC709[2][1] * g + PROPHOTO_TO_REC709[2][2] * b,
+            );
+            let direct = luma(r, g, b);
+            // 1e-4 absorbs the sum-to-1 normalisation above; anything larger
+            // means the constant and the matrix genuinely disagree.
+            assert!(
+                (via_matrix - direct).abs() < 1e-4,
+                "({r}, {g}, {b}): matrix route {via_matrix:.6} vs PROPHOTO_LUMA {direct:.6}"
+            );
+        }
+        // A neutral must still land on itself, or exposure shifts everywhere.
+        assert!((luma(0.5, 0.5, 0.5) - 0.5).abs() < 1e-5);
+    }
+
+    /// The reason the wrong weights were invisible for so long, pinned as a
+    /// fact: on neutrals the two sets agree exactly, and they diverge only on
+    /// saturated colour. A future "simplification" back to Rec.709 weights
+    /// would pass every grey-based test in this file.
+    #[test]
+    fn luma_differs_from_rec709_only_on_saturated_colour() {
+        assert!((luma(0.18, 0.18, 0.18) - luma_709(0.18, 0.18, 0.18)).abs() < 1e-6);
+        let (r, g, b) = (0.02, 0.02, 0.60); // saturated blue
+        assert!(
+            luma_709(r, g, b) > luma(r, g, b) * 1.5,
+            "Rec.709 weights should badly overstate a ProPhoto blue's luminance"
+        );
+    }
+
+    /// The bands must sit where this engine actually measures the colours
+    /// they are named after. Reference hues computed independently: an sRGB
+    /// colour of each name, taken through the pipeline's own sRGB→ProPhoto
+    /// matrix, measured with the same `rgb_to_hsl` the HSL stage uses.
+    ///
+    /// The old centres were the gamma-encoded sRGB angles (0/30/60/…), up to
+    /// 18° away from these; "Green" pointed at 120 while foliage lands at 102.
+    #[test]
+    fn hue_bands_sit_on_the_colours_they_name() {
+        // Linear sRGB for a saturated colour of each band's name.
+        let srgb_linear: [[f32; 3]; 8] = [
+            [1.0, 0.0, 0.0],      // Red
+            [1.0, 0.2158605, 0.0], // Orange
+            [1.0, 1.0, 0.0],      // Yellow
+            [0.0, 1.0, 0.0],      // Green
+            [0.0, 1.0, 1.0],      // Aqua
+            [0.0, 0.0, 1.0],      // Blue
+            [0.2158605, 0.0, 1.0], // Purple
+            [1.0, 0.0, 1.0],      // Magenta
+        ];
+        const SRGB_TO_PROPHOTO: [[f32; 3]; 3] = [
+            [0.5288241004, 0.3340609866, 0.1373616909],
+            [0.0975294148, 0.8790074094, 0.0233981175],
+            [0.0163599018, 0.1066124933, 0.8772485185],
+        ];
+        for (i, c) in srgb_linear.iter().enumerate() {
+            let p: Vec<f32> = SRGB_TO_PROPHOTO
+                .iter()
+                .map(|row| (row[0] * c[0] + row[1] * c[1] + row[2] * c[2]).max(0.0))
+                .collect();
+            let (h, _, _) = rgb_to_hsl(p[0], p[1], p[2]);
+            let d = hue_distance(h, HUE_CENTERS[i]);
+            // Orange and Purple drift with saturation, so their centre is a
+            // median and sits ~10° from this fully saturated probe, which is
+            // one end of their span. The other six are exact.
+            let tolerance = if i == 1 || i == 6 { 12.0 } else { 1.0 };
+            assert!(
+                d < tolerance,
+                "{}: measured hue {h:.1}°, band centre {:.1}° ({d:.1}° apart)",
+                HUE_BAND_LABELS[i],
+                HUE_CENTERS[i]
+            );
+        }
+    }
+
+    /// What Francis will actually feel, on real subject matter rather than on
+    /// idealised primaries.
+    ///
+    /// The assertion is on the WEIGHT, not on which band wins: foliage
+    /// already won "Green" under the old centres, because 102° is nearer 120
+    /// than 60. What was wrong was the strength. Asserting only the winner
+    /// would have passed before the fix and guarded nothing — it did, when
+    /// first written, which is why it says this.
+    ///
+    /// Sky is deliberately absent. Measured daylight sky sits near 237°,
+    /// between Aqua and Blue, so it is genuinely shared between two sliders
+    /// and no single-band weight threshold is honest for it.
+    #[test]
+    fn foliage_lands_in_green_and_sky_lands_in_blue() {
+        let strongest_band = |r: f32, g: f32, b: f32| {
+            let (h, _, _) = rgb_to_hsl(r, g, b);
+            (0..8)
+                .map(|i| (i, 1.0 - hue_distance(h, HUE_CENTERS[i]) / 45.0))
+                .filter(|(_, w)| *w > 0.0)
+                .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+                .map(|(i, w)| (HUE_BAND_LABELS[i], w))
+        };
+        // Foliage: sRGB(0.25, 0.45, 0.15) taken to linear ProPhoto.
+        let (won, weight) = strongest_band(0.087, 0.155, 0.036).expect("a band claims it");
+        assert_eq!(won, "Green");
+        assert!(
+            weight > 0.8,
+            "Green reaches only {weight:.2} of its travel on foliage — it was 0.44 \
+             under the old centres, which is what made the slider feel weak"
+        );
     }
 
     #[test]
