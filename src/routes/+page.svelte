@@ -152,10 +152,22 @@
    */
 
   const PREVIEW_PX = 2048;
-  // Live-drag proxy resolution. Kept low so the CPU rapid/AgX engine can keep
-  // up frame-to-frame while a slider moves; it snaps back to PREVIEW_PX the
-  // instant the drag settles. 1100 was too heavy for the per-pixel CPU path.
+  // Live-drag proxy resolution, for the engines that still need one. It
+  // existed because the per-pixel CPU path couldn't keep up frame to frame;
+  // Rapid on the GPU renders 2048px in ~24ms, so that engine now drags at
+  // full resolution and never shows a soft proxy at all (see liveRenderPx).
   const DRAG_PX = 768;
+  // Set from the gpu_available command at startup. Only Rapid has a Reveal
+  // GPU path — Spektra runs on spektrafilm-gpu's own wgpu backend already
+  // and is still ~2.5s a frame, which is the spectral simulation's own cost,
+  // so it keeps the proxy regardless.
+  let gpuAvailable = $state(false);
+  /** Resolution for a render: full unless a proxy still buys something.
+   * @param {boolean} live */
+  function liveRenderPx(live) {
+    if (!live) return PREVIEW_PX;
+    return developEngine === "rapid" && gpuAvailable ? PREVIEW_PX : DRAG_PX;
+  }
 
   /**
    * Register a Tauri event listener. Vite-HMR tolerant: a discarded page's
@@ -796,6 +808,8 @@
       // the frontend renders whatever the Rust registry reports, so adding an
       // engine is a Rust module with zero frontend changes.
       engines = await invoke("list_engines").catch(() => []);
+      // Decides whether a live drag renders full-res or through the proxy.
+      gpuAvailable = await invoke("gpu_available").catch(() => false);
       // For the docked Develop panel's "reset to default" (⌥-click a slider
       // label) — the detached panel fetches its own copy in its own onMount;
       // this is the docked equivalent, fetched once, same as everything above.
@@ -3749,7 +3763,7 @@
       recipeRedoStack = [];
       lastCommittedRecipe = snapshotRecipe(recipe);
     }
-    scheduleRender(live ? DRAG_PX : PREVIEW_PX);
+    scheduleRender(liveRenderPx(live));
     clearTimeout(saveTimer);
     const path = photoPath;
     const snapshot = recipe ? { ...recipe } : null;

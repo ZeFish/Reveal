@@ -3725,6 +3725,20 @@ fn list_engines(
     state.0.list_engines()
 }
 
+/// Whether the Rapid engine's per-pixel pass can run on the GPU here.
+/// The frontend uses it to decide whether a live slider drag can render at
+/// full preview resolution or still needs the low-res proxy: Rapid on the
+/// GPU is ~24ms for 2048px against ~236ms on the CPU.
+///
+/// Spektra is deliberately NOT covered by this. It already runs on the GPU
+/// (spektrafilm-gpu picks its own wgpu backend) and is still ~2.5s a frame
+/// — that's the spectral simulation's own cost, so it keeps the proxy no
+/// matter what this returns.
+#[tauri::command]
+fn gpu_available() -> bool {
+    reveal_engine::rapid_gpu::available()
+}
+
 /// Film and paper stocks available to the pickers.
 #[tauri::command]
 fn list_profiles(
@@ -4333,6 +4347,7 @@ pub fn run() {
             default_recipe,
             frame_info,
             list_engines,
+            gpu_available,
             list_profiles,
             list_luts,
             luts_dir,
