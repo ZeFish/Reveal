@@ -1267,7 +1267,24 @@ fn write_sidecar_if_changed(path: &std::path::Path, bytes: &[u8]) -> std::io::Re
 /// full develop) every single time the grid loads it. Never touches the
 /// `.xmp` recipe/engine metadata — a photo with no saved develop settings
 /// still reads as engine "None" if reopened; this only caches rendered bytes.
-fn persist_thumb_cache(source: &std::path::Path, bytes: &[u8]) {
+/// The size `.preview.jpg` is defined to be. The sidecar is a durable
+/// artifact — publish and export both read it — so only a response rendered
+/// at this size may be written there.
+const DURABLE_PREVIEW_EDGE: u32 = 2048;
+
+/// Persist a served thumbnail as the durable `.preview.jpg`, but ONLY when it
+/// was rendered at the size that file is defined to hold.
+///
+/// The protocol serves the size its caller asked for — 640 for contact-sheet
+/// cells, 2048 for a single-photo view — and both used to land here. That
+/// made the grid and the viewer overwrite each other's sidecar on every
+/// visit, rewriting the file back and forth across the network mount, and
+/// left whichever came last as the "durable" preview that publish would
+/// upload. Serving small and persisting small are different decisions.
+fn persist_thumb_cache(source: &std::path::Path, bytes: &[u8], size: u32) {
+    if size < DURABLE_PREVIEW_EDGE {
+        return;
+    }
     if let Some(sidecar_path) = preview_sidecar_path(source) {
         if let Err(e) = write_sidecar_if_changed(&sidecar_path, bytes) {
             eprintln!("thumb cache write {}: {e}", sidecar_path.display());
@@ -4202,7 +4219,7 @@ pub fn run() {
                                     t.elapsed().as_millis()
                                 );
                                 let small = downscale_grid_thumb(preview.bytes, size);
-                                persist_thumb_cache(source, &small);
+                                persist_thumb_cache(source, &small, size);
                                 HttpResponse::builder()
                                     .header("Content-Type", "image/jpeg")
                                     .header("Cache-Control", "max-age=3600")
@@ -4227,7 +4244,7 @@ pub fn run() {
                                             t.elapsed().as_millis()
                                         );
                                         let small = downscale_grid_thumb(bytes, size);
-                                        persist_thumb_cache(source, &small);
+                                        persist_thumb_cache(source, &small, size);
                                         HttpResponse::builder()
                                             .header("Content-Type", "image/jpeg")
                                             .header("Cache-Control", "max-age=3600")
@@ -4265,7 +4282,7 @@ pub fn run() {
                                             out.jpeg.len() / 1024,
                                             t.elapsed().as_millis()
                                         );
-                                        persist_thumb_cache(source, &out.jpeg);
+                                        persist_thumb_cache(source, &out.jpeg, DURABLE_PREVIEW_EDGE);
                                         HttpResponse::builder()
                                             .header("Content-Type", "image/jpeg")
                                             .header("Cache-Control", "max-age=3600")
