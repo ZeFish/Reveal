@@ -144,7 +144,8 @@
   /** @typedef {Object} RgbaPreview
    * @property {number} width
    * @property {number} height
-   * @property {ArrayBuffer | number[]} rgba
+   * @property {number} renderMs
+   * @property {Uint8ClampedArray<ArrayBuffer>} rgba
    */
   /**
    * @typedef {Window & typeof globalThis & {
@@ -3928,6 +3929,34 @@
    * from the pixel size any more — Rapid on the GPU drags at full 2048.
    * @type {boolean} */
   let pendingLive = false;
+  /**
+   * Read a frame off the raw IPC channel: four u32 of header, then the pixels.
+   *
+   * The pixels are a VIEW into the transferred buffer, not a copy — that is
+   * the whole point of the change on the Rust side. Building an
+   * `ArrayBuffer` here from a JSON array of 11 million numbers is exactly
+   * what used to make a slider drag feel heavy.
+   * @param {ArrayBuffer | ArrayBufferView} buf
+   * @returns {RgbaPreview}
+   */
+  function unpackFrame(buf) {
+    const ab = /** @type {ArrayBuffer} */ (
+      ArrayBuffer.isView(buf)
+        ? buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
+        : buf
+    );
+    const head = new DataView(ab, 0, 16);
+    const width = head.getUint32(0, true);
+    const height = head.getUint32(4, true);
+    const renderMs = head.getUint32(8, true);
+    return {
+      width,
+      height,
+      renderMs,
+      rgba: new Uint8ClampedArray(ab, 16, width * height * 4),
+    };
+  }
+
   /** @param {number} px @param {boolean} [live] */
   function scheduleRender(px, live = false) {
     pendingPx = px; // latest wins
@@ -3947,7 +3976,9 @@
     const t0 = performance.now();
     try {
       if (snap.engine === "rapid") {
-        const res = await invoke("develop_preview_rgba", { path, recipe: snap, maxPx: px, live });
+        const res = unpackFrame(
+          await invoke("develop_preview_rgba", { path, recipe: snap, maxPx: px, live }),
+        );
         if (path === photoPath) {
           renderMs = Math.round(performance.now() - t0);
           useCanvas = true;
@@ -3978,7 +4009,7 @@
             canvasEl.height = res.height;
             const ctx = canvasEl.getContext("2d");
             if (ctx) {
-              const imgData = new ImageData(new Uint8ClampedArray(res.rgba), res.width, res.height);
+              const imgData = new ImageData(res.rgba, res.width, res.height);
               ctx.putImageData(imgData, 0, 0);
               canvasVersion++;
             }
