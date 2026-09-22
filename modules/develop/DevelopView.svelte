@@ -65,11 +65,12 @@
   // Now that the caches usually answer instantly, a render that finishes in
   // 30ms used to flash a full pill on screen — more distracting than the wait
   // it announced. So: nothing at all for the first BUSY_DELAY_MS, then a bare
-  // spinner, and words only when there's an actual `status` to read.
+  // wordless spinner. Words belong to the notification stack at the bottom of
+  // the window, which is the one place the user has to look.
   const BUSY_DELAY_MS = 400;
   let loaded = $state(false);
   let busy = $derived(
-    inflight || pendingPx !== null || !!status || (!loaded && !!imgUrl && !imgFailed && !useCanvas)
+    inflight || pendingPx !== null || (!loaded && !!imgUrl && !imgFailed && !useCanvas)
   );
   let busyVisible = $state(false);
   $effect(() => {
@@ -601,10 +602,7 @@
   oncontextmenu={(e) => e.preventDefault()}
 >
   {#if busyVisible}
-    <div class="render-badge" class:with-label={!!status}>
-      <span class="render-spinner"></span>
-      {#if status}<span class="din render-label">{status}</span>{/if}
-    </div>
+    <div class="render-badge"><span class="render-spinner"></span></div>
   {/if}
 
   {#if imgFailed}
@@ -1057,17 +1055,7 @@
     display: flex;
     align-items: center;
     gap: 7px;
-    color: rgba(255, 255, 255, 0.55);
-    font-size: 0.68rem;
     animation: badge-in var(--duration-fast, 160ms) ease-out;
-  }
-  /* Only a message worth reading earns the backing pill; a plain "still
-     working" spinner floats bare over the photo. */
-  .render-badge.with-label {
-    padding: 4px 10px;
-    background: rgba(0, 0, 0, 0.45);
-    backdrop-filter: blur(8px);
-    border-radius: 999px;
   }
   @keyframes badge-in {
     from {

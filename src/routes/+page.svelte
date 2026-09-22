@@ -19,6 +19,7 @@
   import RenderQueueModal from "@modules/modals/RenderQueueModal.svelte";
   import TaskIndicator from "@modules/modals/TaskIndicator.svelte";
   import Toast from "@modules/modals/Toast.svelte";
+  import NotificationStack from "@modules/modals/NotificationStack.svelte";
   import ContextMenu from "@modules/menus/ContextMenu.svelte";
   import Dropdown from "@stnd/ui/Dropdown.svelte";
   import DropdownItem from "@stnd/ui/DropdownItem.svelte";
@@ -548,6 +549,22 @@
   let exportBorder = $state(false);
   let exportFolder = $state("");
   let appMessage = $state("");
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let appMessageTimer = null;
+  // The single way to tell the user something happened. Goes to the
+  // notification stack at the bottom of the window — see Toast.svelte for why
+  // `status` must not be used for this.
+  /** @param {string} message @param {number} [ms] */
+  function notify(message, ms = 3000) {
+    appMessage = message;
+    if (appMessageTimer) clearTimeout(appMessageTimer);
+    // A second message replacing the first restarts the clock rather than
+    // inheriting the first one's remaining time.
+    appMessageTimer = setTimeout(() => {
+      appMessage = "";
+      appMessageTimer = null;
+    }, ms);
+  }
   let autoImport = $state(false);
   // AI cull (walk-away card→cull→export): mirrors autoImport's hydrate-at-
   // boot pattern, but sourced from the generic preferences bag rather than
@@ -2564,10 +2581,9 @@
     if (!appPath || !view[sel]) return;
     try {
       await invoke("open_in_editor", { filePath: view[sel].path, appPath });
-      status = "Opened successfully ✓";
-      setTimeout(() => (status = status === "Opened successfully ✓" ? "" : status), 2000);
+      notify("Opened successfully ✓", 2000);
     } catch (e) {
-      status = `erreur : ${e}`;
+      notify(`erreur : ${e}`, 5000);
     }
   }
 
@@ -2657,11 +2673,10 @@
     publishTaskId = startActivity("publish", `Publier l'histoire · ${storySet.size} photos`, storySet.size);
     try {
       liveUrl = await invoke("publish_story", { dir: d, dryRun: false });
-      status = "published ✓";
-      setTimeout(() => (status = status === "published ✓" ? "" : status), 2000);
+      notify("published ✓", 2000);
       updateActivity(publishTaskId, { done: storySet.size, phase: "Complete", status: "completed" });
     } catch (e) {
-      status = `erreur : ${e}`;
+      notify(`erreur : ${e}`, 5000);
       updateActivity(publishTaskId, { phase: String(e), status: "failed" });
     } finally {
       progress = null;
@@ -2685,11 +2700,10 @@
         longEdge: exportEdge,
         borderFrac: exportBorder ? 0.04 : 0
       });
-      status = "exported ✓";
-      setTimeout(() => (status = status === "exported ✓" ? "" : status), 2000);
+      notify("exported ✓", 2000);
       updateActivity(jobId, { done: storySet.size, current: dest, phase: "Complete", status: "completed" });
     } catch (e) {
-      status = `erreur : ${e}`;
+      notify(`erreur : ${e}`, 5000);
       updateActivity(jobId, { phase: String(e), status: "failed" });
     } finally {
       progress = null;
@@ -2955,8 +2969,9 @@
   /** @param {string} [destDir] override the configured export folder — used by the dev panel's quick-export-to-Desktop button */
   async function exportCurrent(destDir = exportFolder) {
     if (!photoPath || !recipe) return;
+    // startActivity already puts "Export <name>" in the notification stack —
+    // a second "Exporting…" elsewhere said the same thing twice.
     const jobId = startActivity("export", `Export ${picked}`, 1);
-    status = "Exporting…";
     try {
       await invoke("export_photo", {
         path: photoPath,
@@ -2971,11 +2986,10 @@
         phase: "Complete",
         status: "completed",
       });
-      status = "Exported";
-      setTimeout(() => (status = status === "Exported" ? "" : status), 2000);
+      notify("Exported ✓", 2000);
     } catch (e) {
       updateActivity(jobId, { phase: String(e), status: "failed" });
-      status = `Export failed: ${e}`;
+      notify(`Export failed: ${e}`, 5000);
     } finally {
       if (activeActivityId === jobId) activeActivityId = null;
     }
@@ -2996,7 +3010,7 @@
   async function exportToDailyNote(targetPath, customRecipe) {
     const target = targetPath || photoPath || view[sel]?.path;
     if (!target) return;
-    status = "Vers le journal…";
+    notify("Vers le journal…", 10000);
     try {
       const rec = customRecipe || (target === photoPath ? recipe : null);
       const notePath = await invoke("export_to_daily_note", {
@@ -3007,15 +3021,10 @@
       });
       const noteName = notePath.split("/").slice(-2).join("/");
       const filename = target.split("/").pop();
-      status = `Dans le journal → ${noteName}`;
-      appMessage = `Dans le journal → ${noteName} (${filename}) ✓`;
-      setTimeout(() => (appMessage = ""), 4000);
-      setTimeout(() => (status = ""), 3000);
+      notify(`Dans le journal → ${noteName} (${filename}) ✓`, 4000);
       openInObsidian(notePath);
     } catch (e) {
-      status = `Journal failed: ${e}`;
-      appMessage = `Journal export failed: ${e}`;
-      setTimeout(() => (appMessage = ""), 4000);
+      notify(`Journal export failed: ${e}`, 5000);
     }
   }
 
@@ -3031,7 +3040,8 @@
       return exportToDailyNote(targets[0]);
     }
 
-    status = "Vers le journal…";
+    // The activity indicator carries "Journal · N photos" for the duration —
+    // no second running message needed.
     const jobId = startActivity("publish", `Journal · ${targets.length} photos`, targets.length);
     try {
       const notePath = await invoke("export_batch_to_daily_note", {
@@ -3040,16 +3050,11 @@
         borderFrac: exportBorder ? 0.04 : 0,
       });
       const noteName = notePath.split("/").slice(-2).join("/");
-      status = `Dans le journal → ${noteName}`;
-      appMessage = `Added to the journal → ${targets.length} photos added to ${noteName} ✓`;
-      setTimeout(() => (appMessage = ""), 4000);
-      setTimeout(() => (status = ""), 3000);
+      notify(`Dans le journal → ${targets.length} photos dans ${noteName} ✓`, 4000);
       updateActivity(jobId, { done: targets.length, current: noteName, phase: "Complete", status: "completed" });
       openInObsidian(notePath);
     } catch (e) {
-      status = `Journal failed: ${e}`;
-      appMessage = `Journal export failed: ${e}`;
-      setTimeout(() => (appMessage = ""), 4000);
+      notify(`Journal export failed: ${e}`, 5000);
       updateActivity(jobId, { phase: String(e), status: "failed" });
     } finally {
       if (activeActivityId === jobId) activeActivityId = null;
@@ -4901,8 +4906,10 @@
 <!-- The one place every long-running operation reports to, regardless of
      which mode (Grid/Develop) is currently showing — an import can finish
      while you're in Develop, and you should still see it. -->
-<Toast message={appMessage} />
-<TaskIndicator {activityQueue} onOpen={() => (queueOpen = true)} />
+<NotificationStack>
+  <Toast message={appMessage} />
+  <TaskIndicator {activityQueue} onOpen={() => (queueOpen = true)} />
+</NotificationStack>
 {#if queueOpen}
   <RenderQueueModal
     {activityQueue}

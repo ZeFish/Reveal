@@ -27,13 +27,9 @@
 {/if}
 
 <style>
+  /* Placement belongs to NotificationStack now, not to each notice. */
   .task-indicator {
     all: unset;
-    position: fixed;
-    bottom: 12px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 80;
     display: flex;
     align-items: center;
     gap: 6px;
