@@ -1401,9 +1401,6 @@ fn prune_preview_cache(dir: &std::path::Path, limit: usize) {
         HashMap::new();
     for entry in read.filter_map(|e| e.ok()) {
         let path = entry.path();
-        // `.recipe` companions are removed with the image they describe, not
-        // ranked on their own — an orphan claim outliving its JPEG is exactly
-        // the state that would serve a stale render.
         if path.extension().and_then(|x| x.to_str()) != Some("jpg") {
             continue;
         }
@@ -1427,7 +1424,6 @@ fn prune_preview_cache(dir: &std::path::Path, limit: usize) {
         let mut keep = variants.into_iter();
         if let Some(survivor) = keep.next() {
             for (_, stale) in keep {
-                let _ = std::fs::remove_file(stale.with_extension("recipe"));
                 let _ = std::fs::remove_file(stale);
             }
             newest.push(survivor);
@@ -1440,7 +1436,6 @@ fn prune_preview_cache(dir: &std::path::Path, limit: usize) {
     }
     newest.sort_by(|a, b| b.0.cmp(&a.0));
     for (_, path) in newest.into_iter().skip(limit) {
-        let _ = std::fs::remove_file(path.with_extension("recipe"));
         let _ = std::fs::remove_file(path);
     }
 }
@@ -1514,64 +1509,32 @@ async fn developed_preview_cache_clear(app: tauri::AppHandle) -> Result<PreviewC
     .map_err(|e| e.to_string())?
 }
 
-/// Mirror a photo's developed preview into the local cache.
+/// Copy bytes we already hold into the local cache.
 ///
-/// Best-effort in every direction: a cache that fails to fill costs the next
-/// visit one NAS read and nothing else, so no caller checks the result, and
-/// the prune is scheduled rather than run here. Writing via a temp file and
-/// a rename means a half-written entry can never be served as a photo.
+/// One of exactly two writers (see `write_preview_sidecar_bytes` for the
+/// other, which PUBLISHES renders). This one only ever MIRRORS: it stores
+/// what was just read from the NAS sidecar or lifted off a card, never a
+/// render of its own. Keeping those two roles apart is what stops the cache
+/// and the sidecar from drifting.
+///
+/// Best-effort throughout — a cache that fails to fill costs the next visit
+/// one NAS read and nothing else, so no caller checks the result. Temp file
+/// plus rename means a half-written entry can never be served as a photo.
 fn cache_developed_preview_locally(
     app: &tauri::AppHandle,
     source: &std::path::Path,
     bytes: &[u8],
+    max_px: u32,
 ) {
-    let Ok(dest) = developed_preview_cache_path(app, source, DURABLE_PREVIEW_EDGE) else {
+    let Ok(dest) = developed_preview_cache_path(app, source, max_px) else {
         return;
     };
     let tmp = dest.with_extension("part");
     if std::fs::write(&tmp, bytes).is_ok() && std::fs::rename(&tmp, &dest).is_ok() {
-        // This render came from a sidecar or a camera preview, not from a
-        // recipe we can name. Drop any companion so Develop reads it as a
-        // miss rather than trusting a claim about different bytes.
-        if let Ok(recipe_path) = developed_preview_recipe_path(app, source, DURABLE_PREVIEW_EDGE) {
-            let _ = std::fs::remove_file(recipe_path);
-        }
         schedule_cache_prune(app);
     } else {
         let _ = std::fs::remove_file(&tmp);
     }
-}
-
-/// Which recipe produced the cached render, kept beside it.
-///
-/// The image itself is addressed by photo alone so navigation can find it
-/// without knowing the recipe. But Develop must not be handed the previous
-/// recipe's render the moment a slider moves, so it checks this first: a few
-/// bytes next to the JPEG naming what is actually in it.
-fn developed_preview_recipe_path(
-    app: &tauri::AppHandle,
-    path: &std::path::Path,
-    max_px: u32,
-) -> Result<std::path::PathBuf, String> {
-    Ok(developed_preview_cache_path(app, path, max_px)?.with_extension("recipe"))
-}
-
-/// A stable digest of the recipe plus the source file's identity, so a photo
-/// re-imported or edited outside Reveal never matches a stale render.
-fn developed_preview_recipe_digest(
-    path: &std::path::Path,
-    recipe: &reveal_engine::Recipe,
-) -> String {
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    serde_json::to_string(recipe).unwrap_or_default().hash(&mut h);
-    if let Ok(m) = std::fs::metadata(path) {
-        m.len().hash(&mut h);
-        if let Ok(t) = m.modified() {
-            t.hash(&mut h);
-        }
-    }
-    format!("{:016x}", h.finish())
 }
 
 /// Where a photo's local render lives.
@@ -1602,30 +1565,18 @@ async fn developed_preview_jpeg(
     recipe: &reveal_engine::Recipe,
     max_px: u32,
 ) -> Result<Vec<u8>, String> {
-    let cache_path = developed_preview_cache_path(app, std::path::Path::new(path), max_px)?;
     // The durable truth is the `.preview.jpg` sibling of the RAW (file over
     // app), a 2048px develop that doubles as a web-ready export. Only the
     // settled full-res render persists.
     let durable = max_px >= 2048;
-    let recipe_path = developed_preview_recipe_path(app, std::path::Path::new(path), max_px)?;
-    let want = developed_preview_recipe_digest(std::path::Path::new(path), recipe);
-    // The image is addressed by photo alone, so it may well hold the render
-    // of a recipe one slider ago. Only serve it when the companion says it is
-    // this recipe's.
-    let cache_is_current = std::fs::read_to_string(&recipe_path)
-        .map(|got| got.trim() == want)
-        .unwrap_or(false);
-    if cache_is_current {
-        if let Ok(jpeg) = std::fs::read(&cache_path) {
-            write_preview_sidecar_bytes(path, &jpeg, durable);
-            eprintln!(
-                "develop_preview cache: {} ({} ko)",
-                path.rsplit('/').next().unwrap_or(path),
-                jpeg.len() / 1024
-            );
-            return Ok(jpeg);
-        }
-    }
+
+    // No cache read here, deliberately. This is called to PRODUCE a render of
+    // the recipe it was handed; the cache holds whatever was published last,
+    // which is a different question. Answering it needed a recipe digest
+    // stored beside every entry, and forgetting that check on one of the two
+    // write paths is exactly what shipped the stale-sidecar bug. The frontend
+    // is already showing `.preview.jpg` by the time it calls this, so the
+    // render it wants is a new one.
 
     let engine = state.0.clone();
     // Clone for the blocking closure so the FULL path survives the move — the
@@ -1646,24 +1597,8 @@ async fn developed_preview_jpeg(
         "develop_preview: {}x{} decode {} ms pipeline {} ms",
         out.width, out.height, out.decode_ms, out.render_ms
     );
-    if durable {
-        // Order matters: remove the stale claim, write the image, then claim
-        // it. A crash between the two leaves an entry navigation can still
-        // serve (it only wants "a render of this photo") while Develop treats
-        // it as a miss — never the reverse, which would serve the old recipe.
-        let _ = std::fs::remove_file(&recipe_path);
-        match std::fs::write(&cache_path, &out.jpeg) {
-            Ok(()) => {
-                let _ = std::fs::write(&recipe_path, &want);
-            }
-            Err(e) => {
-                let source_name = path.rsplit('/').next().unwrap_or(path);
-                eprintln!("develop_preview cache write {source_name}: {e}");
-            }
-        }
-        schedule_cache_prune(app);
-    }
-    write_preview_sidecar_bytes(path, &out.jpeg, durable);
+    // One call publishes to both stores — see the contract on this function.
+    write_preview_sidecar_bytes(app, path, &out.jpeg, durable, max_px);
     Ok(out.jpeg)
 }
 
@@ -1747,23 +1682,64 @@ async fn copy_photo_preview_to_clipboard(path: String) -> Result<(), String> {
 
 /// THE CONTRACT: every preview-serving path, for every develop engine, MUST
 /// funnel its final JPEG bytes through this one function on settle (durable).
-/// This is the only place that writes the `.preview.jpg` sidecar — the single
-/// source of truth the grid, external tools, and file-over-app all read. An
-/// engine whose interactive path doesn't produce JPEG directly (e.g. a fast
-/// RGBA/canvas proxy) must still call this — see `write_preview_sidecar`
+/// This is the only place that PUBLISHES a render, and it publishes to both
+/// stores at once: the `.preview.jpg` sidecar — the single source of truth
+/// the grid, external tools and file-over-app all read — and the local cache
+/// that spares the next visit a trip to the NAS.
+///
+/// Both, from the same bytes, in one call. The local cache was added without
+/// extending this contract, so five places wrote it and each had to decide
+/// for itself whether what it held was still current; one of them forgot,
+/// and `.preview.jpg` started receiving the render from one slider ago.
+/// Publishing is one act, so it is one function.
+///
+/// An engine whose interactive path doesn't produce JPEG directly (e.g. a
+/// fast RGBA/canvas proxy) must still call this — see `write_preview_sidecar`
 /// below, which renders a JPEG via the SAME engine-agnostic `develop_jpeg`
 /// just for this purpose. Skipping this funnel is exactly the bug that let
 /// Rapid-developed photos never touch disk while their loupe still updated.
-fn write_preview_sidecar_bytes(path: &str, jpeg: &[u8], durable: bool) {
+fn write_preview_sidecar_bytes(
+    app: &tauri::AppHandle,
+    path: &str,
+    jpeg: &[u8],
+    durable: bool,
+    max_px: u32,
+) {
     if !durable {
         return;
     }
-    let Some(sidecar) = preview_sidecar_path(std::path::Path::new(path)) else {
+    let source = std::path::Path::new(path);
+    let Some(sidecar) = preview_sidecar_path(source) else {
         return;
     };
-    if let Err(e) = write_sidecar_if_changed(&sidecar, jpeg) {
-        eprintln!("preview sidecar write {path}: {e}");
+    let cache = developed_preview_cache_path(app, source, max_px).ok();
+    if let Err(e) = publish_render_to(&sidecar, cache.as_deref(), jpeg) {
+        eprintln!("preview publish {path}: {e}");
     }
+    schedule_cache_prune(app);
+}
+
+/// The act of publishing, with the paths already resolved.
+///
+/// Split out from `write_preview_sidecar_bytes` so the invariant can be
+/// tested without a running Tauri app: one call, both stores, same bytes.
+/// The sidecar is the truth and is written first — if the cache write then
+/// fails, the next visit simply reads the NAS, which is a slow correct
+/// answer rather than a fast wrong one.
+fn publish_render_to(
+    sidecar: &std::path::Path,
+    cache: Option<&std::path::Path>,
+    jpeg: &[u8],
+) -> std::io::Result<()> {
+    write_sidecar_if_changed(sidecar, jpeg)?;
+    if let Some(dest) = cache {
+        let tmp = dest.with_extension("part");
+        if std::fs::write(&tmp, jpeg).is_ok() && std::fs::rename(&tmp, dest).is_ok() {
+            return Ok(());
+        }
+        let _ = std::fs::remove_file(&tmp);
+    }
+    Ok(())
 }
 
 #[derive(serde::Serialize)]
@@ -1835,27 +1811,23 @@ async fn write_preview_sidecar(
     recipe: &reveal_engine::Recipe,
     max_px: u32,
 ) -> Result<(), String> {
-    let cache_path = developed_preview_cache_path(app, std::path::Path::new(path), max_px)?;
-    let jpeg = if let Ok(cached) = std::fs::read(&cache_path) {
-        cached
-    } else {
-        let engine = engine.clone();
-        let path_owned = path.to_string();
-        let recipe_owned = recipe.clone();
-        let rendered = tauri::async_runtime::spawn_blocking(move || {
-            let source = apple_photos::source(&path_owned)?;
-            engine.develop_jpeg(&source, &recipe_owned, max_px).map_err(|e| format!("{e:#}"))
-        })
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| format!("{e:#}"))?;
-        if let Err(e) = std::fs::write(&cache_path, &rendered.jpeg) {
-            eprintln!("write_preview_sidecar cache write: {e}");
-        }
-        schedule_cache_prune(app);
-        rendered.jpeg
-    };
-    write_preview_sidecar_bytes(path, &jpeg, true);
+    // Render, then publish. This used to read the local cache first and reuse
+    // whatever it found — which, once the cache key stopped carrying a recipe
+    // digest, meant a settled Rapid edit republished the PREVIOUS render as
+    // `.preview.jpg`: correct on the canvas, wrong in the grid. The cache
+    // cannot answer "is this that recipe?", so it is not asked.
+    let engine = engine.clone();
+    let path_owned = path.to_string();
+    let recipe_owned = recipe.clone();
+    let rendered = tauri::async_runtime::spawn_blocking(move || {
+        let source = apple_photos::source(&path_owned)?;
+        engine.develop_jpeg(&source, &recipe_owned, max_px).map_err(|e| format!("{e:#}"))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| format!("{e:#}"))?;
+
+    write_preview_sidecar_bytes(app, path, &rendered.jpeg, true, max_px);
     Ok(())
 }
 
@@ -3051,6 +3023,7 @@ async fn import_card(
                         &app_for_worker,
                         std::path::Path::new(dest_path),
                         &sized,
+                        DURABLE_PREVIEW_EDGE,
                     );
                 }
             }
@@ -4374,7 +4347,7 @@ pub fn run() {
                                     // photo: mirror what we just read, at the
                                     // size it actually is, not the size this
                                     // request asked for.
-                                    cache_developed_preview_locally(&app, source, &bytes);
+                                    cache_developed_preview_locally(&app, source, &bytes, DURABLE_PREVIEW_EDGE);
                                     HttpResponse::builder()
                                         .header("Content-Type", "image/jpeg")
                                         .header("Cache-Control", "max-age=3600")
@@ -4765,47 +4738,41 @@ mod preview_cache_tests {
         );
     }
 
-    /// The `.recipe` companion is what stops Develop being handed the
-    /// previous slider position's render. An orphan that outlives its image
-    /// would later sit next to a DIFFERENT render of the same photo and
-    /// vouch for it, which is the one failure this file must not have.
+    /// Publishing is ONE act. Five separate writers each deciding whether
+    /// their own copy was still current is what let `.preview.jpg` receive
+    /// the render from one slider ago; the cache must never hold bytes the
+    /// sidecar does not.
     #[test]
-    fn recipe_companions_never_outlive_their_image() {
-        let s = Scratch::new("companions");
-        let stale = render(&s.0, "aaaa", "", 300);
-        std::fs::write(stale.with_extension("recipe"), "deadbeef").unwrap();
-        // A newer render of the same photo, as a second size would be.
-        let current = s.0.join("aaaa-640.jpg");
-        std::fs::write(&current, b"jpeg").unwrap();
-        std::fs::write(current.with_extension("recipe"), "cafebabe").unwrap();
+    fn publishing_writes_the_sidecar_and_the_cache_from_the_same_bytes() {
+        let s = Scratch::new("publish-pair");
+        let sidecar = s.0.join("DSCF0001.preview.jpg");
+        let cache = s.0.join("aaaa-2048.jpg");
 
-        prune_preview_cache(&s.0, 2000);
+        super::publish_render_to(&sidecar, Some(&cache), b"render-A").unwrap();
+        assert_eq!(std::fs::read(&sidecar).unwrap(), b"render-A");
+        assert_eq!(std::fs::read(&cache).unwrap(), b"render-A");
 
-        let left = names(&s.0);
-        for name in &left {
-            if let Some(stem) = name.strip_suffix(".recipe") {
-                assert!(
-                    left.contains(&format!("{stem}.jpg")),
-                    "{name} survived without its image"
-                );
-            }
-        }
+        // A second publish must move BOTH, or the grid keeps showing the old
+        // look while the canvas shows the new one.
+        super::publish_render_to(&sidecar, Some(&cache), b"render-B").unwrap();
+        assert_eq!(std::fs::read(&sidecar).unwrap(), b"render-B");
+        assert_eq!(
+            std::fs::read(&cache).unwrap(),
+            b"render-B",
+            "the cache still holds the previous render"
+        );
+
+        // No half-written leftovers.
+        assert!(!cache.with_extension("part").exists());
     }
 
-    /// Photos beyond the limit take their companions with them.
+    /// Without a cache path the sidecar is still the truth and still written.
     #[test]
-    fn evicted_photos_leave_nothing_behind() {
-        let s = Scratch::new("evict-companions");
-        for (photo, age) in [("old", 900u64), ("new", 10u64)] {
-            let p = render(&s.0, photo, "", age);
-            std::fs::write(p.with_extension("recipe"), "abc").unwrap();
-        }
-        prune_preview_cache(&s.0, 1);
-        assert_eq!(
-            names(&s.0),
-            vec!["new-2048-.jpg", "new-2048-.recipe"],
-            "the evicted photo leaves no orphan claim"
-        );
+    fn publishing_without_a_cache_still_writes_the_sidecar() {
+        let s = Scratch::new("publish-solo");
+        let sidecar = s.0.join("DSCF0002.preview.jpg");
+        super::publish_render_to(&sidecar, None, b"render").unwrap();
+        assert_eq!(std::fs::read(&sidecar).unwrap(), b"render");
     }
 
     #[test]
