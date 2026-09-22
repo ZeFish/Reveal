@@ -95,8 +95,8 @@
     themes = [],
     /** @type {(id: string) => Promise<void> | void} */
     onSelectTheme = () => {},
-    /** @type {() => Promise<{size_bytes: number, photo_count: number, limit_photos: number}>} */
-    onPreviewCacheStatus = async () => ({ size_bytes: 0, photo_count: 0, limit_photos: 0 }),
+    /** @type {() => Promise<{size_bytes: number, photo_count: number, limit_bytes: number}>} */
+    onPreviewCacheStatus = async () => ({ size_bytes: 0, photo_count: 0, limit_bytes: 0 }),
     /** @type {() => Promise<{removed_bytes: number}>} */
     onPreviewCacheClear = async () => ({ removed_bytes: 0 }),
     /** @type {() => Promise<{path: string, frames: number, online: boolean}[]>} */
@@ -238,7 +238,7 @@
   });
   let devCacheError = $state("");
   let devCacheMessage = $state("");
-  /** @type {{size_bytes: number, photo_count: number, limit_photos: number} | null} */
+  /** @type {{size_bytes: number, photo_count: number, limit_bytes: number} | null} */
   let devCacheStatus = $state(null);
 
   $effect(() => {
@@ -723,7 +723,7 @@
                 <span class="row-desc">Developed copies cached for instant display in the grid — independent of the source (card, Apple Photos, disk). Clearing forces a redevelop on next display.</span>
                 <span class="row-desc" role="status" aria-label="Preview cache usage">
                   {#if devCacheStatus}
-                    {formatBytes(devCacheStatus.size_bytes)} · {devCacheStatus.photo_count.toLocaleString("en-CA")} / {devCacheStatus.limit_photos.toLocaleString("en-CA")} photos
+                    {formatBytes(devCacheStatus.size_bytes)} / {formatBytes(devCacheStatus.limit_bytes)} · {devCacheStatus.photo_count.toLocaleString("en-CA")} photos
                   {:else}
                     {devCacheBusy ? "Reading cache usage…" : "Cache usage unavailable."}
                   {/if}

@@ -1344,10 +1344,18 @@ impl Drop for ThumbPermit<'_> {
     }
 }
 
-/// The develop cache under DevelopPreviews/ is a pure speed layer — we keep the
-/// variants of at most this many distinct source photos (LRU by mtime). The
-/// durable truth is always the `.preview.jpg` sibling of the RAW.
-const PREVIEW_CACHE_PHOTO_LIMIT: usize = 2000;
+/// How much disk the develop cache may use.
+///
+/// A budget, not a photo count. Entries range from ~27 KB at grid size to
+/// ~420 KB at 2048, so "2000 photos" stopped describing anything once the
+/// cache held both: the same number meant sixty megabytes or eight hundred
+/// depending on what happened to be in it. A gigabyte holds roughly 35,000
+/// grid-size photos, which is the point — the cache is what makes moving
+/// through the library fast, so it should cover the library.
+///
+/// The durable truth is always the `.preview.jpg` sibling of the RAW; this
+/// is a pure speed layer and evicting from it costs a NAS read, nothing more.
+const PREVIEW_CACHE_BUDGET_BYTES: u64 = 1024 * 1024 * 1024;
 
 /// Coalesces concurrent prune requests: a render storm schedules at most one
 /// running prune at a time instead of one per frame.
@@ -1368,7 +1376,7 @@ fn schedule_cache_prune(app: &tauri::AppHandle) {
         }
     };
     tauri::async_runtime::spawn_blocking(move || {
-        prune_preview_cache(&dir, PREVIEW_CACHE_PHOTO_LIMIT);
+        prune_preview_cache(&dir, PREVIEW_CACHE_BUDGET_BYTES);
         CACHE_PRUNING.store(false, Ordering::Release);
     });
 }
@@ -1384,11 +1392,11 @@ fn schedule_cache_prune(app: &tauri::AppHandle) {
 /// holding 97 stale renders of itself. Only the current recipe can ever be
 /// asked for again, so only the newest survives.
 ///
-/// The photo-count trim used to return early whenever the library was under
-/// the limit, which meant that on any normal cache — 99 photos against a
-/// limit of 2000 — nothing was ever cleaned at all. The per-photo trim runs
-/// unconditionally for that reason.
-fn prune_preview_cache(dir: &std::path::Path, limit: usize) {
+/// The size trim used to be a photo count and to return early whenever the
+/// library was under it, which meant that on any normal cache — 99 photos
+/// against a limit of 2000 — nothing was ever cleaned at all. The per-entry
+/// trim runs unconditionally for that reason.
+fn prune_preview_cache(dir: &std::path::Path, budget_bytes: u64) {
     use std::collections::HashMap;
     let epoch = std::time::SystemTime::UNIX_EPOCH;
     let read = match std::fs::read_dir(dir) {
@@ -1404,8 +1412,18 @@ fn prune_preview_cache(dir: &std::path::Path, limit: usize) {
         if path.extension().and_then(|x| x.to_str()) != Some("jpg") {
             continue;
         }
+        // Group by photo AND size: `{photo}-{size}-{version}.jpg`. Grouping
+        // by photo alone would make a 768 entry and a 2048 entry of the same
+        // photo evict each other, so the grid and the viewer would keep
+        // knocking the other's copy out.
         let key = match path.file_name().and_then(|n| n.to_str()) {
-            Some(name) => name.split('-').next().unwrap_or(name).to_string(),
+            Some(name) => {
+                let mut parts = name.splitn(3, '-');
+                match (parts.next(), parts.next()) {
+                    (Some(photo), Some(size)) => format!("{photo}-{size}"),
+                    _ => name.to_string(),
+                }
+            }
             None => continue,
         };
         let mtime = entry
@@ -1416,7 +1434,7 @@ fn prune_preview_cache(dir: &std::path::Path, limit: usize) {
         groups.entry(key).or_default().push((mtime, path));
     }
 
-    // One render per photo: drop every variant but the most recent.
+    // One render per photo per size: drop every version but the most recent.
     let mut newest: Vec<(std::time::SystemTime, std::path::PathBuf)> =
         Vec::with_capacity(groups.len());
     for (_, mut variants) in groups {
@@ -1430,13 +1448,18 @@ fn prune_preview_cache(dir: &std::path::Path, limit: usize) {
         }
     }
 
-    // Then the library trim: the oldest photos beyond `limit` go entirely.
-    if newest.len() <= limit {
-        return;
-    }
+    // Then the budget: newest first, keep until the disk allowance runs out.
+    // Evicting costs one NAS read on the next visit and nothing else, so the
+    // only thing to get right is the ORDER — least recently touched goes.
     newest.sort_by(|a, b| b.0.cmp(&a.0));
-    for (_, path) in newest.into_iter().skip(limit) {
-        let _ = std::fs::remove_file(path);
+    let mut used: u64 = 0;
+    for (_, path) in newest {
+        let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        if used + size <= budget_bytes {
+            used += size;
+        } else {
+            let _ = std::fs::remove_file(path);
+        }
     }
 }
 
@@ -1448,7 +1471,10 @@ fn prune_preview_cache(dir: &std::path::Path, limit: usize) {
 struct PreviewCacheStatus {
     size_bytes: u64,
     photo_count: usize,
-    limit_photos: usize,
+    /// The disk allowance. The photo count is still reported because it is
+    /// what a photographer thinks in, but it is an OUTCOME now, not a limit:
+    /// how many photos fit depends on their size.
+    limit_bytes: u64,
 }
 
 #[derive(serde::Serialize)]
@@ -1479,7 +1505,7 @@ async fn developed_preview_cache_status(app: tauri::AppHandle) -> Result<Preview
         Ok(PreviewCacheStatus {
             size_bytes,
             photo_count: keys.len(),
-            limit_photos: PREVIEW_CACHE_PHOTO_LIMIT,
+            limit_bytes: PREVIEW_CACHE_BUDGET_BYTES,
         })
     })
     .await
@@ -1525,8 +1551,9 @@ fn cache_developed_preview_locally(
     source: &std::path::Path,
     bytes: &[u8],
     max_px: u32,
+    version: u64,
 ) {
-    let Ok(dest) = developed_preview_cache_path(app, source, max_px) else {
+    let Ok(dest) = developed_preview_cache_path(app, source, max_px, version) else {
         return;
     };
     let tmp = dest.with_extension("part");
@@ -1537,22 +1564,40 @@ fn cache_developed_preview_locally(
     }
 }
 
-/// Where a photo's local render lives.
+/// The size the grid actually asks for. Entries at this size are what the
+/// cache is FOR — at ~27 KB against ~420 KB for a 2048, the same disk holds
+/// roughly fourteen times as many photos.
+const GRID_PREVIEW_EDGE: u32 = 768;
+
+/// Where a photo's local render lives: photo, size, version.
 ///
-/// One file per photo per size — no recipe in the key. The cache is the
-/// `.preview.jpg` kept locally (Francis: "la cache est le .preview.jpg mais
-/// local"), and a photo has exactly one current render, so a new one
-/// overwrites the old instead of accumulating beside it. The recipe hash the
-/// key used to carry is what let a single photo collect 97 stale renders of
-/// itself, and it also made the path uncomputable from anywhere that does
-/// not already hold the recipe — which is every navigation request.
+/// No recipe in the key — the cache is the `.preview.jpg` kept locally
+/// (Francis: "la cache est le .preview.jpg mais local"), and the path has to
+/// be computable from a navigation request, which knows a path and a size and
+/// never a recipe.
+///
+/// `version` is the sidecar's mtime. It carries the "file over app" guarantee
+/// into the cache: edit `.preview.jpg` outside Reveal and the key moves, so
+/// the stale entry is not found and the change surfaces. Without it the cache
+/// would answer first and hide the edit forever.
 fn developed_preview_cache_path(
     app: &tauri::AppHandle,
     path: &std::path::Path,
     max_px: u32,
+    version: u64,
 ) -> Result<std::path::PathBuf, String> {
     let dir = developed_preview_cache_dir(app)?;
-    Ok(dir.join(format!("{:016x}-{max_px}.jpg", developed_preview_source_key(path))))
+    Ok(dir.join(developed_preview_cache_name(path, max_px, version)))
+}
+
+/// `{photo}-{size}-{version}.jpg`. Built here, taken apart by
+/// `prune_preview_cache`, which groups on the first two fields — so the
+/// format has one definition and a test that round-trips it.
+fn developed_preview_cache_name(path: &std::path::Path, max_px: u32, version: u64) -> String {
+    format!(
+        "{:016x}-{max_px}-{version:x}.jpg",
+        developed_preview_source_key(path)
+    )
 }
 
 /// Shared by `develop_preview` (returns bytes to the frontend) and
@@ -1698,48 +1743,69 @@ async fn copy_photo_preview_to_clipboard(path: String) -> Result<(), String> {
 /// below, which renders a JPEG via the SAME engine-agnostic `develop_jpeg`
 /// just for this purpose. Skipping this funnel is exactly the bug that let
 /// Rapid-developed photos never touch disk while their loupe still updated.
+///
+/// Returns the published version — the sidecar's mtime in ms — so callers can
+/// hand the frontend a token that agrees with what is on disk. It used to send
+/// `Date.now()` instead, which busts the webview's own cache fine but can
+/// never match a file, so nothing on disk could be addressed by it.
 fn write_preview_sidecar_bytes(
     app: &tauri::AppHandle,
     path: &str,
     jpeg: &[u8],
     durable: bool,
     max_px: u32,
-) {
+) -> u64 {
     if !durable {
-        return;
+        return 0;
     }
     let source = std::path::Path::new(path);
     let Some(sidecar) = preview_sidecar_path(source) else {
-        return;
+        return 0;
     };
-    let cache = developed_preview_cache_path(app, source, max_px).ok();
-    if let Err(e) = publish_render_to(&sidecar, cache.as_deref(), jpeg) {
-        eprintln!("preview publish {path}: {e}");
+    if let Err(e) = write_sidecar_if_changed(&sidecar, jpeg) {
+        eprintln!("preview sidecar write {path}: {e}");
+    }
+    let version = served_preview_mtime(source);
+
+    // The render at its own size, and — Francis's observation — the grid size
+    // derived from the very same bytes rather than fetched or rendered again.
+    // One downscale of what is already in hand spares the next grid visit a
+    // NAS round trip AND the decode/re-encode it would repeat on every
+    // request.
+    let mut dests: Vec<std::path::PathBuf> = Vec::with_capacity(2);
+    if let Ok(p) = developed_preview_cache_path(app, source, max_px, version) {
+        dests.push(p);
+    }
+    let grid = (max_px > GRID_PREVIEW_EDGE).then(|| downscale_grid_thumb(jpeg.to_vec(), GRID_PREVIEW_EDGE));
+    if let (Some(bytes), Ok(p)) = (
+        &grid,
+        developed_preview_cache_path(app, source, GRID_PREVIEW_EDGE, version),
+    ) {
+        if let Err(e) = write_cache_entry(&p, bytes) {
+            eprintln!("preview publish grid size {path}: {e}");
+        }
+    }
+    for dest in &dests {
+        if let Err(e) = write_cache_entry(dest, jpeg) {
+            eprintln!("preview publish {path}: {e}");
+        }
     }
     schedule_cache_prune(app);
+    version
 }
 
-/// The act of publishing, with the paths already resolved.
-///
-/// Split out from `write_preview_sidecar_bytes` so the invariant can be
-/// tested without a running Tauri app: one call, both stores, same bytes.
-/// The sidecar is the truth and is written first — if the cache write then
-/// fails, the next visit simply reads the NAS, which is a slow correct
-/// answer rather than a fast wrong one.
-fn publish_render_to(
-    sidecar: &std::path::Path,
-    cache: Option<&std::path::Path>,
-    jpeg: &[u8],
-) -> std::io::Result<()> {
-    write_sidecar_if_changed(sidecar, jpeg)?;
-    if let Some(dest) = cache {
-        let tmp = dest.with_extension("part");
-        if std::fs::write(&tmp, jpeg).is_ok() && std::fs::rename(&tmp, dest).is_ok() {
-            return Ok(());
+/// One cache entry, written so a half-written file can never be served: temp
+/// file, then rename. Split out from the funnel so the write discipline is
+/// testable without a running Tauri app.
+fn write_cache_entry(dest: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    let tmp = dest.with_extension("part");
+    match std::fs::write(&tmp, bytes).and_then(|()| std::fs::rename(&tmp, dest)) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(e)
         }
-        let _ = std::fs::remove_file(&tmp);
     }
-    Ok(())
 }
 
 #[derive(serde::Serialize)]
@@ -2758,7 +2824,7 @@ async fn publish_story(
 
             if existing_jpeg.is_none() {
                 if let Some(raw) = &raw_opt {
-                    if let Ok(cache_p) = developed_preview_cache_path(&app, raw, 2048) {
+                    if let Ok(cache_p) = developed_preview_cache_path(&app, raw, 2048, served_preview_mtime(raw)) {
                         if cache_p.exists() {
                             existing_jpeg = std::fs::read(&cache_p).ok().filter(|b| !b.is_empty());
                         }
@@ -3018,12 +3084,16 @@ async fn import_card(
                 // cachées"). The camera's own preview is the right source
                 // here — nothing is developed yet.
                 if let Ok(preview) = reveal_decode::extract_thumb_preview(std::path::Path::new(path)) {
-                    let sized = downscale_grid_thumb(preview.bytes, DURABLE_PREVIEW_EDGE);
+                    // At grid size: this is the camera's own JPEG, seeding the
+                    // surface that browses it. Version 0 — nothing has been
+                    // developed yet, so there is no sidecar to have an mtime.
+                    let sized = downscale_grid_thumb(preview.bytes, GRID_PREVIEW_EDGE);
                     cache_developed_preview_locally(
                         &app_for_worker,
                         std::path::Path::new(dest_path),
                         &sized,
-                        DURABLE_PREVIEW_EDGE,
+                        GRID_PREVIEW_EDGE,
+                        0,
                     );
                 }
             }
@@ -4271,7 +4341,15 @@ pub fn run() {
                     let size = request.uri().query()
                         .and_then(|query| query.split('&').find_map(|pair| pair.strip_prefix("size=")))
                         .and_then(|value| value.parse::<u32>().ok())
-                        .unwrap_or(768).clamp(256, 2560);
+                        .unwrap_or(GRID_PREVIEW_EDGE).clamp(256, 2560);
+                    // The version the frontend believes this photo's preview
+                    // is at. Part of the cache key, so an edit to
+                    // `.preview.jpg` outside Reveal moves the key and the
+                    // stale entry is simply not found.
+                    let version = request.uri().query()
+                        .and_then(|q| q.split('&').find_map(|kv| kv.strip_prefix("v=")))
+                        .and_then(|value| value.parse::<u64>().ok())
+                        .unwrap_or(0);
                     let path = request
                         .uri()
                         .query()
@@ -4311,7 +4389,7 @@ pub fn run() {
                         // under a millisecond. The two hold the same render —
                         // this cache IS the `.preview.jpg`, kept locally — so
                         // reaching over the network for it is pure cost.
-                        if let Ok(local) = developed_preview_cache_path(&app, source, DURABLE_PREVIEW_EDGE) {
+                        if let Ok(local) = developed_preview_cache_path(&app, source, size, version) {
                             if let Ok(bytes) = std::fs::read(&local) {
                                 eprintln!(
                                     "thumb: {} (local cache, {} ko, {} ms)",
@@ -4319,11 +4397,16 @@ pub fn run() {
                                     bytes.len() / 1024,
                                     t.elapsed().as_millis()
                                 );
+                                // Served verbatim: the entry IS this size.
+                                // `downscale_grid_thumb` re-encodes even when
+                                // it has nothing to resize, so passing a
+                                // cached JPEG back through it would shed
+                                // quality on every single request.
                                 responder.respond(
                                     HttpResponse::builder()
                                         .header("Content-Type", "image/jpeg")
                                         .header("Cache-Control", "max-age=3600")
-                                        .body(downscale_grid_thumb(bytes, size))
+                                        .body(bytes)
                                         .unwrap(),
                                 );
                                 return;
@@ -4343,15 +4426,17 @@ pub fn run() {
                                         bytes.len() / 1024,
                                         t.elapsed().as_millis()
                                     );
-                                    // Keep the NAS round trip to once per
-                                    // photo: mirror what we just read, at the
-                                    // size it actually is, not the size this
-                                    // request asked for.
-                                    cache_developed_preview_locally(&app, source, &bytes, DURABLE_PREVIEW_EDGE);
+                                    // Resize once, then both serve and keep
+                                    // it. Keeps the NAS round trip to once
+                                    // per photo per size, and the decode and
+                                    // re-encode to once rather than once per
+                                    // request.
+                                    let sized = downscale_grid_thumb(bytes, size);
+                                    cache_developed_preview_locally(&app, source, &sized, size, version);
                                     HttpResponse::builder()
                                         .header("Content-Type", "image/jpeg")
                                         .header("Cache-Control", "max-age=3600")
-                                        .body(downscale_grid_thumb(bytes, size))
+                                        .body(sized)
                                         .unwrap()
                                 }
                                 Err(e) => {
@@ -4719,60 +4804,106 @@ mod preview_cache_tests {
         assert_eq!(names(&s.0).len(), 1, "40 renders of one photo collapse to 1");
     }
 
-    /// The library trim still works, and still counts PHOTOS.
+    /// A cache entry must never appear half-written — a truncated JPEG in
+    /// the cache would be SERVED, since the cache is consulted first.
     #[test]
-    fn the_oldest_photos_beyond_the_limit_are_dropped() {
-        let s = Scratch::new("lru");
-        render(&s.0, "old", "a", 900);
-        render(&s.0, "mid", "a", 600);
-        render(&s.0, "new", "a", 10);
-        // Extra variants must not let one photo count as several.
-        render(&s.0, "new", "b", 5);
+    fn a_cache_entry_is_written_whole_or_not_at_all() {
+        let s = Scratch::new("entry-atomic");
+        let dest = s.0.join("aaaa-768-1f.jpg");
+        super::write_cache_entry(&dest, b"render-A").unwrap();
+        assert_eq!(std::fs::read(&dest).unwrap(), b"render-A");
 
-        prune_preview_cache(&s.0, 2);
+        super::write_cache_entry(&dest, b"render-B").unwrap();
+        assert_eq!(std::fs::read(&dest).unwrap(), b"render-B", "a republish replaces it");
+        assert!(!dest.with_extension("part").exists(), "no leftover temp file");
+    }
+
+    /// The name is built in one place and taken apart in another. If those
+    /// two ever disagree, the prune groups wrongly and silently deletes the
+    /// wrong entries — so they are checked against each other here.
+    #[test]
+    fn cache_names_round_trip_through_the_prune_grouping() {
+        let photo = Path::new("/nas/2026/DSCF0001.RAF");
+        let grid = super::developed_preview_cache_name(photo, 768, 0x1f2e);
+        let full = super::developed_preview_cache_name(photo, 2048, 0x1f2e);
+        let newer = super::developed_preview_cache_name(photo, 768, 0x9a9a);
+
+        let group = |name: &str| {
+            let mut parts = name.splitn(3, '-');
+            format!("{}-{}", parts.next().unwrap(), parts.next().unwrap())
+        };
+        assert_ne!(group(&grid), group(&full), "two sizes are two groups");
+        assert_eq!(
+            group(&grid),
+            group(&newer),
+            "two versions of one size are one group, so the older is pruned"
+        );
+    }
+
+    /// The whole point of the size in the key: the grid's entry and the
+    /// viewer's entry for the same photo must survive together.
+    #[test]
+    fn two_sizes_of_one_photo_do_not_evict_each_other() {
+        let s = Scratch::new("two-sizes");
+        std::fs::write(s.0.join("aaaa-768-1f.jpg"), b"grid").unwrap();
+        std::fs::write(s.0.join("aaaa-2048-1f.jpg"), b"full").unwrap();
+
+        prune_preview_cache(&s.0, 10_000);
+
+        assert_eq!(names(&s.0).len(), 2, "both sizes survive");
+    }
+
+    /// An external edit to `.preview.jpg` moves the version, and the stale
+    /// entry must not linger beside the new one.
+    #[test]
+    fn a_new_version_replaces_the_old_one_for_that_size() {
+        let s = Scratch::new("versions");
+        let old = s.0.join("aaaa-768-1f.jpg");
+        let new = s.0.join("aaaa-768-9a.jpg");
+        std::fs::write(&old, b"before").unwrap();
+        std::fs::write(&new, b"after").unwrap();
+        let when = std::time::SystemTime::now() - std::time::Duration::from_secs(600);
+        std::fs::File::options().write(true).open(&old).unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(when)).unwrap();
+
+        prune_preview_cache(&s.0, 10_000);
+
+        assert_eq!(names(&s.0), vec!["aaaa-768-9a.jpg"], "only the current version stays");
+    }
+
+    /// The budget evicts least-recently-touched first. Getting the ORDER
+    /// wrong is the only way to do real harm here — evicting costs one NAS
+    /// read, evicting the WRONG thing costs it on the photo you are using.
+    #[test]
+    fn the_budget_evicts_the_least_recently_touched_first() {
+        let s = Scratch::new("budget");
+        // 100 bytes each, oldest to newest.
+        for (photo, age) in [("old", 900u64), ("mid", 600), ("new", 10)] {
+            let path = s.0.join(format!("{photo}-768-1f.jpg"));
+            std::fs::write(&path, vec![0u8; 100]).unwrap();
+            let when = std::time::SystemTime::now() - std::time::Duration::from_secs(age);
+            std::fs::File::options().write(true).open(&path).unwrap()
+                .set_times(std::fs::FileTimes::new().set_modified(when)).unwrap();
+        }
+
+        prune_preview_cache(&s.0, 250); // room for two
 
         assert_eq!(
             names(&s.0),
-            vec!["mid-2048-a.jpg", "new-2048-b.jpg"],
-            "the two most recently touched photos stay, one render each"
+            vec!["mid-768-1f.jpg", "new-768-1f.jpg"],
+            "the oldest goes, the two most recent stay"
         );
     }
 
-    /// Publishing is ONE act. Five separate writers each deciding whether
-    /// their own copy was still current is what let `.preview.jpg` receive
-    /// the render from one slider ago; the cache must never hold bytes the
-    /// sidecar does not.
+    /// A budget that fits everything must not evict anything.
     #[test]
-    fn publishing_writes_the_sidecar_and_the_cache_from_the_same_bytes() {
-        let s = Scratch::new("publish-pair");
-        let sidecar = s.0.join("DSCF0001.preview.jpg");
-        let cache = s.0.join("aaaa-2048.jpg");
-
-        super::publish_render_to(&sidecar, Some(&cache), b"render-A").unwrap();
-        assert_eq!(std::fs::read(&sidecar).unwrap(), b"render-A");
-        assert_eq!(std::fs::read(&cache).unwrap(), b"render-A");
-
-        // A second publish must move BOTH, or the grid keeps showing the old
-        // look while the canvas shows the new one.
-        super::publish_render_to(&sidecar, Some(&cache), b"render-B").unwrap();
-        assert_eq!(std::fs::read(&sidecar).unwrap(), b"render-B");
-        assert_eq!(
-            std::fs::read(&cache).unwrap(),
-            b"render-B",
-            "the cache still holds the previous render"
-        );
-
-        // No half-written leftovers.
-        assert!(!cache.with_extension("part").exists());
-    }
-
-    /// Without a cache path the sidecar is still the truth and still written.
-    #[test]
-    fn publishing_without_a_cache_still_writes_the_sidecar() {
-        let s = Scratch::new("publish-solo");
-        let sidecar = s.0.join("DSCF0002.preview.jpg");
-        super::publish_render_to(&sidecar, None, b"render").unwrap();
-        assert_eq!(std::fs::read(&sidecar).unwrap(), b"render");
+    fn a_budget_with_room_to_spare_evicts_nothing() {
+        let s = Scratch::new("budget-roomy");
+        for photo in ["a", "b", "c"] {
+            std::fs::write(s.0.join(format!("{photo}-768-1f.jpg")), vec![0u8; 100]).unwrap();
+        }
+        prune_preview_cache(&s.0, 10_000);
+        assert_eq!(names(&s.0).len(), 3);
     }
 
     #[test]

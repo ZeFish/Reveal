@@ -1678,6 +1678,24 @@
   // ---- index --------------------------------------------------------------
   // `light` skips the story-dot probe — one fs read per folder, too heavy to
   // repeat mid-scan over the NFS mount.
+  /**
+   * The version token for a photo's preview: the `.preview.jpg` mtime, read
+   * back from disk after a render settles.
+   *
+   * This used to be `Date.now()`, which busts the webview's own cache fine
+   * but can never match a file — so nothing on disk could be addressed by it.
+   * The local render cache keys on this token, so it has to be the truth.
+   * @param {string} path
+   */
+  async function freshPreviewVersion(path) {
+    try {
+      const [v] = /** @type {number[]} */ (await invoke("preview_versions", { paths: [path] }));
+      return v || Date.now();
+    } catch {
+      return Date.now();
+    }
+  }
+
   async function refreshDirs(light = false) {
     try {
       const [r, d] = await invoke("index_dirs");
@@ -3147,12 +3165,17 @@
   // `size` is what the protocol actually serves, and it matters: the grid
   // shows ~120 cells at once, so a 2048px JPEG per cell meant the webview
   // held gigabytes of decoded bitmaps and stuttered on every scroll. Cells
-  // ask small; the develop viewer asks for the real thing, because the
-  // durable `.preview.jpg` on disk IS the current recipe at 2048px — there's
+  // ask small.
+  //
+  // This used to add: "the develop viewer asks for the real thing … there's
   // no reason to look at a blown-up 640px proxy for the seconds the RAW
-  // decode takes.
+  // decode takes." That held while the blur lasted seconds. It no longer
+  // does — the grid-size copy is in the local cache and paints in under a
+  // millisecond, while the 2048 behind it arrives from the NAS in ~55ms
+  // measured. Opening now goes cache → sidecar → RAW render, three steps
+  // that each replace a blurrier one, rather than one wait.
   /** @param {string} path @param {number} [version] @param {number} [size] */
-  function thumbUrl(path, version = 0, size = 640) {
+  function thumbUrl(path, version = 0, size = 768) {
     return `reveal://thumb?p=${encodeURIComponent(path)}&v=${version}&size=${size}`;
   }
   /** The full-resolution developed sidecar, for single-photo views.
@@ -3292,7 +3315,7 @@
           maxPx: PREVIEW_PX,
         });
         await invoke("save_recipe", { path: frame.path, recipe: frameRecipe });
-        frame.previewVersion = Date.now();
+        frame.previewVersion = await freshPreviewVersion(frame.path);
         progress = { ...progress, done: progress.done + 1 };
         updateActivity(jobId, { done: progress.done });
 
@@ -3671,9 +3694,23 @@
     if (imgUrl?.startsWith("blob:")) URL.revokeObjectURL(imgUrl);
     photoPath = path;
     picked = path.split("/").pop() ?? null;
-    imgUrl = previewUrl(path);
+    // Step one of three: the grid-size copy, which the local cache almost
+    // always holds already. Step two swaps in the 2048 sidecar below; step
+    // three is the RAW render from `pump()`.
+    const openVersion = frames.find((f) => f.path === path)?.previewVersion ?? 0;
+    imgUrl = thumbUrl(path, openVersion);
     useCanvas = false; // start on the <img> thumb; pump() flips this back on
     // only if the photo develops with a canvas (Rapid) engine.
+    // Step two: the real 2048. Only applied if the user is still on this
+    // photo and nothing better (a canvas render) has taken over since.
+    const openPath = path;
+    queueMicrotask(() => {
+      const full = new Image();
+      full.onload = () => {
+        if (photoPath === openPath && !useCanvas) imgUrl = full.src;
+      };
+      full.src = previewUrl(openPath, openVersion);
+    });
     imgFailed = false;
     status = "";
     try {
@@ -3800,7 +3837,7 @@
           status = "";
           const frame = frames.find((item) => item.path === path);
           if (frame && px >= PREVIEW_PX) {
-            frame.previewVersion = Date.now();
+            frame.previewVersion = await freshPreviewVersion(frame.path);
             frames = [...frames];
           }
         }
@@ -3819,7 +3856,7 @@
           imgFailed = false;
           const frame = frames.find((item) => item.path === path);
           if (frame) {
-            frame.previewVersion = Date.now();
+            frame.previewVersion = await freshPreviewVersion(frame.path);
             frames = [...frames]; // raw array — reassign so the grid thumb refreshes
           }
           status = "";
@@ -3898,7 +3935,7 @@
     if (path !== photoPath) return;
     developEngine = null;
     const frame = frames.find((item) => item.path === path);
-    if (frame) frame.previewVersion = Date.now();
+    if (frame) frame.previewVersion = await freshPreviewVersion(frame.path);
     frames = [...frames]; // raw array — reassign so the grid thumb refreshes
     if (imgUrl?.startsWith("blob:")) URL.revokeObjectURL(imgUrl);
     imgUrl = previewUrl(path, frame?.previewVersion ?? Date.now());
