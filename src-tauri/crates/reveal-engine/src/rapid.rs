@@ -1962,6 +1962,64 @@ mod tests {
         }
     }
 
+    /// The equivalence test above runs on a 64×48 frame, which is why it
+    /// couldn't catch that the device was requested with downlevel limits:
+    /// those cap a storage binding at 128 MiB, i.e. ~11 MP at 12 bytes a
+    /// pixel, so every full-resolution export from a modern body fell back
+    /// to the CPU without a word — precisely where the GPU is worth most.
+    /// 16 MP is over that old ceiling and under any real adapter's.
+    #[test]
+    fn gpu_handles_an_image_past_the_downlevel_limit() {
+        if !crate::rapid_gpu::available() {
+            eprintln!("no GPU adapter — skipping large-image check");
+            return;
+        }
+        let (w, h) = (4800usize, 3400usize); // 16.3 MP
+        let input = ImageBuf::from_data(w as u32, h as u32, vec![0.3f32; w * h * 3]);
+        let mut recipe = Recipe::default();
+        recipe.engine = "rapid".to_string();
+        recipe.exposure_ev = 0.5;
+
+        let out = crate::rapid_gpu::run(
+            &crate::rapid_gpu::Inputs {
+                width: w,
+                height: h,
+                data: &input.data,
+                blurred: &[],
+                down_w: 0,
+                down_h: 0,
+                w_mult: 1.0,
+                exposure_factor: 2.0f32.powf(recipe.exposure_ev),
+                r_temp: 1.0,
+                r_tint: 1.0,
+                g_tint: 1.0,
+                b_temp: 1.0,
+                b_tint: 1.0,
+                brightness_adj: 0.0,
+                saturation_adj: 0.0,
+                contrast: 0.0,
+                shadows: 0.0,
+                blacks: 0.0,
+                highlights: 0.0,
+                clarity: 0.0,
+                structure: 0.0,
+                dehaze: 0.0,
+                vibrance: 0.0,
+                has_hsl: false,
+                has_color_wheels: false,
+                has_zones: false,
+                curves: [None, None, None, None],
+            },
+            &recipe,
+        );
+
+        assert!(
+            out.is_some(),
+            "a {w}x{h} frame fell back to the CPU — the device's buffer limits \
+             are probably back at downlevel defaults"
+        );
+    }
+
     #[test]
     fn test_rapid_hsl_conversion() {
         let (h, s, l) = rgb_to_hsl(1.0, 0.0, 0.0);

@@ -110,11 +110,21 @@ fn gpu() -> Option<&'static Gpu> {
             compatible_surface: None,
             force_fallback_adapter: false,
         }))?;
+        // downlevel_defaults() caps a storage binding at 128 MiB. At 12
+        // bytes a pixel (3 × f32) that's ~11 MP — under a 40 MP export from
+        // any modern body, which would fail validation and silently fall
+        // back to the CPU exactly where the GPU is worth the most. Raise the
+        // buffer limits to whatever this adapter actually offers.
+        let adapter_limits = adapter.limits();
+        let mut limits = wgpu::Limits::downlevel_defaults();
+        limits.max_storage_buffer_binding_size = adapter_limits.max_storage_buffer_binding_size;
+        limits.max_buffer_size = adapter_limits.max_buffer_size;
+
         let (device, queue) = pollster::block_on(adapter.request_device(
             &wgpu::DeviceDescriptor {
                 label: Some("reveal-rapid"),
                 required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::downlevel_defaults(),
+                required_limits: limits,
                 memory_hints: wgpu::MemoryHints::Performance,
             },
             None,
@@ -244,6 +254,13 @@ pub fn run(inputs: &Inputs, recipe: &Recipe) -> Option<ImageBuf> {
     let g = gpu()?;
     let total = inputs.width * inputs.height * 3;
     if total == 0 || inputs.data.len() < total {
+        return None;
+    }
+    // Past the device's own ceiling there's nothing to do but hand it back
+    // to the CPU — better a slow render than a validation failure per frame.
+    let bytes = (total * std::mem::size_of::<f32>()) as u64;
+    let limits = g.device.limits();
+    if bytes > limits.max_storage_buffer_binding_size as u64 || bytes > limits.max_buffer_size {
         return None;
     }
 
