@@ -884,9 +884,21 @@ impl Engine {
         let Some(dir) = self.working_dir.lock().unwrap().clone() else {
             return Ok(());
         };
+        let dest = dir.join(working_name(path, max_px));
+        // Already parked, and a park's contents depend only on (photo, size)
+        // — it is the pipeline INPUT, decided before any recipe — so a file
+        // under this name is by construction the right bytes.
+        //
+        // Worth the check because the path below both reads and destroys it:
+        // `pipeline_input` unparks the frame, `clear_working` then deletes
+        // the file it just read, and we re-serialise 34 million floats to
+        // write the identical 35 MB back. That ran on every launch, on the
+        // critical path of the photo being resumed.
+        if parked_file_is_complete(&dest) {
+            return Ok(());
+        }
         let (img, _) = self.pipeline_input(path, max_px)?;
         self.clear_working();
-        let dest = dir.join(working_name(path, max_px));
         let tmp = dest.with_extension("part");
         let mut out = Vec::with_capacity(8 + img.data.len() * 4);
         out.extend_from_slice(&img.width.to_le_bytes());
@@ -921,6 +933,31 @@ impl Engine {
 
     pub fn prefetch(&self, path: &Path, max_px: u32) {
         let _ = self.pipeline_input(path, max_px);
+    }
+}
+
+/// Whether a parked file is whole, judged the way `parse_parked` judges it,
+/// without reading the 35 MB payload: the header states the dimensions, so
+/// the file's own length is the check. A park interrupted mid-write fails
+/// here and gets rewritten, rather than being trusted and then refused on
+/// every read for the rest of its life.
+fn parked_file_is_complete(dest: &Path) -> bool {
+    use std::io::Read;
+    let Ok(meta) = std::fs::metadata(dest) else {
+        return false;
+    };
+    let Ok(mut f) = std::fs::File::open(dest) else {
+        return false;
+    };
+    let mut head = [0u8; 8];
+    if f.read_exact(&mut head).is_err() {
+        return false;
+    }
+    let width = u32::from_le_bytes(head[0..4].try_into().unwrap()) as u64;
+    let height = u32::from_le_bytes(head[4..8].try_into().unwrap()) as u64;
+    match width.checked_mul(height).and_then(|p| p.checked_mul(3 * 4)) {
+        Some(pixels) => meta.len() == 8 + pixels,
+        None => false,
     }
 }
 
@@ -1248,6 +1285,48 @@ mod perf_probe {
 #[cfg(test)]
 mod working_park_tests {
     use super::*;
+
+    fn park_bytes(width: u32, height: u32) -> Vec<u8> {
+        let mut out = width.to_le_bytes().to_vec();
+        out.extend_from_slice(&height.to_le_bytes());
+        out.extend_from_slice(&vec![0u8; (width * height * 3 * 4) as usize]);
+        out
+    }
+
+    /// A whole park is recognised without reading its payload, so relaunching
+    /// into the photo you were editing stops deleting and rewriting the
+    /// identical 35 MB it just read.
+    #[test]
+    fn a_whole_park_needs_no_rewrite() {
+        let dir = std::env::temp_dir().join(format!("reveal-park-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let dest = dir.join("whole.buf");
+        std::fs::write(&dest, park_bytes(4, 3)).unwrap();
+        assert!(parked_file_is_complete(&dest));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A park cut short must NOT be trusted: left in place it would be
+    /// refused by `parse_parked` on every read for the rest of its life,
+    /// costing a full decode each time and never repairing itself.
+    #[test]
+    fn a_park_cut_short_is_rewritten() {
+        let dir = std::env::temp_dir().join(format!("reveal-park-cut-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut cut = park_bytes(4, 3);
+        cut.truncate(cut.len() - 40);
+        let short = dir.join("short.buf");
+        std::fs::write(&short, &cut).unwrap();
+        assert!(!parked_file_is_complete(&short));
+
+        let headerless = dir.join("headerless.buf");
+        std::fs::write(&headerless, [1u8, 2, 3]).unwrap();
+        assert!(!parked_file_is_complete(&headerless));
+
+        assert!(!parked_file_is_complete(&dir.join("absent.buf")));
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     /// A park is keyed by the photo AND the size it was parked at. Serving one
     /// photo's buffer for another, or a 2048 buffer to a request for something
