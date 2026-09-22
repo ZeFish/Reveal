@@ -1,5 +1,5 @@
 <script>
-  import { tick } from "svelte";
+  import { tick, untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen as tauriListen, emit } from "@tauri-apps/api/event";
   import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -3291,7 +3291,7 @@
     progress = { verb: "Applying settings", done: 0, total: targetFrames.length, current: "" };
     const jobId = startActivity("develop", `Synchroniser ${targetFrames.length} photo(s)`, targetFrames.length);
     try {
-      for (const frame of targetFrames) {
+      for (const [i, frame] of targetFrames.entries()) {
         progress = { ...progress, current: frame.name };
         updateActivity(jobId, { current: frame.name });
 
@@ -3309,11 +3309,21 @@
           crop_h: existingSettings.crop_h ?? 1,
         };
 
-        const bytes = await invoke("develop_preview", {
+        // Start this photo's render, then immediately start READING the next
+        // one, and only then wait. Measured on this NAS, a frame costs ~3.1s
+        // to read and ~1.0s to decode before anything renders; done strictly
+        // one after another the link sits idle through every decode and
+        // render. Overlapping them means photo N+1 is already in the decode
+        // cache by the time the loop reaches it. Fire-and-forget on purpose —
+        // a failed prefetch just means the next turn pays what it pays today.
+        const developing = invoke("develop_preview", {
           path: frame.path,
           recipe: frameRecipe,
           maxPx: PREVIEW_PX,
         });
+        const upcoming = targetFrames[i + 1];
+        if (upcoming?.path) invoke("prefetch_photo", { path: upcoming.path }).catch(() => {});
+        const bytes = await developing;
         await invoke("save_recipe", { path: frame.path, recipe: frameRecipe });
         frame.previewVersion = await freshPreviewVersion(frame.path);
         progress = { ...progress, done: progress.done + 1 };
@@ -3685,6 +3695,34 @@
       }
     }, 450);
   }
+
+  // Same debounce, aimed at a different moment: the photo highlighted in the
+  // GRID, so stepping into Develop finds its decode already warm.
+  //
+  // The delay is the whole design. The decode cache is bounded by bytes
+  // (3 GB of ProPhoto f32 — roughly forty frames from a high-megapixel body),
+  // and a cull moves the selection several times a second. Warming on every
+  // keystroke would evict what you just looked at and hammer the NAS for
+  // frames you are only passing over. Warming when you STOP costs one decode,
+  // and it is the one that pays off.
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
+  let selectionWarmTimer;
+  /** @param {string} path */
+  function warmSelection(path) {
+    if (!isTauri || !path) return;
+    clearTimeout(selectionWarmTimer);
+    selectionWarmTimer = setTimeout(() => {
+      // Develop does its own warming, and knows more than this does.
+      if (currentMode !== "cull") return;
+      if (view[sel]?.path !== path) return; // moved on again
+      invoke("prefetch_photo", { path }).catch(() => {});
+    }, 450);
+  }
+
+  $effect(() => {
+    const path = view[sel]?.path;
+    if (path) untrack(() => warmSelection(path));
+  });
 
   /**
    * @param {string} path
