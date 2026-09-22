@@ -3642,7 +3642,20 @@
           // Reactive aspect for the canvas path — canvasEl.width is a DOM
           // mutation the view can't track, so the mat sizing (breathing room)
           // would never apply and the margins broke. Feed it explicitly.
-          renderAspect = res.height ? res.width / res.height : null;
+          //
+          // Only from a SETTLED (>= PREVIEW_PX) render, though — a live drag
+          // renders at the much smaller DRAG_PX budget, whose width/height
+          // round to a very slightly different ratio than the settled
+          // render even for the exact same crop. That was enough to nudge
+          // the CSS aspect-ratio box's on-screen size every single edit
+          // (drag starts → box flickers to the drag-res ratio → settles →
+          // flickers back). Leaving renderAspect alone during a drag keeps
+          // the box locked to its last settled size; the smaller canvas
+          // just stretches to fill it (softer, not smaller) via the
+          // existing object-fit, exactly what was asked for.
+          if (px >= PREVIEW_PX || renderAspect === null) {
+            renderAspect = res.height ? res.width / res.height : null;
+          }
           await tick();
           if (canvasEl) {
             canvasEl.width = res.width;
