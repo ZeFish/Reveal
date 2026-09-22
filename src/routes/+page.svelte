@@ -28,7 +28,7 @@
   import Alert from "@stnd/ui/Alert.svelte";
   import { AppController } from "$lib/controllers/AppController.js";
   import { extractGardenUrl } from "$lib/story.js";
-  import { storyTheme, updateStoryTheme, contrastInk, getFontFamilyWithFallback, currentThemeFontPackages } from "$lib/story-theme.svelte.js";
+  import { storyTheme, colorScheme, updateStoryTheme, contrastInk, getFontFamilyWithFallback, currentThemeFontPackages } from "$lib/story-theme.svelte.js";
   import { loadFontPackages } from "$lib/app-theme.js";
 
   // ---- shared shapes (plain-JS JSDoc typing — no runtime effect) ----------
@@ -469,29 +469,21 @@
   // foreground of dark_background, light_foreground = dark_background —
   // reproduced here with the same contrastInk helper rather than fetching
   // the light_* fields separately, since they're always that exact swap.
-  let prefersDarkScheme = $state(true);
-  $effect(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return;
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    prefersDarkScheme = mq.matches;
-    /** @param {MediaQueryListEvent} e */
-    const onChange = (e) => { prefersDarkScheme = e.matches; };
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  });
-
+  // colorScheme.prefersDark is the shared singleton (story-theme.svelte.js)
+  // — StoryView's own preview canvas needs the exact same signal, so it
+  // isn't duplicated as a second local matchMedia listener here.
   let appThemed = $derived(!!storyTheme.darkBackground);
   let appBg = $derived(
     !storyTheme.darkBackground
       ? undefined
-      : prefersDarkScheme
+      : colorScheme.prefersDark
         ? storyTheme.darkBackground
         : contrastInk(storyTheme.darkBackground)
   );
   let appFg = $derived(
     !storyTheme.darkBackground
       ? undefined
-      : prefersDarkScheme
+      : colorScheme.prefersDark
         ? contrastInk(storyTheme.darkBackground)
         : storyTheme.darkBackground
   );
@@ -4051,13 +4043,9 @@
           onRenameDir={renameDir}
           onCreateFolder={createFolder}
           onMoveDir={moveDir}
-          {pinnedStories}
-          {recentStories}
           onDevelopStory={exportLocalStory}
           onPublishStory={publishStory}
           onExportLocalStory={exportLocalStory}
-          onSetPinned={setStoryPinned}
-          onReorderPinned={reorderPinned}
           publishing={!!progress}
           publishStatus={status}
         />
@@ -4117,13 +4105,9 @@
             onRenameDir={renameDir}
             onCreateFolder={createFolder}
             onMoveDir={moveDir}
-            {pinnedStories}
-            {recentStories}
             onDevelopStory={exportLocalStory}
             onPublishStory={publishStory}
             onExportLocalStory={exportLocalStory}
-            onSetPinned={setStoryPinned}
-            onReorderPinned={reorderPinned}
             publishing={!!progress}
             publishStatus={status}
             {gardenUrl}
@@ -5455,12 +5439,17 @@
      supplies the rounding), so docking it inline needs this wrapper to
      match rather than sitting flush against the window edge. */
   .docked-panel-frame {
+    height: 100%;
     margin: 8px;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
     overflow: hidden;
     min-height: 0;
+    /* Matches nav's own self-painted background (Sidebar.svelte) exactly —
+       relying on DevelopPanel's child .panel to fill this instead left the
+       frame's own edges reading with none of nav's "floating card" look. */
+    background: var(--color-surface-high);
   }
   .file {
     font-family: var(--font-monospace, monospace);

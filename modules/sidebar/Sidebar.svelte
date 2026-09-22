@@ -13,7 +13,6 @@
   // then LIBRARY and the Garden account row at the bottom.
   import { invoke } from "@tauri-apps/api/core";
   import Icon from "$lib/components/Icon.svelte";
-  import StoryNotesList from "./StoryNotesList.svelte";
   import gardenThemes from "$lib/garden-themes.generated.json";
   import { storyTheme, updateStoryTheme, DEFAULT_DARK_BG, DEFAULT_ACCENT } from "$lib/story-theme.svelte.js";
   import { loadFontPackages } from "$lib/app-theme.js";
@@ -32,16 +31,10 @@
     // interactivity.
     previewFilter = false,
     storyDirs = new Set(),
-    // Editorial body props — passed by +page.svelte. onSetPinned is
-    // (notePath, pinned), onReorderPinned is (fromIndex, toIndex) — both
-    // return promises upstream.
-    pinnedStories = [],
-    recentStories = [],
+    // Editorial body props — passed by +page.svelte.
     onDevelopStory = () => {},
     onPublishStory = () => {},
     onExportLocalStory = () => {},
-    onSetPinned = () => {},
-    onReorderPinned = () => {},
     publishing = false,
     publishStatus = null,
     gardenUrl = null,
@@ -655,12 +648,6 @@
     node.select();
   };
 
-  // Editorial pin toggles — typed thin wrappers over the defaulted callback
-  // props so the inline arrow params aren't implicit `any` under strict mode.
-  /** @param {string} notePath */
-  const unpinStory = (notePath) => onSetPinned(notePath, false);
-  /** @param {string} notePath */
-  const pinStory = (notePath) => onSetPinned(notePath, true);
 
 </script>
 
@@ -1099,15 +1086,6 @@
         </div>
       </div>
 
-      <StoryNotesList
-        pinned={pinnedStories}
-        recent={recentStories}
-        {curDir}
-        onOpen={onOpenDir}
-        onUnpin={unpinStory}
-        onPin={pinStory}
-        onReorder={onReorderPinned}
-      />
       <div class="story-spacer"></div>
       <div class="theme-inner">
           <div class="story-actions">

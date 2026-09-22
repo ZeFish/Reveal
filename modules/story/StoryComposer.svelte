@@ -7,6 +7,8 @@
   /** @import { Block } from "$lib/story.js" */
   /** @typedef {ReturnType<typeof storyRows>[number]} StoryRow */
   import { untrack } from "svelte";
+  import { invoke } from "@tauri-apps/api/core";
+  import { isTauri } from "$lib/api.js";
   import Icon from "$lib/components/Icon.svelte";
   import { parseStory, serializeStory, storyRows, stemOf } from "$lib/story.js";
 
@@ -93,6 +95,26 @@
     else saveTimer = setTimeout(() => onSave(c), 300);
   }
 
+  // A photo's caption IS the photo's caption, whichever surface you write
+  // it from — this story note's own "> [!caption]" text (setText, below)
+  // is one place it's stored, but Develop mode's caption box reads/writes
+  // the RAW's own sidecar (description) independently, so a caption typed
+  // here never showed up there. Mirroring every photo-caption edit into
+  // the sidecar too (paragraph blocks have no stem — they're not a photo's
+  // caption, so they're untouched) keeps the two in sync going forward.
+  /** @type {Record<string, ReturnType<typeof setTimeout>>} */
+  const captionSaveTimers = {};
+  /** @param {string} stem @param {string} text */
+  function syncCaptionToSidecar(stem, text) {
+    if (!isTauri) return;
+    const f = frameByStem.get(stem);
+    if (!f) return;
+    clearTimeout(captionSaveTimers[stem]);
+    captionSaveTimers[stem] = setTimeout(() => {
+      invoke("save_caption", { path: f.path, description: text }).catch(() => {});
+    }, 300);
+  }
+
   // ---- edits -------------------------------------------------------------
   /**
    * @param {string} id
@@ -101,6 +123,7 @@
   function setText(id, text) {
     const b = blocks.find((x) => x.id === id);
     if (!b) return;
+    if (b.isPhoto) syncCaptionToSidecar(b.stem, text);
     b.text = text;
     blocks = [...blocks];
     commit();

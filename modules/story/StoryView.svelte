@@ -1,5 +1,5 @@
 <script>
-  import { storyTheme, contrastInk, getFontFamilyWithFallback } from "$lib/story-theme.svelte.js";
+  import { storyTheme, colorScheme, contrastInk, getFontFamilyWithFallback } from "$lib/story-theme.svelte.js";
   import StoryComposer from "./StoryComposer.svelte";
 
   let {
@@ -12,11 +12,28 @@
     saveStoryContent = () => {},
   } = $props();
 
-  let bg = $derived(storyTheme.darkBackground);
+  // A theme only stores its dark tokens — light mode is the derived swap
+  // (contrastInk), same as +page.svelte's own app-chrome mood. This preview
+  // is what the Garden page would show live, so it needs to track the
+  // SAME system appearance the rest of the app follows, not just render
+  // the theme's dark half unconditionally regardless of it.
+  let bg = $derived(
+    !storyTheme.darkBackground
+      ? null
+      : colorScheme.prefersDark
+        ? storyTheme.darkBackground
+        : contrastInk(storyTheme.darkBackground)
+  );
+  let fgColor = $derived(
+    !storyTheme.darkBackground
+      ? null
+      : colorScheme.prefersDark
+        ? contrastInk(storyTheme.darkBackground)
+        : storyTheme.darkBackground
+  );
   let accentColor = $derived(storyTheme.darkAccent);
   let fontH = $derived(getFontFamilyWithFallback(storyTheme.fontHeader, true));
   let fontT = $derived(getFontFamilyWithFallback(storyTheme.fontText, false));
-  let fgColor = $derived(bg ? contrastInk(bg) : null);
 </script>
 
 <div

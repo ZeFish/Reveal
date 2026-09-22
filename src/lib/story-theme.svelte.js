@@ -3,6 +3,21 @@ import gardenThemes from "./garden-themes.generated.json";
 export const DEFAULT_DARK_BG = "#15110D";
 export const DEFAULT_ACCENT = "#D6202C";
 
+// A folder theme only ever models its DARK tokens (darkBackground/
+// darkAccent) — light is always the derived swap (contrastInk). Anything
+// that paints a themed surface needs to know which half of that swap is
+// live right now, so this is one shared, module-singleton source of truth
+// (matchMedia only ever needs to be wired up once) instead of every
+// consumer polling window.matchMedia itself, which is what left StoryView's
+// own preview canvas stuck on darkBackground even after +page.svelte's
+// chrome (.cull/.app) was fixed to respect it.
+export const colorScheme = $state({ prefersDark: true });
+if (typeof window !== "undefined" && window.matchMedia) {
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  colorScheme.prefersDark = mq.matches;
+  mq.addEventListener("change", (e) => { colorScheme.prefersDark = e.matches; });
+}
+
 /**
  * @param {string | null | undefined} hex
  * @returns {string}
