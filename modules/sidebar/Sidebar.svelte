@@ -5,6 +5,7 @@
   import MenuSeparator from "@stnd/ui/ContextMenuSeparator.svelte";
   import Popover from "@stnd/ui/Popover.svelte";
   import Alert from "@stnd/ui/Alert.svelte";
+  import AlertDialog from "@stnd/ui/AlertDialog.svelte";
   // The floating sidebar — a 1:1 port of the Swift `sidebarCard` +
   // `folderBrowser` + `FolderTree` (CullView.swift / FolderTree.swift):
   // full-height elevated card, the brand cluster (traffic lights + toggles +
@@ -46,6 +47,8 @@
     onOpenLibrary,
     onRescan,
     onRescanDir,
+    /** @type {(path: string) => Promise<void> | void} */
+    onRemoveLibrary = () => {},
     onRevealDir,
     onAddLocation,
     /** @type {(path: string) => void} */
@@ -407,6 +410,17 @@
     if (node.children.length) ensureExpanded(node.rel);
     onOpenDir(node.abs);
   }
+
+  /** Is the right-clicked path a catalogue root rather than a folder in one? */
+  const menuPathIsLibrary = $derived.by(() => {
+    const path = folderMenu?.path;
+    if (!path) return false;
+    const known = roots?.length ? roots : root ? [root] : [];
+    return known.includes(path);
+  });
+
+  /** @type {{path: string, name: string} | null} */
+  let libraryToRemove = $state(null);
 
   /**
    * @param {MouseEvent} event
@@ -1191,6 +1205,14 @@
   </div>
 </nav>
 
+<AlertDialog
+  open={!!libraryToRemove}
+  title={libraryToRemove ? `Remove “${libraryToRemove.name}” from Reveal?` : ""}
+  description="No photo is deleted — the files stay exactly where they are on disk. Reveal forgets this library, along with the ratings, captions and story marks its catalogue holds for them. Adding the folder back and reindexing restores the photos, not those marks."
+  confirmLabel="Remove library" cancelLabel="Keep it" intent="danger"
+  onconfirm={() => { const l = libraryToRemove; libraryToRemove = null; if (l) onRemoveLibrary(l.path); }}
+  oncancel={() => { libraryToRemove = null; }} />
+
 {#if folderMenu}
   <ContextMenu open position={folderMenu} label={`${folderMenu.label} actions`} onclose={() => { folderMenu = null; }}>
   {#snippet content()}
@@ -1231,7 +1253,7 @@
       New folder…
     </MenuItem>
 
-    {#if folderMenu?.path !== root}
+    {#if folderMenu?.path !== root && !menuPathIsLibrary}
       <MenuItem
         onclick={() => {
           const path = folderMenu?.path;
@@ -1241,6 +1263,23 @@
         }}
       >
         Rename…
+      </MenuItem>
+    {/if}
+
+    <!-- A library root is not an ordinary folder: renaming it would break the
+         catalogue's own reference to it, and removing it is the one action
+         that only exists here. -->
+    {#if menuPathIsLibrary}
+      <MenuSeparator />
+      <MenuItem
+        onclick={() => {
+          const path = folderMenu?.path;
+          const name = folderMenu?.label;
+          folderMenu = null;
+          if (path) libraryToRemove = { path, name: name || path };
+        }}
+      >
+        Remove library…
       </MenuItem>
     {/if}
   {/snippet}

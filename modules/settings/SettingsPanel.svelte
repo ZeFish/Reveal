@@ -99,6 +99,14 @@
     onPreviewCacheStatus = async () => ({ size_bytes: 0, photo_count: 0, limit_photos: 0 }),
     /** @type {() => Promise<{removed_bytes: number}>} */
     onPreviewCacheClear = async () => ({ removed_bytes: 0 }),
+    /** @type {() => Promise<{path: string, frames: number, online: boolean}[]>} */
+    onListLibraries = async () => [],
+    /** @type {() => Promise<void> | void} */
+    onAddLibrary = () => {},
+    /** @type {(path: string) => Promise<void> | void} */
+    onRemoveLibrary = () => {},
+    /** @type {(path: string) => Promise<void> | void} */
+    onRescanLibrary = () => {},
     /** @type {GardenAccount | null} */
     gardenAccount = null,
     /** @type {() => Promise<void>} */
@@ -111,6 +119,7 @@
     { id: "photos", label: "Photos", icon: "image" },
     { id: "appearance", label: "Appearance", icon: "palette" },
     { id: "locations", label: "Locations", icon: "folder-open" },
+    { id: "library", label: "Libraries", icon: "books" },
     { id: "obsidian", label: "Obsidian", icon: "note-pencil" },
     { id: "cache", label: "Cache & Storage", icon: "hard-drive" },
     { id: "garden", label: "Garden Account", icon: "user-circle" },
@@ -161,6 +170,72 @@
 
   let devCacheBusy = $state(false);
   let devCacheConfirm = $state(false);
+
+  // Libraries. `null` means "not read yet", which is different from "none".
+  /** @type {{path: string, frames: number, online: boolean}[] | null} */
+  let libraries = $state(null);
+  let libBusy = $state(false);
+  let libError = $state("");
+  /** @type {{path: string, frames: number, online: boolean} | null} */
+  let libToRemove = $state(null);
+
+  async function loadLibraries() {
+    libError = "";
+    try {
+      libraries = await onListLibraries();
+    } catch (e) {
+      libError = `Libraries unavailable: ${e}`;
+      libraries = [];
+    }
+  }
+
+  async function addLibrary() {
+    libBusy = true;
+    try {
+      await onAddLibrary();
+      await loadLibraries();
+    } catch (e) {
+      libError = `Could not add that folder: ${e}`;
+    } finally {
+      libBusy = false;
+    }
+  }
+
+  /** @param {string} path */
+  async function rescanLibrary(path) {
+    libBusy = true;
+    libError = "";
+    try {
+      await onRescanLibrary(path);
+      await loadLibraries();
+    } catch (e) {
+      libError = `Reindex failed: ${e}`;
+    } finally {
+      libBusy = false;
+    }
+  }
+
+  async function confirmRemoveLibrary() {
+    const lib = libToRemove;
+    libToRemove = null;
+    if (!lib) return;
+    libBusy = true;
+    libError = "";
+    try {
+      await onRemoveLibrary(lib.path);
+      await loadLibraries();
+    } catch (e) {
+      libError = `Could not remove that library: ${e}`;
+    } finally {
+      libBusy = false;
+    }
+  }
+
+  // Read on first visit rather than at mount: the list costs a COUNT per root
+  // over the catalogue, and most trips into Settings never open this tab.
+  $effect(() => {
+    if (activeCategory === "library" && libraries === null) untrack(loadLibraries);
+  });
   let devCacheError = $state("");
   let devCacheMessage = $state("");
   /** @type {{size_bytes: number, photo_count: number, limit_photos: number} | null} */
@@ -568,6 +643,73 @@
             {/if}
           </div>
         </div>
+      {:else if activeCategory === "library"}
+        <div class="section-group">
+          <div class="section-heading">
+            <Icon name="books" size="12px" />
+            <span>CATALOGUED LIBRARIES</span>
+          </div>
+          <div class="inset-card">
+            {#if libraries === null}
+              <div class="setting-row"><span class="row-desc">Reading libraries…</span></div>
+            {:else if libraries.length === 0}
+              <div class="setting-row">
+                <span class="row-desc">No library yet. Add a folder of photos to catalogue it.</span>
+              </div>
+            {:else}
+              {#each libraries as lib (lib.path)}
+                <div class="setting-row">
+                  <div class="row-meta">
+                    <span class="row-label">{lib.path.split("/").pop() || lib.path}</span>
+                    <span class="row-desc lib-path">{lib.path}</span>
+                    <span class="row-desc">
+                      {lib.frames.toLocaleString("en-CA")} photo{lib.frames === 1 ? "" : "s"}
+                      {#if !lib.online}
+                        · <span class="lib-offline">offline — the folder isn't reachable right now</span>
+                      {/if}
+                    </span>
+                  </div>
+                  <div class="row-control cache-actions">
+                    <button
+                      type="button"
+                      class="outline small action-pill-btn"
+                      disabled={libBusy || !lib.online}
+                      title={lib.online ? "Rescan this library" : "Unavailable while the folder is offline"}
+                      onclick={() => rescanLibrary(lib.path)}
+                    >Reindex</button>
+                    <button
+                      type="button"
+                      class="outline small action-pill-btn"
+                      disabled={libBusy}
+                      onclick={() => { libToRemove = lib; }}
+                    >Remove…</button>
+                  </div>
+                </div>
+              {/each}
+            {/if}
+          </div>
+          <div class="inset-card">
+            <div class="setting-row">
+              <div class="row-meta">
+                <span class="row-label">ADD A LIBRARY</span>
+                <!-- Said plainly because an offline NAS looks exactly like a
+                     deleted folder, and "Remove" is the button next to it. -->
+                <span class="row-desc">
+                  Removing a library only forgets it here — no photo is ever deleted from disk.
+                  The ratings, captions and story marks the catalogue holds for it do go, and
+                  come back only by reindexing.
+                </span>
+              </div>
+              <div class="row-control">
+                <button type="button" class="outline small action-pill-btn" disabled={libBusy} onclick={addLibrary}>
+                  Add folder…
+                </button>
+              </div>
+            </div>
+          </div>
+          {#if libError}<div role="alert"><Alert class="error">{libError}</Alert></div>{/if}
+        </div>
+
       {:else if activeCategory === "cache"}
         <div class="section-group">
           <div class="section-heading">
@@ -823,6 +965,15 @@
   confirmLabel="Clear cached copies" cancelLabel="Keep cached copies" intent="danger"
   onconfirm={clearCache} oncancel={() => { cacheConfirm = false; }} />
 
+<AlertDialog
+  open={!!libToRemove}
+  title={libToRemove ? `Remove “${libToRemove.path.split("/").pop()}” from Reveal?` : ""}
+  description={libToRemove
+    ? `No photo is deleted — the ${libToRemove.frames.toLocaleString("en-CA")} files stay exactly where they are on disk. Reveal forgets this library, along with the ratings, captions and story marks its catalogue holds for them. Adding the folder back and reindexing restores the photos, not those marks.`
+    : ""}
+  confirmLabel="Remove library" cancelLabel="Keep it" intent="danger"
+  onconfirm={confirmRemoveLibrary} oncancel={() => { libToRemove = null; }} />
+
 <AlertDialog bind:open={devCacheConfirm} title="Clear developed preview cache?"
   description="Rendered JPEG copies will be deleted. Your settings, notes and stars are saved elsewhere and unaffected — photos simply redevelop on next display."
   confirmLabel="Clear cache" cancelLabel="Keep cache" intent="danger"
@@ -965,7 +1116,16 @@
     letter-spacing: 0.08em;
     color: var(--color-foreground, #f4f4f5);
   }
-  .row-desc {
+  .lib-path {
+    font-family: var(--font-monospace, monospace);
+    font-size: 0.62rem;
+    opacity: 0.6;
+    overflow-wrap: anywhere;
+  }
+  .lib-offline {
+    color: var(--color-accent);
+  }
+    .row-desc {
     font-family: var(--font-text, system-ui, sans-serif);
     font-size: 11px;
     line-height: 1.35;

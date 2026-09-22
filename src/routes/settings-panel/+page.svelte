@@ -83,6 +83,27 @@
   const previewCacheStatus = () => invoke("developed_preview_cache_status");
   const previewCacheClear = () => invoke("developed_preview_cache_clear");
 
+  // Libraries. These commands reach the same catalogue from any window, so
+  // they run here directly; only the MAIN window's folder tree needs telling,
+  // since it is the one showing a library that just appeared or left.
+  const listLibraries = () => invoke("catalog_roots");
+  /** @param {string} path */
+  const removeLibrary = async (path) => {
+    await invoke("remove_catalog_root", { path });
+    emit("libraries-changed", {});
+  };
+  /** @param {string} path */
+  const rescanLibrary = async (path) => {
+    await invoke("scan_root", { path });
+    emit("libraries-changed", {});
+  };
+  const addLibrary = async () => {
+    const path = await invoke("pick_folder");
+    if (!path) return;
+    await invoke("add_catalog_root", { path });
+    emit("libraries-changed", {});
+  };
+
   /** @param {boolean} enabled */
   async function toggleAutoImport(enabled) {
     const prefs = /** @type {any} */ (await invoke("set_auto_import", { enabled }));
@@ -175,6 +196,10 @@
   onToggleAutoImport={toggleAutoImport}
   onPreviewCacheStatus={previewCacheStatus}
   onPreviewCacheClear={previewCacheClear}
+  onListLibraries={listLibraries}
+  onAddLibrary={addLibrary}
+  onRemoveLibrary={removeLibrary}
+  onRescanLibrary={rescanLibrary}
   {gardenAccount}
   onGardenSignOut={gardenSignOut}
   {engines}

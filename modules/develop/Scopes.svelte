@@ -65,6 +65,29 @@
   const maxOf = (a) => a.reduce((m, v) => (v > m ? v : m), 1);
 
   /**
+   * Turn an accumulated trace into straight alpha.
+   *
+   * Both scopes build their image additively — each sample adds `colour ×
+   * coverage` and raises alpha — which is premultiplied alpha, and
+   * `putImageData` expects straight. On a black panel the two happen to look
+   * identical, which is why the scopes were pinned to `background: #000`.
+   * Dividing the colour back out makes the trace composite correctly over
+   * ANY background, so the panel can use the theme's own surface and the
+   * scope stops being the one black rectangle in a light theme.
+   * @param {Uint8ClampedArray} px
+   */
+  function unpremultiply(px) {
+    for (let i = 0; i < px.length; i += 4) {
+      const a = px[i + 3];
+      if (a === 0 || a === 255) continue;
+      const k = 255 / a;
+      px[i] = Math.min(255, px[i] * k);
+      px[i + 1] = Math.min(255, px[i + 1] * k);
+      px[i + 2] = Math.min(255, px[i + 2] * k);
+    }
+  }
+
+  /**
    * @param {{r: Uint32Array, g: Uint32Array, b: Uint32Array, luma: Uint32Array} | null} hist
    * @param {any} sc
    * @param {string} m
@@ -87,7 +110,7 @@
     if (m === "rgb" || m === "luma") {
       drawHistogram(ctx, hist, m === "luma", { RED, GREEN, BLUE, FG });
     } else if (sc) {
-      if (m === "vector") drawVectorscope(ctx, sc);
+      if (m === "vector") drawVectorscope(ctx, sc, FG);
       else drawWaveform(ctx, sc, m === "parade", { RED, GREEN, BLUE, FG });
     }
   }
@@ -207,14 +230,16 @@
     } else {
       paint(sc.luma, FG, 0, 1);
     }
+    unpremultiply(px);
     ctx.putImageData(out, 0, 0);
   }
 
   /**
    * @param {CanvasRenderingContext2D} ctx
    * @param {any} sc
+   * @param {[number, number, number]} fg
    */
-  function drawVectorscope(ctx, sc) {
+  function drawVectorscope(ctx, sc, fg) {
     const S = sc.vecSize;
     ctx.canvas.width = S;
     ctx.canvas.height = S;
@@ -244,11 +269,12 @@
         px[i + 3] = a;
       }
     }
+    unpremultiply(px);
     ctx.putImageData(out, 0, 0);
 
     // Graticule: the neutral axis and a 100%-saturation reference ring, so
     // "how far out is this" has something to be far from.
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.16)";
+    ctx.strokeStyle = `rgba(${fg[0]}, ${fg[1]}, ${fg[2]}, 0.22)`;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.arc(half, half, half * 0.75, 0, Math.PI * 2);
@@ -308,11 +334,11 @@
   .scopes.mono {
     background: var(--color-background);
   }
-  /* A waveform/vectorscope is read as a shape in a dark field — the same 4%
-     wash the histograms sit on greys out its own falloff. */
+  /* The trace composites correctly over anything now (see unpremultiply), so
+     the tall scopes keep the panel's own surface instead of punching a black
+     rectangle through a light theme. */
   .scopes.tall {
     height: 132px;
-    background: #000;
   }
   canvas {
     width: 100%;
@@ -335,7 +361,7 @@
     font-size: 8px;
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.45);
+    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
     pointer-events: none;
   }
 </style>

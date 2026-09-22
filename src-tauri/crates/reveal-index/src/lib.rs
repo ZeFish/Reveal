@@ -55,6 +55,16 @@ pub struct FrameRow {
     pub capture_at: Option<i64>,
 }
 
+/// A registered library as the management UI needs to see it.
+#[derive(serde::Serialize, Clone, Debug)]
+pub struct Catalogue {
+    pub path: String,
+    /// Frames the catalogue holds for it.
+    pub frames: usize,
+    /// Is the folder reachable right now? False for an unmounted NAS.
+    pub online: bool,
+}
+
 pub struct Index {
     conn: Mutex<Connection>,
 }
@@ -155,6 +165,31 @@ impl Index {
             rusqlite::params![path, like],
         )?;
         Ok(n)
+    }
+
+    /// One registered library, with enough to manage it without opening it.
+    ///
+    /// `online` matters because a root is usually a NAS mount: a library that
+    /// is merely unmounted looks exactly like one whose folder was deleted,
+    /// and removing it would silently throw away every rating and story mark
+    /// the catalogue holds for it. The UI needs to tell those apart.
+    pub fn catalogues(&self) -> Result<Vec<Catalogue>, IndexError> {
+        let roots = self.roots()?;
+        let conn = self.conn.lock().unwrap();
+        let mut out = Vec::with_capacity(roots.len());
+        for path in roots {
+            let like = format!("{path}/%");
+            let frames: i64 = conn
+                .query_row(
+                    "SELECT count(*) FROM frames WHERE path=?1 OR path LIKE ?2",
+                    rusqlite::params![&path, &like],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            let online = Path::new(&path).is_dir();
+            out.push(Catalogue { path, frames: frames as usize, online });
+        }
+        Ok(out)
     }
 
     /// The registered root that contains `path` (longest match wins for

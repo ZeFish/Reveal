@@ -2156,6 +2156,19 @@ async fn add_catalog_root(
     scan_root(app, index, path).await
 }
 
+/// Every registered library, with its frame count and whether its folder is
+/// reachable right now. Drives the Libraries tab in Settings.
+#[tauri::command]
+async fn catalog_roots(
+    index: tauri::State<'_, IndexState>,
+) -> Result<Vec<reveal_index::Catalogue>, String> {
+    let idx = index.0.clone();
+    tauri::async_runtime::spawn_blocking(move || idx.catalogues())
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
 /// Forget a catalogue root: drop it from the set and prune its frames. The
 /// files on disk are untouched — this only removes the library from the index.
 #[tauri::command]
@@ -4379,6 +4392,7 @@ pub fn run() {
             scan_root,
             scan_folder,
             add_catalog_root,
+            catalog_roots,
             remove_catalog_root,
             index_dirs,
             story_dirs,

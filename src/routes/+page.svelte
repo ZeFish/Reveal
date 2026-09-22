@@ -911,6 +911,9 @@
       });
       listen("toggle-auto-import-requested", () => toggleAutoImport());
       listen("add-library-folder-requested", () => indexRoot());
+      // Settings lives in its own window and shares no memory with this one;
+      // a library added or removed there must still reach the folder tree.
+      listen("libraries-changed", () => refreshDirs());
       listen("app-error", (e) => {
         appMessage = e.payload.message ?? String(e.payload);
         setTimeout(() => (appMessage = ""), 5000);
@@ -2096,6 +2099,49 @@
       await invoke("scan_root", { path });
       await refreshDirs();
       if (dirs.length) openDir(dirs[dirs.length - 1].dir);
+    } finally {
+      scanning = false;
+    }
+  }
+
+  /** Every registered library with its frame count and whether it's mounted. */
+  async function listLibraries() {
+    try {
+      return await invoke("catalog_roots");
+    } catch (error) {
+      /** @type {RevealWindow} */ (window).__log?.(`libraries unavailable: ${error}`);
+      return [];
+    }
+  }
+
+  /**
+   * Forget a library. Only the catalogue entry goes — the photos on disk are
+   * never touched — but the ratings, captions and story marks the catalogue
+   * holds for those files go with it, which is why every caller confirms
+   * first.
+   * @param {string} path
+   */
+  async function removeLibrary(path) {
+    const pruned = await invoke("remove_catalog_root", { path });
+    // If we were looking inside the library that just left, step out of it
+    // rather than leaving the grid pointed at a folder the index forgot.
+    // `view` is derived from the frames of `curDir`, so clearing the folder
+    // empties the grid on its own.
+    if (curDir === path || curDir?.startsWith(`${path}/`)) {
+      curDir = null;
+      frames = [];
+    }
+    await refreshDirs();
+    notify(`Library removed · ${Number(pruned).toLocaleString("en-CA")} photos forgotten`, 4000);
+    return pruned;
+  }
+
+  /** @param {string} path */
+  async function rescanLibrary(path) {
+    scanning = true;
+    try {
+      await invoke("scan_root", { path });
+      await refreshDirs();
     } finally {
       scanning = false;
     }
@@ -4118,6 +4164,7 @@
           onRescanDir={rescanDir}
           onRevealDir={revealDir}
           onAddLocation={indexRoot}
+          onRemoveLibrary={removeLibrary}
           onSetImportDir={setImportDir}
           onOpenNote={() => (catalogOpen = true)}
           onTogglePreview={() => togglePreviewFilter()}
@@ -4180,6 +4227,7 @@
             onRescanDir={rescanDir}
             onRevealDir={revealDir}
             onAddLocation={indexRoot}
+            onRemoveLibrary={removeLibrary}
             onSetImportDir={setImportDir}
             onOpenNote={() => (catalogOpen = true)}
             onTogglePreview={() => togglePreviewFilter()}
