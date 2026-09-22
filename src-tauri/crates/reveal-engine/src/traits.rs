@@ -47,6 +47,24 @@ pub enum EngineControl {
         stage: String, // "pre" or "post"
         label: String,
     },
+    /// A tone-curve editor. `channels` names the recipe fields it edits, in
+    /// the order the editor tabs them — each holds a `Vec<[f32; 2]>` of
+    /// control points, not a scalar, so this can't ride on Slider.
+    Curve {
+        id: String,
+        label: String,
+        channels: Vec<CurveChannel>,
+    },
+}
+
+/// One tab of a curve editor: the recipe field it writes and how to draw it.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct CurveChannel {
+    pub id: String,
+    pub label: String,
+    /// CSS custom property the UI should color this channel's line with.
+    pub color: String,
 }
 
 /// Logical grouping of controls in the dev panel.

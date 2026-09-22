@@ -24,6 +24,7 @@ use spektrafilm_core::profile;
 use spektrafilm_gpu::ComputeBackend;
 use spektrafilm_math::image::ImageBuf;
 
+pub mod curves;
 pub mod traits;
 pub use traits::{EngineInfo, EngineRegistry, RenderEngine};
 
@@ -192,6 +193,21 @@ pub struct Recipe {
     #[serde(default = "default_highlight_desat")]
     pub highlight_desat: f32,
 
+    /// Display-referred tone curves, as control points in 0..1 (x = input,
+    /// y = output). `curve_luma` moves all three channels together; the per
+    /// channel ones run after it. Two points at the corners = identity, and
+    /// the renderer skips the stage entirely in that case, so the default
+    /// costs nothing. Serde defaults keep every sidecar written before
+    /// curves existed loading unchanged.
+    #[serde(default = "default_curve")]
+    pub curve_luma: Vec<[f32; 2]>,
+    #[serde(default = "default_curve")]
+    pub curve_r: Vec<[f32; 2]>,
+    #[serde(default = "default_curve")]
+    pub curve_g: Vec<[f32; 2]>,
+    #[serde(default = "default_curve")]
+    pub curve_b: Vec<[f32; 2]>,
+
     /// User `.cube` LUTs applied to the raw scene-linear input in Rapid engine only,
     /// before exposure and tone controls — a creative pre-grade for digital RAW.
     /// Spektra ignores these. Stacked in order.
@@ -243,6 +259,10 @@ fn default_vignette_feather() -> f32 {
 fn default_grain_roughness() -> f32 {
     0.12
 }
+fn default_curve() -> Vec<[f32; 2]> {
+    crate::curves::IDENTITY.to_vec()
+}
+
 fn default_highlight_desat() -> f32 {
     0.4
 }
@@ -348,6 +368,10 @@ impl Default for Recipe {
             grain_amount: 0.0,
             grain_roughness: default_grain_roughness(),
             highlight_desat: default_highlight_desat(),
+            curve_luma: default_curve(),
+            curve_r: default_curve(),
+            curve_g: default_curve(),
+            curve_b: default_curve(),
             rapid_pre_luts: Vec::new(),
             rapid_post_luts: Vec::new(),
             pre_luts: Vec::new(),

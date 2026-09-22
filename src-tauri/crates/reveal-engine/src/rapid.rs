@@ -11,7 +11,7 @@ use spektrafilm_math::image::ImageBuf;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::traits::{ControlGroup, EngineControl, RenderEngine};
+use crate::traits::{ControlGroup, CurveChannel, EngineControl, RenderEngine};
 use crate::{Cube, LutLayer, Recipe};
 
 pub struct RapidEngine;
@@ -155,6 +155,35 @@ impl RenderEngine for RapidEngine {
                         preset: false,
                     },
                 ],
+            },
+            ControlGroup {
+                label: "Tone Curve".to_string(),
+                controls: vec![EngineControl::Curve {
+                    id: "tone_curve".to_string(),
+                    label: "Tone Curve".to_string(),
+                    channels: vec![
+                        CurveChannel {
+                            id: "curve_luma".to_string(),
+                            label: "Luma".to_string(),
+                            color: "--color-foreground".to_string(),
+                        },
+                        CurveChannel {
+                            id: "curve_r".to_string(),
+                            label: "Red".to_string(),
+                            color: "--color-red".to_string(),
+                        },
+                        CurveChannel {
+                            id: "curve_g".to_string(),
+                            label: "Green".to_string(),
+                            color: "--color-green".to_string(),
+                        },
+                        CurveChannel {
+                            id: "curve_b".to_string(),
+                            label: "Blue".to_string(),
+                            color: "--color-blue".to_string(),
+                        },
+                    ],
+                }],
             },
             ControlGroup {
                 label: "Hue, Saturation, Luminance".to_string(),
@@ -706,6 +735,23 @@ pub fn develop_rapid(input: &ImageBuf, recipe: &Recipe, luts_dir: &Path) -> Imag
         || hsl_sats.iter().any(|v| *v != 0.0)
         || hsl_lums.iter().any(|v| *v != 0.0);
 
+    // Tone-curve LUTs are built once per render, not per pixel — an
+    // identity curve (the default) builds nothing at all, so a recipe that
+    // never touched a curve pays a single Option check per pixel.
+    let build = |pts: &Vec<[f32; 2]>| {
+        if crate::curves::is_identity(pts) {
+            None
+        } else {
+            crate::curves::build_lut(pts)
+        }
+    };
+    let curve_luma = build(&recipe.curve_luma);
+    let curve_r = build(&recipe.curve_r);
+    let curve_g = build(&recipe.curve_g);
+    let curve_b = build(&recipe.curve_b);
+    let has_curves =
+        curve_luma.is_some() || curve_r.is_some() || curve_g.is_some() || curve_b.is_some();
+
     let shadows_tint = recipe.shadows_tint;
     let midtones_tint = recipe.midtones_tint;
     let highlights_tint = recipe.highlights_tint;
@@ -1225,6 +1271,31 @@ pub fn develop_rapid(input: &ImageBuf, recipe: &Recipe, luts_dir: &Path) -> Imag
                     agx_b = agx_b * (1.0 - desat_w) + avg_c * desat_w;
                 }
 
+                // Tone curves last, on display-referred 0..1 values — that's
+                // the space a point curve is drawn in and reasoned about
+                // (the histogram under the editor is this same space).
+                // Applying them before the tone map would make the curve's
+                // own shape meaningless, since AgX would reshape it again.
+                if has_curves {
+                    agx_r = agx_r.clamp(0.0, 1.0);
+                    agx_g = agx_g.clamp(0.0, 1.0);
+                    agx_b = agx_b.clamp(0.0, 1.0);
+                    if let Some(lut) = &curve_luma {
+                        agx_r = crate::curves::sample(lut, agx_r);
+                        agx_g = crate::curves::sample(lut, agx_g);
+                        agx_b = crate::curves::sample(lut, agx_b);
+                    }
+                    if let Some(lut) = &curve_r {
+                        agx_r = crate::curves::sample(lut, agx_r);
+                    }
+                    if let Some(lut) = &curve_g {
+                        agx_g = crate::curves::sample(lut, agx_g);
+                    }
+                    if let Some(lut) = &curve_b {
+                        agx_b = crate::curves::sample(lut, agx_b);
+                    }
+                }
+
                 pixel[0] = agx_r.clamp(0.0, 1.0);
                 pixel[1] = agx_g.clamp(0.0, 1.0);
                 pixel[2] = agx_b.clamp(0.0, 1.0);
@@ -1655,6 +1726,40 @@ mod tests {
         assert_eq!(output.height, 2);
         assert_eq!(output.data.len(), 12);
         assert!(output.data[0] > 0.0);
+    }
+
+    /// The default (identity) curve must leave the render byte-identical —
+    /// otherwise every existing sidecar silently changes look the moment
+    /// curves ship. The same recipe with a curve that pulls midtones down
+    /// must then actually darken it.
+    #[test]
+    fn test_tone_curve_identity_is_a_no_op_and_a_curve_is_not() {
+        let input = ImageBuf::from_data(
+            2,
+            2,
+            vec![0.1, 0.1, 0.1, 0.2, 0.2, 0.2, 0.3, 0.3, 0.3, 0.4, 0.4, 0.4],
+        );
+        let mut recipe = Recipe::default();
+        recipe.engine = "rapid".to_string();
+
+        let baseline = develop_rapid(&input, &recipe, Path::new(""));
+
+        // Explicitly re-stating the identity curve changes nothing.
+        recipe.curve_luma = vec![[0.0, 0.0], [1.0, 1.0]];
+        let unchanged = develop_rapid(&input, &recipe, Path::new(""));
+        for (a, b) in baseline.data.iter().zip(unchanged.data.iter()) {
+            assert!((a - b).abs() < 1e-6, "identity curve altered the render: {a} vs {b}");
+        }
+
+        // A curve that maps midtones downward has to darken the result.
+        recipe.curve_luma = vec![[0.0, 0.0], [0.5, 0.25], [1.0, 1.0]];
+        let darkened = develop_rapid(&input, &recipe, Path::new(""));
+        let sum_before: f32 = baseline.data.iter().sum();
+        let sum_after: f32 = darkened.data.iter().sum();
+        assert!(
+            sum_after < sum_before,
+            "a downward midtone curve should darken the frame ({sum_after} vs {sum_before})"
+        );
     }
 
     #[test]

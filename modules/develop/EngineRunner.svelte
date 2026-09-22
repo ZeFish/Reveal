@@ -1,5 +1,6 @@
 <script>
   import Icon from "$lib/components/Icon.svelte";
+  import CurveEditor from "./CurveEditor.svelte";
 
   let {
     engine,
@@ -363,6 +364,9 @@
                   {/if}
                 </select>
               </div>
+
+            {:else if control.kind === "curve"}
+              <CurveEditor {control} bind:recipe {edited} />
 
             {:else if control.kind === "lut_stack"}
               <div class="lut-stack-section">
