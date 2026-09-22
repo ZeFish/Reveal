@@ -62,7 +62,25 @@
       : "",
   );
 
+  // Now that the caches usually answer instantly, a render that finishes in
+  // 30ms used to flash a full pill on screen — more distracting than the wait
+  // it announced. So: nothing at all for the first BUSY_DELAY_MS, then a bare
+  // spinner, and words only when there's an actual `status` to read.
+  const BUSY_DELAY_MS = 400;
   let loaded = $state(false);
+  let busy = $derived(
+    inflight || pendingPx !== null || !!status || (!loaded && !!imgUrl && !imgFailed && !useCanvas)
+  );
+  let busyVisible = $state(false);
+  $effect(() => {
+    if (!busy) {
+      busyVisible = false;
+      return;
+    }
+    const t = setTimeout(() => (busyVisible = true), BUSY_DELAY_MS);
+    return () => clearTimeout(t);
+  });
+
   /** @type {HTMLImageElement | null} */ let imgEl = $state(null);
   /** @type {HTMLCanvasElement | null} */ let clipCanvasEl = $state(null);
   let aspectRatio = $state("");
@@ -575,16 +593,17 @@
   class:panning
   class:frame-overflow={zoomMode === "frame" && developPhotoPercent > 100}
   class:has-caption={showCaption && caption.trim() && !imgFailed}
+  class:loupe-open={loupeActive}
   onpointerdown={(e) => { onPhotoPointerDown(e); onLoupePointerDown(e); }}
   onpointermove={(e) => { onPhotoPointerMove(e); onLoupePointerMove(e); }}
   onpointerup={(e) => { onPhotoPointerUp(e); onLoupePointerUp(e); }}
   onpointercancel={(e) => { onPhotoPointerUp(e); onLoupePointerUp(e); }}
   oncontextmenu={(e) => e.preventDefault()}
 >
-  {#if inflight || pendingPx !== null || status || (!loaded && imgUrl && !imgFailed && !useCanvas)}
-    <div class="render-badge">
+  {#if busyVisible}
+    <div class="render-badge" class:with-label={!!status}>
       <span class="render-spinner"></span>
-      <span class="din render-label">{status || "Rendering…"}</span>
+      {#if status}<span class="din render-label">{status}</span>{/if}
     </div>
   {/if}
 
@@ -710,24 +729,41 @@
     height: 100%;
     display: block;
   }
+  /* The OS cursor draws above every element, so it sits over the glass and
+     hides the very pixel being inspected. The crosshair is the cursor while
+     the loupe is up. */
+  main.loupe-open,
+  main.loupe-open :global(*) {
+    cursor: none;
+  }
+  /* The two arms are centred on the whole circle, not nested inside each
+     other: an 11px bar centred with `margin:auto` inside a 1px-wide parent
+     has negative free space, and CSS resolves that by zeroing margin-left
+     and pushing the whole overflow right — which cost the crosshair its
+     left arm (Francis, 2026-09-21). */
   .loupe-crosshair {
     position: absolute;
     inset: 0;
-    margin: auto;
-    width: 1px;
-    height: 11px;
-    background: rgba(255, 255, 255, 0.7);
-    box-shadow: 0 0 1px rgba(0, 0, 0, 0.6);
+    pointer-events: none;
   }
+  .loupe-crosshair::before,
   .loupe-crosshair::after {
     content: "";
     position: absolute;
-    inset: 0;
-    margin: auto;
-    width: 11px;
-    height: 1px;
+    top: 50%;
+    left: 50%;
     background: rgba(255, 255, 255, 0.7);
     box-shadow: 0 0 1px rgba(0, 0, 0, 0.6);
+  }
+  .loupe-crosshair::before {
+    width: 1px;
+    height: 11px;
+    transform: translate(-50%, -50%);
+  }
+  .loupe-crosshair::after {
+    width: 11px;
+    height: 1px;
+    transform: translate(-50%, -50%);
   }
 
   main {
@@ -1015,28 +1051,36 @@
 
   .render-badge {
     position: absolute;
-    top: 20px;
-    left: 50%;
-    transform: translateX(-50%);
+    top: 14px;
+    right: 14px;
     z-index: 10;
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 14px;
-    background: rgba(0, 0, 0, 0.75);
-    backdrop-filter: blur(10px);
+    gap: 7px;
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 0.68rem;
+    animation: badge-in var(--duration-fast, 160ms) ease-out;
+  }
+  /* Only a message worth reading earns the backing pill; a plain "still
+     working" spinner floats bare over the photo. */
+  .render-badge.with-label {
+    padding: 4px 10px;
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(8px);
     border-radius: 999px;
-    color: #fff;
-    font-size: 0.75rem;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  }
+  @keyframes badge-in {
+    from {
+      opacity: 0;
+    }
   }
   .render-spinner {
-    width: 10px;
-    height: 10px;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-top-color: #fff;
+    width: 9px;
+    height: 9px;
+    border: 1.5px solid rgba(255, 255, 255, 0.18);
+    border-top-color: rgba(255, 255, 255, 0.7);
     border-radius: 50%;
-    animation: spin 0.6s linear infinite;
+    animation: spin 0.7s linear infinite;
   }
   @keyframes spin {
     to {
