@@ -5,6 +5,12 @@
     picked = null,
     imgUrl = "",
     useCanvas = false,
+    // Bumped by +page.svelte's pump() every time it paints fresh pixels
+    // into canvasEl — canvasEl.width/height alone don't change between two
+    // renders of the same photo at the same output size, so the histogram
+    // effect below needs this as an explicit dependency or it goes stale
+    // after the first Rapid-engine render.
+    canvasVersion = 0,
     showClipping = false,
     caption = "",
     showCaption = false,
@@ -286,6 +292,10 @@
   }
 
   $effect(() => {
+    // Same staleness gap as the histogram effect below: in canvas (Rapid)
+    // mode nothing else re-triggers this when a new frame lands at the same
+    // output size, so canvasVersion has to be an explicit dependency.
+    canvasVersion;
     if (showClipping && clipCanvasEl) {
       renderClippingOverlay();
     }
@@ -305,8 +315,12 @@
 
   $effect(() => {
     // useCanvas's own pixels are written by the caller (+page.svelte's pump())
-    // straight into canvasEl, outside this component — width/height changing
-    // is the only DOM signal available that a fresh frame landed.
+    // straight into canvasEl, outside this component. canvasVersion is the
+    // explicit signal that a fresh frame landed — canvasEl.width/height
+    // alone don't change between two renders at the same output size (e.g.
+    // nudging exposure), so keying only on those left the histogram frozen
+    // after the first Rapid-engine render.
+    canvasVersion;
     if (useCanvas && canvasEl?.width && canvasEl?.height) updateHistogram();
   });
 

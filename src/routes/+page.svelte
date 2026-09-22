@@ -592,6 +592,13 @@
   /** @type {string | null} */ let imgUrl = $state(null);
   /** @type {HTMLCanvasElement | null} */ let canvasEl = $state(null);
   let useCanvas = $state(false);
+  // Bumped every time pump() paints fresh pixels into canvasEl via
+  // putImageData — a plain counter DevelopView's histogram effect can
+  // depend on. canvasEl.width/height alone isn't enough: two renders of the
+  // same photo at the same output size (e.g. nudging exposure) leave those
+  // DOM properties unchanged, so an effect keyed only on them never reruns
+  // and the histogram goes stale after the very first Rapid-engine render.
+  let canvasVersion = $state(0);
   /** @type {number | null} */ let renderAspect = $state(null); // width/height of the last canvas (rapid) render — reactive aspect for the loupe
   let imgFailed = $state(false); // loupe image couldn't decode/load (NAS drop, junk file…)
   /** @type {{r: Uint32Array, g: Uint32Array, b: Uint32Array, luma: Uint32Array} | null} */
@@ -3633,6 +3640,7 @@
             if (ctx) {
               const imgData = new ImageData(new Uint8ClampedArray(res.rgba), res.width, res.height);
               ctx.putImageData(imgData, 0, 0);
+              canvasVersion++;
             }
           }
           imgFailed = false;
@@ -4510,6 +4518,7 @@
       {picked}
       imgUrl={imgUrl ?? undefined}
       {useCanvas}
+      {canvasVersion}
       {showClipping}
       {caption}
       {showCaption}
