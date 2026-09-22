@@ -17,6 +17,9 @@
   import Alert from "@stnd/ui/Alert.svelte";
   import AlertDialog from "@stnd/ui/AlertDialog.svelte";
   import { untrack } from "svelte";
+  import { invoke } from "@tauri-apps/api/core";
+  import { getVersion } from "@tauri-apps/api/app";
+  import { isTauri } from "$lib/api.js";
 
   /**
    * @typedef {Object} Preferences
@@ -112,6 +115,7 @@
     { id: "cache", label: "Cache & Storage", icon: "hard-drive" },
     { id: "garden", label: "Garden Account", icon: "user-circle" },
     { id: "ai", label: "AI & Automation", icon: "lightning" },
+    { id: "about", label: "About", icon: "info" },
   ];
   const AI_PROVIDERS = [
     { id: "anthropic", label: "Anthropic (Claude)", modelPlaceholder: "claude-sonnet-5" },
@@ -127,6 +131,15 @@
       activeCategory = visibleCategories[0]?.id ?? "photos";
     }
   });
+
+  let appVersion = $state("");
+  $effect(() => {
+    if (isTauri) getVersion().then((v) => (appVersion = v)).catch(() => {});
+  });
+  /** @param {string} url */
+  function openExternal(url) {
+    invoke("open_path", { path: url }).catch(() => {});
+  }
 
   let cacheBusy = $state(false);
   let cacheConfirm = $state(false);
@@ -740,6 +753,58 @@
             </div>
           </div>
         </div>
+      {:else if activeCategory === "about"}
+        <div class="section-group">
+          <div class="section-heading">
+            <Icon name="info" size="12px" />
+            <span>REVEAL</span>
+          </div>
+          <div class="inset-card">
+            <div class="setting-row">
+              <div class="row-meta">
+                <span class="row-label">VERSION</span>
+              </div>
+              <div class="row-control"><span class="mono">{appVersion || "—"}</span></div>
+            </div>
+            <div class="setting-row">
+              <div class="row-meta">
+                <span class="row-desc">Free and open source — a personal darkroom, not a product. Built on the same appetite for crediting the work it stands on that it asks of anyone using it.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="section-group">
+          <div class="section-heading">
+            <Icon name="heart" size="12px" />
+            <span>OPEN SOURCE &amp; CREDITS</span>
+          </div>
+          <div class="inset-card">
+            <div class="setting-row">
+              <div class="row-meta">
+                <span class="row-label">SPEKTRAFILM-RS</span>
+                <span class="row-desc">The film-emulation engine behind the Spektra develop mode — turbasvin's Rust port of spektrafilm, pinned per release.</span>
+              </div>
+              <div class="row-control">
+                <button type="button" class="outline small action-pill-btn" onclick={() => openExternal("https://github.com/turbasvin/spektrafilm-rs")}>
+                  <Icon name="arrow-square-out" size="10px" />
+                  <span>GitHub</span>
+                </button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="row-meta">
+                <span class="row-label">RAPIDRAW</span>
+                <span class="row-desc">Timon Käch's GPU-accelerated RAW editor (AGPL-3.0) — a source of real inspiration for where Reveal's own develop engine can go.</span>
+              </div>
+              <div class="row-control">
+                <button type="button" class="outline small action-pill-btn" onclick={() => openExternal("https://github.com/CyberTimon/RapidRAW")}>
+                  <Icon name="arrow-square-out" size="10px" />
+                  <span>GitHub</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       {/if}
     </div>
 
@@ -1003,6 +1068,7 @@
     font-size: 10px;
     letter-spacing: 0.08em;
     white-space: nowrap;
+    gap: 4px;
   }
 
   .stepper-group {
