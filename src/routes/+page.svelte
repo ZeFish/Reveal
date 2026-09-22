@@ -3823,9 +3823,16 @@
   let inflight = $state(false);
   /** @type {number | null} */ let pendingPx = $state(null);
 
-  /** @param {number} px */
-  function scheduleRender(px) {
+  /** Whether the pending render is a live drag frame rather than a settled
+   * edit. Travels with `pendingPx` so latest-wins keeps them consistent: a
+   * settle arriving after a drag replaces both. The backend cannot infer this
+   * from the pixel size any more — Rapid on the GPU drags at full 2048.
+   * @type {boolean} */
+  let pendingLive = false;
+  /** @param {number} px @param {boolean} [live] */
+  function scheduleRender(px, live = false) {
     pendingPx = px; // latest wins
+    pendingLive = live;
     pump();
   }
 
@@ -3833,13 +3840,15 @@
     if (inflight || pendingPx === null || !photoPath || !recipe) return;
     inflight = true;
     const px = pendingPx;
+    const live = pendingLive;
     pendingPx = null;
+    pendingLive = false;
     const path = photoPath;
     const snap = { ...recipe };
     const t0 = performance.now();
     try {
       if (snap.engine === "rapid") {
-        const res = await invoke("develop_preview_rgba", { path, recipe: snap, maxPx: px });
+        const res = await invoke("develop_preview_rgba", { path, recipe: snap, maxPx: px, live });
         if (path === photoPath) {
           renderMs = Math.round(performance.now() - t0);
           useCanvas = true;
@@ -3857,7 +3866,11 @@
           // the box locked to its last settled size; the smaller canvas
           // just stretches to fill it (softer, not smaller) via the
           // existing object-fit, exactly what was asked for.
-          if (px >= PREVIEW_PX || renderAspect === null) {
+          // `!live`, not `px >= PREVIEW_PX`: the pixel size stopped meaning
+          // "settled" when Rapid on the GPU began dragging at full 2048. It
+          // still happens to be harmless here (same size, same ratio), but
+          // the same stale proxy did real damage one branch over.
+          if (!live || renderAspect === null) {
             renderAspect = res.height ? res.width / res.height : null;
           }
           await tick();
@@ -3932,7 +3945,7 @@
       recipeRedoStack = [];
       lastCommittedRecipe = snapshotRecipe(recipe);
     }
-    scheduleRender(liveRenderPx(live));
+    scheduleRender(liveRenderPx(live), live);
     clearTimeout(saveTimer);
     const path = photoPath;
     const snapshot = recipe ? { ...recipe } : null;

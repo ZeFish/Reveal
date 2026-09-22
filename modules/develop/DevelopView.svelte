@@ -506,6 +506,9 @@
   // overlay's pointer events entirely.
   let loupeActive = $state(false);
   let loupePos = $state({ x: 0, y: 0 }); // client coords, for the fixed overlay
+  // Where in the photo the glass is pointing, 0..1. Kept so the first paint
+  // can happen after the canvas exists rather than during the pointer event.
+  let loupeNorm = { x: 0.5, y: 0.5 };
   /** @type {HTMLCanvasElement | null} */
   let loupeCanvasEl = $state(null);
   const LOUPE_DIAMETER = 220;
@@ -534,7 +537,13 @@
     loupeActive = true;
     e.currentTarget.setPointerCapture?.(e.pointerId);
     updateLoupe(e.clientX, e.clientY);
+    // A pointerdown on the photo otherwise also starts WebKit's own image
+    // drag, which paints a full-size drag image of the photo under the
+    // cursor — read as "the photo zooms when I click and hold" (Francis,
+    // 2026-09-22). The loupe owns this gesture; nothing else gets it.
+    e.preventDefault();
     e.stopPropagation();
+    return true;
   }
 
   /** @param {PointerEvent} e */
@@ -549,6 +558,14 @@
     loupeActive = false;
     e.currentTarget.releasePointerCapture?.(e.pointerId);
   }
+
+  // The `{#if loupeActive}` block has not rendered when pointerdown fires, so
+  // `loupeCanvasEl` is still null and that first draw goes nowhere — the
+  // glass sat black until the mouse moved (Francis, 2026-09-22: "j'ai du noir
+  // dans la loupe"). Draw again the moment the canvas exists.
+  $effect(() => {
+    if (loupeActive && loupeCanvasEl) drawLoupe();
+  });
 
   /** @param {number} clientX @param {number} clientY */
   function updateLoupe(clientX, clientY) {
@@ -574,15 +591,23 @@
     if (flipV < 0) ny = 1 - ny;
 
     loupePos = { x: clientX, y: clientY };
+    loupeNorm = { x: nx, y: ny };
+    drawLoupe();
+  }
 
-    if (!loupeCanvasEl) return;
+  /// Paint the glass from the last known position. Separate from
+  /// `updateLoupe` so the effect above can repaint the moment the canvas
+  /// exists, without needing a pointer event to hand it coordinates.
+  function drawLoupe() {
+    const source = loupeSource();
+    if (!source || !loupeCanvasEl) return;
     const ctx = loupeCanvasEl.getContext("2d");
     if (!ctx) return;
     loupeCanvasEl.width = LOUPE_DIAMETER;
     loupeCanvasEl.height = LOUPE_DIAMETER;
     const span = LOUPE_DIAMETER / LOUPE_ZOOM;
-    const sx = nx * source.w - span / 2;
-    const sy = ny * source.h - span / 2;
+    const sx = loupeNorm.x * source.w - span / 2;
+    const sy = loupeNorm.y * source.h - span / 2;
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, LOUPE_DIAMETER, LOUPE_DIAMETER);
     ctx.drawImage(source.el, sx, sy, span, span, 0, 0, LOUPE_DIAMETER, LOUPE_DIAMETER);
@@ -595,7 +620,7 @@
   class:frame-overflow={zoomMode === "frame" && developPhotoPercent > 100}
   class:has-caption={showCaption && caption.trim() && !imgFailed}
   class:loupe-open={loupeActive}
-  onpointerdown={(e) => { onPhotoPointerDown(e); onLoupePointerDown(e); }}
+  onpointerdown={(e) => { if (!onLoupePointerDown(e)) onPhotoPointerDown(e); }}
   onpointermove={(e) => { onPhotoPointerMove(e); onLoupePointerMove(e); }}
   onpointerup={(e) => { onPhotoPointerUp(e); onLoupePointerUp(e); }}
   onpointercancel={(e) => { onPhotoPointerUp(e); onLoupePointerUp(e); }}
@@ -719,8 +744,10 @@
     pointer-events: none;
     z-index: 50;
     border: 2px solid rgba(255, 255, 255, 0.85);
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 8px 32px rgba(0, 0, 0, 0.5);
-    background: #000;
+    /* The framework's own two presets rather than hand-rolled shadows, so the
+       glass lifts the way every other raised surface in the app does. */
+    box-shadow: var(--shadow-raised), var(--shadow-lg);
+    background: var(--color-surface-high, #000);
   }
   .loupe canvas {
     width: 100%;

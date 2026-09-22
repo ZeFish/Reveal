@@ -1734,6 +1734,30 @@ async fn copy_photo_preview_to_clipboard(path: String) -> Result<(), String> {
     }
 }
 
+/// Publishing happens off the render path, so two settles in quick
+/// succession can be in flight at once. Whichever STARTED last must be the
+/// one that lands, or the sidecar ends up holding an older recipe than the
+/// canvas — the exact stale-preview bug this file has already had once.
+static PUBLISH_GENERATION: std::sync::OnceLock<
+    std::sync::Mutex<std::collections::HashMap<String, u64>>,
+> = std::sync::OnceLock::new();
+
+/// Claim the right to publish this photo, invalidating any in-flight publish.
+fn next_publish_generation(path: &str) -> u64 {
+    let map = PUBLISH_GENERATION.get_or_init(Default::default);
+    let mut guard = map.lock().unwrap_or_else(|e| e.into_inner());
+    let slot = guard.entry(path.to_string()).or_insert(0);
+    *slot += 1;
+    *slot
+}
+
+/// Is this publish still the newest one claimed for the photo?
+fn publish_generation_is_current(path: &str, generation: u64) -> bool {
+    let map = PUBLISH_GENERATION.get_or_init(Default::default);
+    let guard = map.lock().unwrap_or_else(|e| e.into_inner());
+    guard.get(path).is_none_or(|current| *current == generation)
+}
+
 /// THE CONTRACT: every preview-serving path, for every develop engine, MUST
 /// funnel its final JPEG bytes through this one function on settle (durable).
 /// This is the only place that PUBLISHES a render, and it publishes to both
@@ -1827,12 +1851,22 @@ struct DevelopRgbaResult {
 }
 
 #[tauri::command]
+/// `live` is true while a slider is being dragged.
+///
+/// The frontend has always known this; the backend used to infer it from
+/// `max_px < 2048`, which held only while live drags rendered a smaller
+/// proxy. Once Rapid on the GPU became fast enough to drag at full 2048 that
+/// inference silently became "every drag frame is a settled edit", and each
+/// one re-rendered a JPEG, wrote `.preview.jpg` to the NAS and filled two
+/// cache entries — mid-drag. Guesses about caller intent go stale; the caller
+/// now says.
 async fn develop_preview_rgba(
     app: tauri::AppHandle,
     state: tauri::State<'_, EngineState>,
     path: String,
     recipe: reveal_engine::Recipe,
     max_px: u32,
+    live: Option<bool>,
 ) -> Result<DevelopRgbaResult, String> {
     let engine = state.0.clone();
     let out = {
@@ -1857,12 +1891,25 @@ async fn develop_preview_rgba(
     // grid (and every external tool) only ever sees the `.preview.jpg`
     // sidecar — without writing it here too, developing with Rapid never
     // touched disk, so the grid silently kept showing the camera JPEG no
-    // matter which engine or look was picked. Mirrors `develop_preview`'s
-    // sidecar logic exactly, on settle only (not on every drag frame).
-    if max_px >= 2048 {
-        if let Err(e) = write_preview_sidecar(&app, &engine, &path, &recipe, max_px).await {
-            eprintln!("develop_preview_rgba sidecar write {path}: {e}");
-        }
+    // matter which engine or look was picked.
+    //
+    // On settle only, and NOT awaited. A drag moves the photo on screen and
+    // nothing else; letting go publishes, in the background. Awaiting it made
+    // the canvas wait on a second JPEG render and a NAS write before showing
+    // pixels it already had.
+    if !live.unwrap_or(false) && max_px >= 2048 {
+        let generation = next_publish_generation(&path);
+        let app = app.clone();
+        let engine = engine.clone();
+        let path = path.clone();
+        let recipe = recipe.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) =
+                write_preview_sidecar(&app, &engine, &path, &recipe, max_px, generation).await
+            {
+                eprintln!("develop_preview_rgba sidecar write {path}: {e}");
+            }
+        });
     }
 
     Ok(DevelopRgbaResult {
@@ -1885,6 +1932,7 @@ async fn write_preview_sidecar(
     path: &str,
     recipe: &reveal_engine::Recipe,
     max_px: u32,
+    generation: u64,
 ) -> Result<(), String> {
     // Render, then publish. This used to read the local cache first and reuse
     // whatever it found — which, once the cache key stopped carrying a recipe
@@ -1902,6 +1950,12 @@ async fn write_preview_sidecar(
     .map_err(|e| e.to_string())?
     .map_err(|e| format!("{e:#}"))?;
 
+    // The render above can take a second; another settle may have claimed the
+    // photo meanwhile. Publishing now would put an older recipe on disk than
+    // the one on screen.
+    if !publish_generation_is_current(path, generation) {
+        return Ok(());
+    }
     write_preview_sidecar_bytes(app, path, &rendered.jpeg, true, max_px);
     Ok(())
 }
@@ -4811,6 +4865,47 @@ mod preview_cache_tests {
         }
         prune_preview_cache(&s.0, 2000);
         assert_eq!(names(&s.0).len(), 1, "40 renders of one photo collapse to 1");
+    }
+
+    /// Publishing runs off the render path now, so two settles can be in
+    /// flight at once. If the SLOWER, older one were allowed to land last,
+    /// the sidecar would hold an older recipe than the canvas — the stale
+    /// preview bug, back by a different door.
+    ///
+    /// Scope, stated because it is not obvious: this covers the MECHANISM,
+    /// not its wiring. Deleting the check in `write_preview_sidecar` leaves
+    /// this test green — the call site needs an AppHandle and an Engine, so
+    /// it is not reachable from here. Treat a change to that `if` as
+    /// untested.
+    #[test]
+    fn only_the_newest_claim_may_publish() {
+        let path = format!("/nas/{}/DSCF0001.RAF", std::process::id());
+
+        let first = super::next_publish_generation(&path);
+        assert!(super::publish_generation_is_current(&path, first));
+
+        // A second settle claims the photo while the first is still rendering.
+        let second = super::next_publish_generation(&path);
+        assert!(second > first, "each claim supersedes the last");
+        assert!(
+            !super::publish_generation_is_current(&path, first),
+            "the older render must not publish"
+        );
+        assert!(super::publish_generation_is_current(&path, second));
+    }
+
+    /// Claims are per photo — developing one must not silence another.
+    #[test]
+    fn a_claim_on_one_photo_leaves_others_alone() {
+        let a = format!("/nas/{}/A.RAF", std::process::id());
+        let b = format!("/nas/{}/B.RAF", std::process::id());
+        let claim_a = super::next_publish_generation(&a);
+        super::next_publish_generation(&b);
+        super::next_publish_generation(&b);
+        assert!(
+            super::publish_generation_is_current(&a, claim_a),
+            "B's edits must not invalidate A's pending publish"
+        );
     }
 
     /// A cache entry must never appear half-written — a truncated JPEG in
