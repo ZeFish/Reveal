@@ -1314,10 +1314,7 @@
     closePhotoMenu();
     if (to !== "dev") {
       zoomMode = "frame"; // always re-enter develop framed
-      // Leaving Develop: the parked decode is one photo's worth of local disk
-      // kept only so a restart can resume THAT photo. A grid session has no
-      // use for it.
-      if (isTauri) invoke("release_working_frame").catch(() => {});
+      scheduleWorkingRelease();
     }
     if (to === "dev" && openDevPanel) {
       // Develop always opens as a complete workspace. A deliberate entry ends
@@ -3789,6 +3786,42 @@
     if (path) untrack(() => warmSelection(path));
   });
 
+  // Parking a decode costs a 35 MB write; releasing it throws that away.
+  // Doing either on every mode switch turned grid → dev → grid → dev into
+  // write-delete-write-delete, and the decodes behind it kept six cores busy
+  // long after the navigation stopped (Francis, 2026-09-22: "j'ai passé d'une
+  // photo à l'autre rapidement... grille dev, grille dev").
+  //
+  // So both wait to see whether you meant it. Flipping back and forth now
+  // does no work at all: the pending action is simply cancelled, and
+  // returning to the photo already parked finds it still there.
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
+  let workingParkTimer;
+  /** The photo currently parked on disk, so re-entering it is a no-op.
+   * @type {string | null} */
+  let parkedPath = null;
+
+  /** @param {string} path */
+  function scheduleWorkingPark(path) {
+    clearTimeout(workingParkTimer);
+    if (!isTauri || parkedPath === path) return;
+    workingParkTimer = setTimeout(() => {
+      if (photoPath !== path || currentMode !== "dev") return; // moved on
+      parkedPath = path;
+      invoke("park_working_frame", { path }).catch(() => (parkedPath = null));
+    }, 1500);
+  }
+
+  function scheduleWorkingRelease() {
+    clearTimeout(workingParkTimer);
+    if (!isTauri || !parkedPath) return;
+    workingParkTimer = setTimeout(() => {
+      if (currentMode === "dev") return; // came back
+      parkedPath = null;
+      invoke("release_working_frame").catch(() => {});
+    }, 5000);
+  }
+
   /**
    * @param {string} path
    * @param {{ openDevPanel?: boolean }} [opts]
@@ -3840,10 +3873,7 @@
       recipeRedoStack = [];
       lastCommittedRecipe = snapshotRecipe(recipe);
       prefetchNeighbours(path);
-      // Park this photo's decode so relaunching lands straight back in
-      // Develop without the NAS read or the decode. Replaces whatever was
-      // parked before: only the photo you are editing is worth keeping.
-      if (isTauri) invoke("park_working_frame", { path }).catch(() => {});
+      scheduleWorkingPark(path);
       if (developEngine) {
         scheduleRender(PREVIEW_PX);
       } else {

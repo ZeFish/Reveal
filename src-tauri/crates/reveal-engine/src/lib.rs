@@ -420,6 +420,62 @@ pub struct RenderRgbaOutput {
 /// described in the module header. All methods take `&self`; internal
 /// mutability is Mutex'd, so renders serialize (one GPU, one photo at a
 /// time — latest-wins scheduling lives in the caller).
+/// Keeps threads that want the SAME decoded frame from each decoding it.
+///
+/// The decode-cache lock is deliberately released before the work: holding it
+/// would serialise every render behind every other one, and a background
+/// prefetch would block the photo you are looking at for its whole duration.
+/// What that release used to cost was a duplicate decode whenever two threads
+/// raced — dismissed, reasonably, as cheaper than the stall.
+///
+/// It is cheaper, for two. It is not for six: flipping grid → dev → grid → dev
+/// has `openPhoto`, `warmSelection` and `prefetchNeighbours` all asking for the
+/// same uncached file, on a blocking pool wide enough to run every request at
+/// once. Measured 2026-09-22, that pinned six cores inside LibRaw's
+/// `copy_bayer`, all but one decode thrown away, and it kept running long after
+/// the navigation had stopped.
+///
+/// So the gate is per photo, never global — different photos still decode in
+/// parallel — and every caller re-checks the cache through it, because the
+/// thread ahead has just filled it.
+#[derive(Default)]
+struct DecodeGates(Mutex<Vec<((PathBuf, bool), Arc<Mutex<()>>)>>);
+
+impl DecodeGates {
+    /// Run `decode` only if `lookup` still comes up empty once this thread
+    /// holds the gate. Returns the frame and whether THIS call produced it.
+    fn once<L, D>(&self, key: &(PathBuf, bool), lookup: L, decode: D) -> Result<(Arc<ImageBuf>, bool)>
+    where
+        L: Fn() -> Option<Arc<ImageBuf>>,
+        D: FnOnce() -> Result<Arc<ImageBuf>>,
+    {
+        if let Some(img) = lookup() {
+            return Ok((img, false));
+        }
+        let gate = self.gate(key);
+        let _held = gate.lock().unwrap_or_else(|e| e.into_inner());
+        // Whoever held the gate before us has published their result.
+        if let Some(img) = lookup() {
+            return Ok((img, false));
+        }
+        Ok((decode()?, true))
+    }
+
+    /// The gate for one photo, created on first ask and shared thereafter.
+    fn gate(&self, key: &(PathBuf, bool)) -> Arc<Mutex<()>> {
+        let mut gates = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        // Drop gates nobody is queued on, so this list tracks decodes in
+        // flight rather than every photo ever opened.
+        gates.retain(|(_, g)| Arc::strong_count(g) > 1);
+        if let Some((_, g)) = gates.iter().find(|(k, _)| k == key) {
+            return g.clone();
+        }
+        let g = Arc::new(Mutex::new(()));
+        gates.push((key.clone(), g.clone()));
+        g
+    }
+}
+
 pub struct Engine {
     data_dir: PathBuf,
     /// Where the user's own `.cube` LUTs live (scanned for `list_luts`,
@@ -439,6 +495,9 @@ pub struct Engine {
     decoded: Mutex<Vec<((PathBuf, bool), Arc<ImageBuf>)>>,
     /// Downscaled pipeline inputs for previews, same MRU-first ordering.
     preview_input: Mutex<Vec<((PathBuf, u32), Arc<ImageBuf>)>>,
+    /// One gate per photo being decoded, so threads that want the SAME frame
+    /// queue behind one decode instead of each running their own.
+    decode_gates: DecodeGates,
     /// Where a decoded frame may be parked so it survives a restart. Both
     /// caches above die with the process, so reopening the photo you were
     /// editing meant paying the full read and decode again — measured on a
@@ -481,6 +540,7 @@ impl Engine {
             decoder: DecoderRegistry,
             decoded: Mutex::new(Vec::new()),
             preview_input: Mutex::new(Vec::new()),
+            decode_gates: DecodeGates::default(),
             working_dir: Mutex::new(None),
             registry,
         })
@@ -713,29 +773,18 @@ impl Engine {
         let fast = max_px != 0;
         let key = (path.to_path_buf(), fast);
 
-        // Look up and RELEASE the lock before decoding. Holding it across the
-        // decode (which measures ~1s of CPU after ~3s of network read on a
-        // NAS-hosted library) serialised every render behind every other one,
-        // and would have made a background prefetch actively harmful: it would
-        // block the photo the user is actually looking at for its whole
-        // duration. The cost of releasing is that two threads racing for the
-        // same uncached photo may both decode it; the loser's result is simply
-        // dropped on insert, which is far cheaper than the stall.
-        let (full, decode_ms) = match self.cached_decode(&key) {
-            Some(img) => (img, 0),
-            None => {
-                let t = std::time::Instant::now();
-                let linear = self
-                    .decoder
-                    .decode_linear(path, fast)
-                    .with_context(|| format!("decoding {}", path.display()))?;
-                let data = to_prophoto(linear.data, linear.primaries);
-                let img = Arc::new(ImageBuf::from_data(linear.width, linear.height, data));
-                let ms = t.elapsed().as_millis();
-                self.store_decode(key, img.clone());
-                (img, ms)
-            }
-        };
+        let (full, decode_ms) = self.decode_once(key, || {
+            let linear = self
+                .decoder
+                .decode_linear(path, fast)
+                .with_context(|| format!("decoding {}", path.display()))?;
+            let data = to_prophoto(linear.data, linear.primaries);
+            Ok(Arc::new(ImageBuf::from_data(
+                linear.width,
+                linear.height,
+                data,
+            )))
+        })?;
 
         if max_px == 0 || full.width.max(full.height) <= max_px {
             return Ok((full, decode_ms));
@@ -748,6 +797,25 @@ impl Engine {
         let small = Arc::new(downscale(&full, max_px));
         self.store_preview_input(key, small.clone());
         Ok((small, decode_ms))
+    }
+
+    /// Decode a photo at most once, however many threads ask at the same time.
+    /// The mechanics, and why, live on [`DecodeGates::once`].
+    fn decode_once<F>(&self, key: (PathBuf, bool), decode: F) -> Result<(Arc<ImageBuf>, u128)>
+    where
+        F: FnOnce() -> Result<Arc<ImageBuf>>,
+    {
+        let t = std::time::Instant::now();
+        let (img, decoded) = self.decode_gates.once(
+            &key,
+            || self.cached_decode(&key),
+            || {
+                let img = decode()?;
+                self.store_decode(key.clone(), img.clone());
+                Ok(img)
+            },
+        )?;
+        Ok((img, if decoded { t.elapsed().as_millis() } else { 0 }))
     }
 
     fn cached_decode(&self, key: &(PathBuf, bool)) -> Option<Arc<ImageBuf>> {
@@ -856,9 +924,6 @@ impl Engine {
     }
 }
 
-/// How much decoded, ProPhoto-f32 image data to keep around. Sized so a
-/// handful of frames from a high-megapixel body fit: stepping back to the
-/// previous photo is the common move in a cull, and it used to re-decode.
 /// Read a parked frame back from its bytes.
 ///
 /// The header carries the dimensions so a park interrupted mid-write, or
@@ -890,6 +955,9 @@ fn working_name(path: &Path, max_px: u32) -> String {
     format!("{:016x}-{max_px}.buf", h.finish())
 }
 
+/// How much decoded, ProPhoto-f32 image data to keep around. Sized so a
+/// handful of frames from a high-megapixel body fit: stepping back to the
+/// previous photo is the common move in a cull, and it used to re-decode.
 const DECODE_CACHE_BUDGET_BYTES: usize = 3 * 1024 * 1024 * 1024;
 
 /// Downscaled pipeline inputs are small (a 2048px frame is ~37 MB), so this
@@ -1221,5 +1289,102 @@ mod working_park_tests {
         lying.extend_from_slice(&3000u32.to_le_bytes());
         lying.extend_from_slice(&[0u8; 24]);
         assert!(super::parse_parked(&lying).is_none(), "header must match the body");
+    }
+}
+
+#[cfg(test)]
+mod decode_gate_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    fn frame() -> Arc<ImageBuf> {
+        Arc::new(ImageBuf::from_data(1, 1, vec![0.5, 0.5, 0.5]))
+    }
+
+    /// The whole point: six threads wanting the same uncached photo must cost
+    /// ONE decode. Before the gate they cost six, which is what pinned six
+    /// cores inside LibRaw when flipping grid → dev → grid → dev.
+    #[test]
+    fn concurrent_asks_for_one_photo_decode_it_once() {
+        let gates = DecodeGates::default();
+        let cache: Mutex<Option<Arc<ImageBuf>>> = Mutex::new(None);
+        let decodes = AtomicUsize::new(0);
+        let key = (PathBuf::from("/nas/2026/A.RAF"), true);
+
+        std::thread::scope(|scope| {
+            for _ in 0..6 {
+                scope.spawn(|| {
+                    let (_img, _) = gates
+                        .once(
+                            &key,
+                            || cache.lock().unwrap().clone(),
+                            || {
+                                decodes.fetch_add(1, Ordering::SeqCst);
+                                // Stand in for LibRaw: long enough that every
+                                // other thread is certainly already waiting.
+                                std::thread::sleep(Duration::from_millis(50));
+                                let img = frame();
+                                *cache.lock().unwrap() = Some(img.clone());
+                                Ok(img)
+                            },
+                        )
+                        .unwrap();
+                });
+            }
+        });
+
+        assert_eq!(decodes.load(Ordering::SeqCst), 1);
+    }
+
+    /// And it must not have bought that by serialising the library: two
+    /// different photos have to decode at the same time, or a prefetch would
+    /// again block the photo on screen.
+    #[test]
+    fn two_photos_do_not_wait_for_each_other() {
+        let gates = DecodeGates::default();
+        let inside = AtomicUsize::new(0);
+        let overlapped = AtomicUsize::new(0);
+        // Shared by reference so `move` on the closure only moves the borrows.
+        let (gates, inside, overlapped) = (&gates, &inside, &overlapped);
+
+        std::thread::scope(|scope| {
+            for name in ["/nas/A.RAF", "/nas/B.RAF"] {
+                scope.spawn(move || {
+                    let key = (PathBuf::from(name), true);
+                    gates
+                        .once(
+                            &key,
+                            || None,
+                            || {
+                                inside.fetch_add(1, Ordering::SeqCst);
+                                std::thread::sleep(Duration::from_millis(80));
+                                // Both threads sleep 80ms; if the gate were
+                                // global, the second would enter only after
+                                // the first had left and seen 1 here.
+                                overlapped
+                                    .fetch_max(inside.load(Ordering::SeqCst), Ordering::SeqCst);
+                                inside.fetch_sub(1, Ordering::SeqCst);
+                                Ok(frame())
+                            },
+                        )
+                        .unwrap();
+                });
+            }
+        });
+
+        assert_eq!(overlapped.load(Ordering::SeqCst), 2);
+    }
+
+    /// The gate list tracks decodes in flight, not every photo ever opened —
+    /// otherwise a long cull would grow it without bound.
+    #[test]
+    fn finished_gates_are_swept() {
+        let gates = DecodeGates::default();
+        for i in 0..50 {
+            let key = (PathBuf::from(format!("/nas/{i}.RAF")), true);
+            gates.once(&key, || None, || Ok(frame())).unwrap();
+        }
+        assert!(gates.0.lock().unwrap().len() <= 2);
     }
 }
