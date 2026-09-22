@@ -3211,7 +3211,14 @@
   /** The full-resolution developed sidecar, for single-photo views.
    * @param {string} path @param {number} [version] */
   function previewUrl(path, version = 0) {
-    return thumbUrl(path, version, 2048);
+    return `${thumbUrl(path, version, 2048)}&priority=1`;
+  }
+  /** The grid-size copy, but for a SINGLE-photo view — it jumps the thumb
+   * queue, because it is the image the photographer is waiting on rather
+   * than one cell among a hundred.
+   * @param {string} path @param {number} [version] */
+  function openingUrl(path, version = 0) {
+    return `${thumbUrl(path, version)}&priority=1`;
   }
 
 
@@ -3669,9 +3676,18 @@
 
     if (e.key === " " && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
       if (controller.isCull()) {
+        // Guard only — do NOT assign photoPath here. `photoPath` means "the
+        // photo currently LOADED in Develop", and switchMode uses exactly
+        // that to decide whether it must open a different one:
+        //
+        //   if (view[sel] && (photoPath !== view[sel].path || !recipe))
+        //
+        // Setting it first made that condition false, so arrowing to another
+        // photo and pressing space switched to Develop still showing the
+        // previous photo's pixels and recipe under the new photo's name
+        // (Francis, 2026-09-22). `handleSpace()` never reads photoPath.
         if (!selectedPaths.size && !view[sel]) return;
-        photoPath = view[sel]?.path;
-        if (!photoPath) return;
+        if (!view[sel]?.path) return;
       }
       applyWorkflowResult(controller.handleSpace());
       e.preventDefault();
@@ -3766,7 +3782,7 @@
     // always holds already. Step two swaps in the 2048 sidecar below; step
     // three is the RAW render from `pump()`.
     const openVersion = frames.find((f) => f.path === path)?.previewVersion ?? 0;
-    imgUrl = thumbUrl(path, openVersion);
+    imgUrl = openingUrl(path, openVersion);
     useCanvas = false; // start on the <img> thumb; pump() flips this back on
     // only if the photo develops with a canvas (Rapid) engine.
     // Step two: the real 2048. Only applied if the user is still on this
@@ -3927,7 +3943,13 @@
           }
         }
       } else {
-        useCanvas = false;
+        // NOT `useCanvas = false` here. Clearing before the render means
+        // switching Rapid → Spektra blanks the photo for the whole ~2.5s the
+        // film simulation takes, and the busy spinner only appears after
+        // 400ms — so what you actually see is an empty frame (Francis:
+        // "passer de rapid à spektra me fais d'abord enlever la photo pour
+        // attendre"). The previous render stays up until there is something
+        // better to put in its place.
         const bytes = await invoke("develop_preview", { path, recipe: snap, maxPx: px });
         const url = URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" }));
         const img = new Image();
@@ -3938,6 +3960,8 @@
           renderMs = Math.round(performance.now() - t0);
           if (imgUrl?.startsWith("blob:")) URL.revokeObjectURL(imgUrl);
           imgUrl = url;
+          // Swap the surface only now, with the new pixels decoded and ready.
+          useCanvas = false;
           imgFailed = false;
           const frame = frames.find((item) => item.path === path);
           if (frame) {
@@ -4022,10 +4046,19 @@
     const frame = frames.find((item) => item.path === path);
     if (frame) frame.previewVersion = await freshPreviewVersion(frame.path);
     frames = [...frames]; // raw array — reassign so the grid thumb refreshes
+
+    // Decode the as-shot preview BEFORE swapping surfaces. Flipping
+    // `useCanvas` first would hide a good Rapid render and show an empty
+    // <canvas> while the <img> fetches — the same blank-then-fill the engine
+    // switch used to do.
+    const next = previewUrl(path, frame?.previewVersion ?? Date.now());
+    const probe = new Image();
+    probe.src = next;
+    try { await probe.decode(); } catch { /* show it anyway; onerror handles it */ }
+    if (path !== photoPath) return;
     if (imgUrl?.startsWith("blob:")) URL.revokeObjectURL(imgUrl);
-    imgUrl = previewUrl(path, frame?.previewVersion ?? Date.now());
-    useCanvas = false; // the thumb is a plain <img>; leaving useCanvas true (from
-    // a prior Rapid render) would show the now-blank <canvas> instead.
+    imgUrl = next;
+    useCanvas = false;
     status = "";
   }
 

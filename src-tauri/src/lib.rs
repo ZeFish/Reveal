@@ -2424,6 +2424,19 @@ async fn release_working_frame(state: tauri::State<'_, EngineState>) -> Result<(
     Ok(())
 }
 
+/// The file's bytes, if it is an ordinary image rather than a RAW.
+///
+/// A Google Takeout export hands back JPEGs still carrying a `.DNG`
+/// extension — 113 in one folder here, 4032x3024, which libraw cannot touch,
+/// so every RAW branch refuses them and the photo reads as "Preview
+/// unavailable". Decoding is attempted, not assumed: a truly broken file
+/// must still be reported as broken rather than served as bytes.
+fn plain_image_bytes(path: &std::path::Path) -> Option<Vec<u8>> {
+    let bytes = std::fs::read(path).ok()?;
+    image::load_from_memory(&bytes).ok()?;
+    Some(bytes)
+}
+
 /// Can we reach the folder this photo lives in right now?
 ///
 /// The UI marks a photo as coming from cache while its source is unreachable;
@@ -4503,6 +4516,15 @@ pub fn run() {
                         .and_then(|q| q.split('&').find_map(|kv| kv.strip_prefix("v=")))
                         .and_then(|value| value.parse::<u64>().ok())
                         .unwrap_or(0);
+                    // The photo actually on screen must not queue behind the
+                    // grid. Restoring a session fires ~120 cell requests and
+                    // then opens one photo; on a loaded NAS a cell took 4-6s
+                    // here, so the one image the photographer is waiting for
+                    // sat behind all of them (Francis: "j'ai la photo, mais
+                    // ça a été très long"). There is at most one of these at
+                    // a time, so it skips the queue entirely.
+                    let priority = request.uri().query()
+                        .is_some_and(|q| q.split('&').any(|kv| kv == "priority=1"));
                     let path = request
                         .uri()
                         .query()
@@ -4575,7 +4597,9 @@ pub fn run() {
                     tauri::async_runtime::spawn_blocking(move || {
                         // Bounds how many of these run at once — see
                         // `ThumbSemaphore`'s doc comment for why this exists.
-                        let _permit = ThumbPermit::acquire(&sem);
+                        // A priority request holds no permit: it is the photo
+                        // on screen, and there is only ever one.
+                        let _permit = (!priority).then(|| ThumbPermit::acquire(&sem));
                         if apple_photos::is_asset(&path) {
                             let response = match apple_photos::thumbnail(&path, size) {
                                 Ok(bytes) => HttpResponse::builder()
@@ -4717,8 +4741,32 @@ pub fn run() {
                                             .unwrap()
                                     }
                                     Err(dev_e) => {
-                                        eprintln!("thumb fallback {path}: {dev_e:#}");
-                                        HttpResponse::builder().status(404).body(Vec::new()).unwrap()
+                                        // Last resort: the file may not be a
+                                        // RAW at all. A Google Takeout export
+                                        // hands back JPEGs still named `.DNG`
+                                        // — 113 of them in one folder here,
+                                        // 4032x3024, that libraw cannot touch
+                                        // and every branch above therefore
+                                        // refuses. Read the bytes as an
+                                        // ordinary image before giving up.
+                                        match plain_image_bytes(std::path::Path::new(&path)) {
+                                            Some(bytes) => {
+                                                eprintln!(
+                                                    "thumb: {} (not a raw — plain image, {} ko)",
+                                                    path.rsplit('/').next().unwrap_or(&path),
+                                                    bytes.len() / 1024
+                                                );
+                                                HttpResponse::builder()
+                                                    .header("Content-Type", "image/jpeg")
+                                                    .header("Cache-Control", "max-age=3600")
+                                                    .body(downscale_grid_thumb(bytes, size))
+                                                    .unwrap()
+                                            }
+                                            None => {
+                                                eprintln!("thumb fallback {path}: {dev_e:#}");
+                                                HttpResponse::builder().status(404).body(Vec::new()).unwrap()
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -5061,6 +5109,39 @@ mod preview_cache_tests {
         assert_eq!(read("aaaa-768-").as_deref(), Some(&b"a-grid"[..]));
         assert_eq!(read("bbbb-2048-").as_deref(), Some(&b"b-full"[..]));
         assert_eq!(super::newest_matching(&s.0, "cccc-2048-"), None);
+    }
+
+    /// A `.DNG` that is really a JPEG must still display. The extension is
+    /// not evidence; only a successful decode is.
+    #[test]
+    fn a_jpeg_wearing_a_raw_extension_is_still_served() {
+        let s = Scratch::new("mislabelled");
+
+        // A real 2x2 JPEG, encoded here rather than hand-written, so the
+        // decode being attempted is a decode of something genuine.
+        let img = image::RgbImage::from_fn(2, 2, |x, y| {
+            image::Rgb([(x * 100) as u8, (y * 100) as u8, 40])
+        });
+        let mut jpeg = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgb8(img)
+            .write_to(&mut jpeg, image::ImageFormat::Jpeg)
+            .unwrap();
+        let jpeg = jpeg.into_inner();
+
+        let masquerading = s.0.join("IMG_6163.DNG");
+        std::fs::write(&masquerading, &jpeg).unwrap();
+        assert_eq!(
+            super::plain_image_bytes(&masquerading).as_deref(),
+            Some(&jpeg[..]),
+            "a JPEG named .DNG is served"
+        );
+
+        // Genuinely broken stays broken — this must not become "serve
+        // anything that happens to be on disk".
+        let junk = s.0.join("IMG_9999.DNG");
+        std::fs::write(&junk, b"not an image at all").unwrap();
+        assert!(super::plain_image_bytes(&junk).is_none(), "junk is still refused");
+        assert!(super::plain_image_bytes(&s.0.join("absent.DNG")).is_none());
     }
 
     /// A cache entry must never appear half-written — a truncated JPEG in

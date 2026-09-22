@@ -78,6 +78,9 @@
     inflight || pendingPx !== null || (!loaded && !!imgUrl && !imgFailed && !useCanvas)
   );
   let busyVisible = $state(false);
+  /** Is there any image in the frame right now? Drives where the busy mark
+   * goes — a corner is polite over a photo and invisible over nothing. */
+  let hasSomethingOnScreen = $derived(useCanvas || (loaded && !imgFailed));
   $effect(() => {
     if (!busy) {
       busyVisible = false;
@@ -640,7 +643,14 @@
       <Icon name="link-break" size="12px" />
     </div>
   {:else if busyVisible}
-    <div class="render-badge"><span class="render-spinner"></span></div>
+    <!-- Corner while a photo is up — a render in progress must not cover the
+         one being judged. Centred when the frame is EMPTY, because then there
+         is nothing to disturb and a 9px mark in the corner of a blank window
+         is not something anyone finds (Francis: "j'ai pas d'animation de
+         chargement"). -->
+    <div class="render-badge" class:centred={!hasSomethingOnScreen}>
+      <span class="render-spinner"></span>
+    </div>
   {/if}
 
   {#if imgFailed}
@@ -1096,6 +1106,19 @@
     align-items: center;
     gap: 7px;
     animation: badge-in var(--duration-fast, 160ms) ease-out;
+  }
+  /* Empty frame: the mark goes where the eye already is, and grows enough
+     to read as "working" rather than as a speck. */
+  .render-badge.centred {
+    top: 50%;
+    right: auto;
+    left: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .render-badge.centred .render-spinner {
+    width: 22px;
+    height: 22px;
+    border-width: 2px;
   }
   .render-badge.offline {
     color: var(--color-accent);
