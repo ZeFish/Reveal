@@ -1373,10 +1373,21 @@ fn schedule_cache_prune(app: &tauri::AppHandle) {
     });
 }
 
-/// Keep the newest `limit` distinct source photos in the develop cache. Files
-/// are grouped by their source-key prefix (`{key}-{px}-{hash}.jpg`), so every
-/// variant of a photo lives or dies together, and groups are ranked by their
-/// most-recently-touched file.
+/// Keep the develop cache to one JPEG per photo, for the newest `limit`
+/// photos (LRU by mtime).
+///
+/// Two separate trims, and the per-photo one is the important half. The cache
+/// exists to make moving through the last couple of thousand photos instant —
+/// not to remember old slider positions. But its key includes the recipe, so
+/// every settled edit wrote another file and nothing removed the previous
+/// one: measured on Francis's cache, 548 files for 99 photos, one photo
+/// holding 97 stale renders of itself. Only the current recipe can ever be
+/// asked for again, so only the newest survives.
+///
+/// The photo-count trim used to return early whenever the library was under
+/// the limit, which meant that on any normal cache — 99 photos against a
+/// limit of 2000 — nothing was ever cleaned at all. The per-photo trim runs
+/// unconditionally for that reason.
 fn prune_preview_cache(dir: &std::path::Path, limit: usize) {
     use std::collections::HashMap;
     let epoch = std::time::SystemTime::UNIX_EPOCH;
@@ -1384,7 +1395,9 @@ fn prune_preview_cache(dir: &std::path::Path, limit: usize) {
         Ok(r) => r,
         Err(_) => return,
     };
-    let mut groups: HashMap<String, (std::time::SystemTime, Vec<std::path::PathBuf>)> =
+
+    // Group every cached render by the photo it came from.
+    let mut groups: HashMap<String, Vec<(std::time::SystemTime, std::path::PathBuf)>> =
         HashMap::new();
     for entry in read.filter_map(|e| e.ok()) {
         let path = entry.path();
@@ -1400,22 +1413,30 @@ fn prune_preview_cache(dir: &std::path::Path, limit: usize) {
             .ok()
             .and_then(|m| m.modified().ok())
             .unwrap_or(epoch);
-        let g = groups.entry(key).or_insert((epoch, Vec::new()));
-        if mtime > g.0 {
-            g.0 = mtime;
-        }
-        g.1.push(path);
+        groups.entry(key).or_default().push((mtime, path));
     }
-    if groups.len() <= limit {
+
+    // One render per photo: drop every variant but the most recent.
+    let mut newest: Vec<(std::time::SystemTime, std::path::PathBuf)> =
+        Vec::with_capacity(groups.len());
+    for (_, mut variants) in groups {
+        variants.sort_by(|a, b| b.0.cmp(&a.0)); // newest first
+        let mut keep = variants.into_iter();
+        if let Some(survivor) = keep.next() {
+            for (_, stale) in keep {
+                let _ = std::fs::remove_file(stale);
+            }
+            newest.push(survivor);
+        }
+    }
+
+    // Then the library trim: the oldest photos beyond `limit` go entirely.
+    if newest.len() <= limit {
         return;
     }
-    let mut by_recency: Vec<(std::time::SystemTime, Vec<std::path::PathBuf>)> =
-        groups.into_values().collect();
-    by_recency.sort_by(|a, b| b.0.cmp(&a.0)); // newest first
-    for (_, paths) in by_recency.into_iter().skip(limit) {
-        for p in paths {
-            let _ = std::fs::remove_file(p);
-        }
+    newest.sort_by(|a, b| b.0.cmp(&a.0));
+    for (_, path) in newest.into_iter().skip(limit) {
+        let _ = std::fs::remove_file(path);
     }
 }
 
@@ -4525,4 +4546,113 @@ pub fn run() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod preview_cache_tests {
+    use super::prune_preview_cache;
+    use std::path::{Path, PathBuf};
+    use std::time::{Duration, SystemTime};
+
+    /// A scratch dir that cleans up after itself.
+    struct Scratch(PathBuf);
+    impl Scratch {
+        fn new(name: &str) -> Self {
+            let dir = std::env::temp_dir()
+                .join(format!("reveal-preview-cache-{name}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            Self(dir)
+        }
+    }
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// One cached render: `{photo}-2048-{variant}.jpg`, aged `secs` old. The
+    /// mtime is set explicitly because every assertion here is about which
+    /// file is the most recent.
+    fn render(dir: &Path, photo: &str, variant: &str, secs: u64) -> PathBuf {
+        let path = dir.join(format!("{photo}-2048-{variant}.jpg"));
+        std::fs::write(&path, b"jpeg").unwrap();
+        let when = SystemTime::now() - Duration::from_secs(secs);
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(when))
+            .unwrap();
+        path
+    }
+
+    fn names(dir: &Path) -> Vec<String> {
+        let mut v: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        v.sort();
+        v
+    }
+
+    /// The cache is for moving through photos, not for remembering old slider
+    /// positions: only the current recipe can ever be asked for again.
+    #[test]
+    fn only_the_newest_render_of_a_photo_survives() {
+        let s = Scratch::new("variants");
+        render(&s.0, "aaaa", "old1", 300);
+        render(&s.0, "aaaa", "old2", 200);
+        render(&s.0, "aaaa", "current", 1);
+        render(&s.0, "bbbb", "only", 50);
+
+        prune_preview_cache(&s.0, 2000);
+
+        assert_eq!(
+            names(&s.0),
+            vec!["aaaa-2048-current.jpg", "bbbb-2048-only.jpg"],
+            "each photo keeps exactly its most recent render"
+        );
+    }
+
+    /// The old code returned early whenever the library was under the limit,
+    /// so on any normal cache — 99 photos against a limit of 2000 — nothing
+    /// was ever cleaned and stale renders piled up indefinitely.
+    #[test]
+    fn stale_renders_are_cleaned_even_far_below_the_photo_limit() {
+        let s = Scratch::new("below-limit");
+        for i in 0..40 {
+            render(&s.0, "aaaa", &format!("v{i}"), 1000 - i as u64);
+        }
+        prune_preview_cache(&s.0, 2000);
+        assert_eq!(names(&s.0).len(), 1, "40 renders of one photo collapse to 1");
+    }
+
+    /// The library trim still works, and still counts PHOTOS.
+    #[test]
+    fn the_oldest_photos_beyond_the_limit_are_dropped() {
+        let s = Scratch::new("lru");
+        render(&s.0, "old", "a", 900);
+        render(&s.0, "mid", "a", 600);
+        render(&s.0, "new", "a", 10);
+        // Extra variants must not let one photo count as several.
+        render(&s.0, "new", "b", 5);
+
+        prune_preview_cache(&s.0, 2);
+
+        assert_eq!(
+            names(&s.0),
+            vec!["mid-2048-a.jpg", "new-2048-b.jpg"],
+            "the two most recently touched photos stay, one render each"
+        );
+    }
+
+    #[test]
+    fn an_empty_or_missing_directory_is_not_an_error() {
+        let s = Scratch::new("empty");
+        prune_preview_cache(&s.0, 2000);
+        assert!(names(&s.0).is_empty());
+        prune_preview_cache(&s.0.join("nope"), 2000);
+    }
 }
