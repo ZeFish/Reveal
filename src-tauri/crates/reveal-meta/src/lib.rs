@@ -58,6 +58,12 @@ pub fn read(original: &Path) -> Result<Option<Sidecar>, MetaError> {
 /// Write the sidecar next to `original`, atomically (tmp + rename).
 pub fn write(original: &Path, sidecar: &Sidecar) -> Result<(), MetaError> {
     let path = sidecar_path(original);
+    // Writing a file owns making room for it. Apple Photos edits live under a
+    // per-asset directory that nothing else creates any more, now that merely
+    // reading metadata no longer does.
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     let doc = render(sidecar);
     let tmp = path.with_extension("xmp.tmp");
     {

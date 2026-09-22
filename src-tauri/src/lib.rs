@@ -1258,6 +1258,11 @@ fn write_sidecar_if_changed(path: &std::path::Path, bytes: &[u8]) -> std::io::Re
             return Ok(());
         }
     }
+    // An Apple Photos preview lands inside a per-asset directory that nothing
+    // creates on the read path any more — writing owns making room.
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     std::fs::write(path, bytes)
 }
 
@@ -1349,13 +1354,17 @@ impl Drop for ThumbPermit<'_> {
 /// A budget, not a photo count. Entries range from ~27 KB at grid size to
 /// ~420 KB at 2048, so "2000 photos" stopped describing anything once the
 /// cache held both: the same number meant sixty megabytes or eight hundred
-/// depending on what happened to be in it. A gigabyte holds roughly 35,000
-/// grid-size photos, which is the point — the cache is what makes moving
-/// through the library fast, so it should cover the library.
+/// depending on what happened to be in it.
+///
+/// Four gigabytes covers a whole library rather than a slice of one: measured
+/// here, 105,867 indexed photos at ~36 KB each is ~3.6 GiB. That is the point
+/// — the cache is what makes moving through the library fast, so its ceiling
+/// should be the library. Same figure the Apple Photos source cache already
+/// defaults to.
 ///
 /// The durable truth is always the `.preview.jpg` sibling of the RAW; this
 /// is a pure speed layer and evicting from it costs a NAS read, nothing more.
-const PREVIEW_CACHE_BUDGET_BYTES: u64 = 1024 * 1024 * 1024;
+const PREVIEW_CACHE_BUDGET_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 
 /// Coalesces concurrent prune requests: a render storm schedules at most one
 /// running prune at a time instead of one per frame.

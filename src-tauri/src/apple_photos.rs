@@ -52,10 +52,12 @@ pub fn init(app: &tauri::AppHandle) -> Result<(), String> {
         cache: cache.clone(),
         app: app.clone(),
     };
+    let edits_dir = storage.edits.clone();
     STORAGE
         .set(storage)
         .map_err(|_| "Apple Photos was already initialized".to_string())?;
     cache.schedule_trim();
+    sweep_empty_edit_dirs(edits_dir);
     Ok(())
 }
 
@@ -148,13 +150,49 @@ fn safe_name(name: &str) -> String {
     }
 }
 
+/// Remove per-asset edit directories that hold nothing.
+///
+/// Reading metadata used to create one of these for every asset it touched,
+/// so listing an album left one empty directory per photo in it — 718 of 721
+/// on this machine. The read path no longer creates them, but the ones
+/// already on disk are still there, and only an empty one is safe to remove:
+/// a directory with anything in it holds a rating, a caption or a develop.
+///
+/// Off the startup path, and silent — this is housekeeping, and a failure to
+/// tidy is not something to interrupt anyone about.
+fn sweep_empty_edit_dirs(edits: PathBuf) {
+    std::thread::spawn(move || {
+        let Ok(entries) = std::fs::read_dir(&edits) else {
+            return;
+        };
+        let mut removed = 0usize;
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            // `remove_dir` refuses a directory that is not empty, so it IS
+            // the emptiness check — no race between looking and removing.
+            if std::fs::remove_dir(&path).is_ok() {
+                removed += 1;
+            }
+        }
+        if removed > 0 {
+            eprintln!("apple photos: removed {removed} empty edit directories");
+        }
+    });
+}
+
 pub fn metadata_path(path: &str) -> Result<PathBuf, String> {
     if !is_asset(path) {
         return Ok(PathBuf::from(path));
     }
-    let directory = storage()?.edits.join(asset_key(path)?);
-    std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
-    Ok(directory.join("photo"))
+    // Resolves a path; does NOT create it. This used to `create_dir_all`
+    // unconditionally, so merely LISTING an album made one empty directory
+    // per asset — 718 of the 721 found on disk held nothing at all. Writers
+    // create the directory (see `reveal_meta::write` and
+    // `write_sidecar_if_changed`); readers must not leave a trace.
+    Ok(storage()?.edits.join(asset_key(path)?).join("photo"))
 }
 
 pub fn require_file(path: &str) -> Result<(), String> {
@@ -412,6 +450,49 @@ pub fn apple_photos_cancel() {
 mod tests {
     use super::*;
     use std::path::Path;
+
+    /// The sweep must only ever take empty directories. A populated one holds
+    /// a rating, a caption or a develop recipe — the only copy of it, since
+    /// Photos itself is read-only.
+    #[test]
+    fn the_sweep_removes_only_empty_directories() {
+        let root = std::env::temp_dir()
+            .join(format!("reveal-edits-sweep-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+
+        for name in ["empty-a", "empty-b"] {
+            std::fs::create_dir_all(root.join(name)).unwrap();
+        }
+        let kept = root.join("has-an-edit");
+        std::fs::create_dir_all(&kept).unwrap();
+        std::fs::write(kept.join("photo.xmp"), b"<xmp/>").unwrap();
+        let kept_preview = root.join("has-a-preview");
+        std::fs::create_dir_all(&kept_preview).unwrap();
+        std::fs::write(kept_preview.join("photo.preview.jpg"), b"jpeg").unwrap();
+
+        super::sweep_empty_edit_dirs(root.clone());
+        // The sweep runs on its own thread; wait for it to settle.
+        for _ in 0..100 {
+            if std::fs::read_dir(&root).unwrap().count() <= 2 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+
+        let mut left: Vec<String> = std::fs::read_dir(&root)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        left.sort();
+        assert_eq!(
+            left,
+            vec!["has-a-preview", "has-an-edit"],
+            "only the directories holding something survive"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn asset_identity_round_trips_without_filename_collisions() {
