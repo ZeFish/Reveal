@@ -2513,7 +2513,20 @@
     let restoredToDevelop = false;
     if (restoreSession && typeof localStorage !== "undefined") {
       const savedPhoto = localStorage.getItem("reveal.lastPhotoPath");
-      const savedIdx = savedPhoto ? frames.findIndex((f) => f.path === savedPhoto) : -1;
+      // `view`, not `frames`: `sel` indexes the VIEW, which filters by rating
+      // or story and reverses under `sortDesc`. Looking the photo up in
+      // `frames` produced an index that was valid for the wrong list — with
+      // descending sort, exactly the mirror position.
+      //
+      // The damage was not the wrong highlight. `openPhoto` switches to
+      // Develop, and `switchMode` then sees `view[sel]` disagreeing with
+      // `photoPath` and opens `view[sel]` to "fix" it — so the app restored
+      // photo A and then immediately opened its mirror B, parked B, and saved
+      // B as the last photo. The next launch mirrored back to A. Measured on
+      // a 61-photo folder: positions 16 and 46, alternating every relaunch,
+      // each cold start paying 3.4s of NAS read the parked frame existed to
+      // avoid.
+      const savedIdx = savedPhoto ? view.findIndex((f) => f.path === savedPhoto) : -1;
       if (savedPhoto && localStorage.getItem(`reveal.mode.${dir}`) === "dev" && savedIdx !== -1) {
         sel = savedIdx;
         selectOnly(sel);
