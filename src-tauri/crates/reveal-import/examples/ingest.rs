@@ -10,7 +10,15 @@ fn main() {
         }
     };
     let cancel = std::sync::atomic::AtomicBool::new(false);
-    let s = reveal_import::import(&sources, std::path::Path::new(&archive), &cancel, &mut progress).unwrap();
+    let s = reveal_import::import(
+        &sources,
+        std::path::Path::new(&archive),
+        reveal_import::DEFAULT_DATE_FORMAT,
+        &reveal_import::NoHashCache,
+        &cancel,
+        &mut progress,
+    )
+    .unwrap();
     eprintln!(
         "{} copiés, {} skippés, {} échoués, {} octets, dossiers: {:?}",
         s.copied, s.skipped, s.failed, s.bytes, s.folders

@@ -2187,6 +2187,28 @@ async fn index_frames(
 }
 
 struct IndexState(std::sync::Arc<reveal_index::Index>);
+
+/// Lets the importer remember, in the catalogue, what it has already hashed.
+///
+/// Without it, confirming that a re-imported frame is a duplicate means
+/// reading the archived copy back off the NAS in full — 2.11s for a 43 MB
+/// frame, measured, and by far the largest cost of re-importing a card that
+/// is mostly already archived. With it, that read happens once in a file's
+/// life and every later import gets a cryptographic answer for free.
+struct CatalogueHashes(std::sync::Arc<reveal_index::Index>);
+
+impl reveal_import::HashCache for CatalogueHashes {
+    fn get(&self, path: &std::path::Path) -> Option<String> {
+        self.0.content_hash(&path.to_string_lossy())
+    }
+    fn put(&self, path: &std::path::Path, hash: &str) {
+        // Bookkeeping: losing it costs the next import one re-read, nothing
+        // more, so it must never interrupt an import that is otherwise fine.
+        if let Err(e) = self.0.set_content_hash(&path.to_string_lossy(), hash) {
+            eprintln!("import: could not cache hash for {}: {e}", path.display());
+        }
+    }
+}
 struct ExportState(std::sync::Arc<std::sync::atomic::AtomicBool>);
 
 impl Default for ExportState {
@@ -2838,6 +2860,16 @@ async fn import_card(
     dcim: String,
     archive: String,
 ) -> Result<reveal_import::ImportStats, String> {
+    // The Settings panel has always offered a date-folder pattern; until now
+    // it stopped at the preferences file and the import crate used its own
+    // hardcoded shape, so the setting looked live and did nothing.
+    let date_format = load_preferences(app.clone())
+        .get("date_folders")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or(reveal_import::DEFAULT_DATE_FORMAT)
+        .to_string();
+
     {
         let mut running = import_state.0.lock().unwrap();
         if running.contains(&dcim) {
@@ -2917,9 +2949,15 @@ async fn import_card(
                 }),
             );
         };
-        let stats =
-            reveal_import::import(&sources, std::path::Path::new(&archive), &cancel, &mut report)
-                .map_err(|e| e.to_string())?;
+        let stats = reveal_import::import(
+            &sources,
+            std::path::Path::new(&archive),
+            &date_format,
+            &CatalogueHashes(idx.clone()),
+            &cancel,
+            &mut report,
+        )
+        .map_err(|e| e.to_string())?;
         eprintln!(
             "import: {} copiés, {} skippés, {} échoués, {} Mo, {} ms{}",
             stats.copied,

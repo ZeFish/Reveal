@@ -88,6 +88,13 @@ impl Index {
         // Migration: capture date (unix secs, from the RAW's EXIF at scan) —
         // the grid sorts by it; filenames lie as soon as two cards mix.
         let _ = conn.execute("ALTER TABLE frames ADD COLUMN capture_at INTEGER", []);
+        // Migration: content hash, filled in by the importer. Deduplicating a
+        // re-imported card used to read the archived copy back off the NAS in
+        // full to compare it — 2.11s for a 43 MB frame, and the whole cost of
+        // an import from a card that is mostly already archived. Remembering
+        // the hash here pays that read once in a file's life instead of once
+        // per import. NULL means "not known yet", never "no hash".
+        let _ = conn.execute("ALTER TABLE frames ADD COLUMN content_hash TEXT", []);
         let _ = conn.execute("DELETE FROM frames WHERE name LIKE '.%' OR name LIKE '._%'", []);
         // Migration: seed `roots` from the legacy single `meta.root` so an
         // existing catalogue keeps working — first launch after the upgrade
@@ -297,10 +304,18 @@ impl Index {
                     let tx = conn.transaction()?;
                     for (path, dir, name, mtime, rating, captured) in &rows {
                         tx.execute(
+                            // A remembered content_hash survives a rescan, but
+                            // only while mtime is unchanged — a file rewritten
+                            // under the same path would otherwise keep an
+                            // empty promise of an old hash and make a genuinely
+                            // new photo look like a duplicate. Bare `mtime` in
+                            // DO UPDATE is the existing row's value.
                             "INSERT INTO frames(path,dir,name,mtime,rating,capture_at)
                              VALUES(?1,?2,?3,?4,?5,?6)
                              ON CONFLICT(path) DO UPDATE
-                             SET dir=?2,name=?3,mtime=?4,rating=?5,capture_at=?6",
+                             SET dir=?2,name=?3,mtime=?4,rating=?5,capture_at=?6,
+                                 content_hash = CASE WHEN mtime = excluded.mtime
+                                                     THEN content_hash ELSE NULL END",
                             rusqlite::params![path, dir, name, mtime, rating, captured],
                         )?;
                         added += 1;
@@ -440,6 +455,42 @@ impl Index {
         Ok(rows.flatten().collect())
     }
 
+    /// The remembered content hash for a file, if the importer has ever
+    /// computed one and the file has not changed since. `None` means "go
+    /// read it", never "this file has no hash".
+    pub fn content_hash(&self, path: &str) -> Option<String> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT content_hash FROM frames WHERE path=?1",
+            [path],
+            |r| r.get::<_, Option<String>>(0),
+        )
+        .ok()
+        .flatten()
+    }
+
+    /// Remember a file's content hash. Upserts, because the importer learns a
+    /// hash at copy time — before any scan has put the row in `frames`.
+    pub fn set_content_hash(&self, path: &str, hash: &str) -> Result<(), IndexError> {
+        let p = Path::new(path);
+        let dir = p.parent().map(|d| d.to_string_lossy().into_owned()).unwrap_or_default();
+        let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let mtime = std::fs::metadata(p)
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO frames(path,dir,name,mtime,rating,content_hash)
+             VALUES(?1,?2,?3,?4,0,?5)
+             ON CONFLICT(path) DO UPDATE SET content_hash=?5",
+            rusqlite::params![path, dir, name, mtime, hash],
+        )?;
+        Ok(())
+    }
+
     pub fn set_rating(&self, path: &str, rating: u8) -> Result<(), IndexError> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
@@ -473,6 +524,54 @@ mod tests {
 
     fn write_raw(dir: &Path, name: &str) {
         std::fs::write(dir.join(name), b"fake raw bytes").unwrap();
+    }
+
+    #[test]
+    fn a_remembered_hash_round_trips_and_survives_a_rescan() {
+        let dir = scratch_dir("hash-roundtrip");
+        let index = open_index(&dir);
+        write_raw(&dir, "a.raf");
+        let path = dir.join("a.raf");
+        let key = path.to_string_lossy().to_string();
+
+        assert_eq!(index.content_hash(&key), None, "unknown before anyone looks");
+        index.set_content_hash(&key, "abc123").unwrap();
+        assert_eq!(index.content_hash(&key).as_deref(), Some("abc123"));
+
+        // A rescan must not throw away work the importer paid for.
+        index.scan_subtree_with(&dir, |_, _| {}).unwrap();
+        assert_eq!(
+            index.content_hash(&key).as_deref(),
+            Some("abc123"),
+            "an unchanged file keeps its hash across a scan"
+        );
+    }
+
+    /// The dangerous case. A hash that outlives the bytes it describes would
+    /// make a genuinely new photo look like one already in the archive — and
+    /// Francis formats his cards after importing.
+    #[test]
+    fn a_rewritten_file_loses_its_remembered_hash() {
+        let dir = scratch_dir("hash-staleness");
+        let index = open_index(&dir);
+        write_raw(&dir, "a.raf");
+        let path = dir.join("a.raf");
+        let key = path.to_string_lossy().to_string();
+
+        index.scan_subtree_with(&dir, |_, _| {}).unwrap();
+        index.set_content_hash(&key, "old-hash").unwrap();
+        assert_eq!(index.content_hash(&key).as_deref(), Some("old-hash"));
+
+        // Different bytes, and a different mtime — which is the signal.
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        std::fs::write(&path, b"completely different bytes").unwrap();
+        index.scan_subtree_with(&dir, |_, _| {}).unwrap();
+
+        assert_eq!(
+            index.content_hash(&key),
+            None,
+            "a rewritten file must forget its hash, not keep an empty promise"
+        );
     }
 
     fn frame_count(index: &Index) -> i64 {
