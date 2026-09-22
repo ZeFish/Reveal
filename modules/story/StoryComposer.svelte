@@ -844,7 +844,7 @@
     flex-shrink: 0;
     width: 60px;
     height: 60px;
-    border-radius: var(--radius-sm);
+    border-radius: var(--theme-radius-sm, var(--radius-sm));
     overflow: hidden;
     cursor: pointer;
     box-shadow: 0 0 0 1px var(--color-border);
@@ -935,7 +935,7 @@
     padding: 5px 10px;
     background: var(--color-surface-low);
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--theme-radius-sm, var(--radius-sm));
     color: var(--color-muted);
     cursor: pointer;
     transition: all 0.15s var(--ease-soft);
@@ -972,7 +972,7 @@
   .frame {
     position: relative;
     width: 100%;
-    border-radius: var(--radius-sm);
+    border-radius: var(--theme-radius-sm, var(--radius-sm));
     overflow: hidden;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.08);
     transition: box-shadow 0.15s var(--ease-standard), transform 0.15s var(--ease-standard);
@@ -988,7 +988,7 @@
     right: -4px;
     height: 4px;
     background: var(--theme-accent, var(--color-accent));
-    border-radius: var(--radius-sm);
+    border-radius: var(--theme-radius-sm, var(--radius-sm));
     z-index: 10;
     pointer-events: none;
   }
@@ -1000,7 +1000,7 @@
     right: -4px;
     height: 4px;
     background: var(--theme-accent, var(--color-accent));
-    border-radius: var(--radius-sm);
+    border-radius: var(--theme-radius-sm, var(--radius-sm));
     z-index: 10;
     pointer-events: none;
   }
@@ -1125,7 +1125,7 @@
     cursor: grab;
     width: 24px;
     height: 24px;
-    border-radius: var(--radius-sm);
+    border-radius: var(--theme-radius-sm, var(--radius-sm));
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1203,7 +1203,7 @@
     line-height: 1.75;
     color: var(--theme-text-color, var(--color-foreground));
     padding: 14px 20px;
-    border-radius: var(--radius-sm);
+    border-radius: var(--theme-radius-sm, var(--radius-sm));
     border: 1px solid transparent;
     resize: none;
     overflow: hidden;
@@ -1229,7 +1229,7 @@
     height: 32px;
     margin: 4px 0;
     flex-shrink: 0;
-    border-radius: var(--radius-sm);
+    border-radius: var(--theme-radius-sm, var(--radius-sm));
     display: flex;
     align-items: center;
     justify-content: center;

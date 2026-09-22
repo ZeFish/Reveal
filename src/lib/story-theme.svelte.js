@@ -115,3 +115,15 @@ export function getStoryThemeName() {
 export function currentThemeFontPackages() {
   return matchingCuratedTheme()?.fontPackages ?? [];
 }
+
+/**
+ * The curated theme id (e.g. "forest") backing the current colors, or null
+ * for a hand-customized combination that doesn't match any preset — used
+ * to pull in that theme's real CSS (radius, weights, ...) beyond the
+ * handful of tokens this file itself tracks (measureThemeTokens, app-theme.js).
+ * @returns {string | null}
+ */
+export function currentThemeId() {
+  const match = matchingCuratedTheme();
+  return match?.id != null ? String(match.id) : null;
+}

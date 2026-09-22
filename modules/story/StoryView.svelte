@@ -1,5 +1,6 @@
 <script>
-  import { storyTheme, colorScheme, contrastInk, getFontFamilyWithFallback } from "$lib/story-theme.svelte.js";
+  import { storyTheme, colorScheme, contrastInk, getFontFamilyWithFallback, currentThemeId } from "$lib/story-theme.svelte.js";
+  import { measureThemeTokens } from "$lib/app-theme.js";
   import StoryComposer from "./StoryComposer.svelte";
 
   let {
@@ -34,6 +35,28 @@
   let accentColor = $derived(storyTheme.darkAccent);
   let fontH = $derived(getFontFamilyWithFallback(storyTheme.fontHeader, true));
   let fontT = $derived(getFontFamilyWithFallback(storyTheme.fontText, false));
+
+  // The curated theme entry is only a handful of hand-picked tokens
+  // (background, accent, two font names) — its real CSS
+  // (packages/themes/<id>/<id>.scss) also carries radius, weights, etc.,
+  // derived the same way colors are but only resolvable at :root by this
+  // framework's design. Measuring them off an offscreen probe element
+  // (see measureThemeTokens) sidesteps that without touching the shared
+  // package, so e.g. Forest's rounder radius follows here too, not just
+  // when Forest is picked as Reveal's own app-wide chrome theme.
+  let themeId = $derived(currentThemeId());
+  /** @type {Record<string, string>} */
+  let measuredTokens = $state({});
+  $effect(() => {
+    const id = themeId;
+    if (!id) {
+      measuredTokens = {};
+      return;
+    }
+    measureThemeTokens(id, ["--radius", "--radius-sm", "--radius-lg"]).then((tokens) => {
+      if (themeId === id) measuredTokens = tokens;
+    });
+  });
 </script>
 
 <div
@@ -43,6 +66,9 @@
   style:--theme-text-color={fgColor ?? undefined}
   style:--theme-font-header={fontH}
   style:--theme-font-text={fontT}
+  style:--theme-radius={measuredTokens["--radius"]}
+  style:--theme-radius-sm={measuredTokens["--radius-sm"]}
+  style:--theme-radius-lg={measuredTokens["--radius-lg"]}
 >
   <StoryComposer
     content={storyContent}

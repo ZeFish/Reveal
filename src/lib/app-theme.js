@@ -91,17 +91,59 @@ export function syncThemeTransition() {
   transitionSyncTimer = setTimeout(() => root.classList.remove("theme-transitioning"), 260);
 }
 
+/** @param {string} theme */
+async function ensureThemeCssLoaded(theme) {
+  if (!THEME_LOADERS[theme] || loadedThemes.has(theme)) return;
+  await THEME_LOADERS[theme]();
+  loadedThemes.add(theme);
+}
+
 /**
  * Switches the app's active theme, loading its token file on first use.
  * @param {string | null | undefined} id
  */
 export async function applyTheme(id) {
   const theme = id && THEME_LOADERS[id] ? id : DEFAULT_THEME;
-  if (!loadedThemes.has(theme)) {
-    await THEME_LOADERS[theme]();
-    loadedThemes.add(theme);
-  }
+  await ensureThemeCssLoaded(theme);
   await loadThemeFonts(theme);
   syncThemeTransition();
   document.documentElement.dataset.theme = theme;
+}
+
+// A theme's [data-theme="<id>"] rule sets far more than the handful of
+// color/font tokens the folder-theme system (garden-themes.generated.json)
+// hand-picks — radius, font-weights, letter-spacing, all derived the same
+// way colors are. That derivation only ever resolves at :root in this
+// framework by design ($stnd-theme-scope, packages/styles), so a folder
+// theme applied as a NESTED override (this app's own chrome stays on its
+// own separate theme) never picks those up: "the corner radius of forest
+// is not following". Reconfiguring $stnd-theme-scope package-wide would
+// duplicate every derived token under a selector for every consumer of
+// this framework, not just this one preview — too broad a change for what
+// this needs. Instead: load the theme's real CSS, let the browser resolve
+// it on a real (offscreen) element carrying that data-theme, read back
+// whichever custom properties are asked for, and hand back plain values a
+// caller can apply as its own inline overrides. Contained entirely to
+// Reveal's own code, no shared-package risk.
+/**
+ * @param {string} id
+ * @param {string[]} props e.g. ["--radius", "--radius-sm", "--radius-lg"]
+ * @returns {Promise<Record<string, string>>}
+ */
+export async function measureThemeTokens(id, props) {
+  if (!THEME_LOADERS[id]) return {};
+  await ensureThemeCssLoaded(id);
+  const probe = document.createElement("div");
+  probe.dataset.theme = id;
+  probe.style.cssText = "position:absolute;visibility:hidden;pointer-events:none;width:0;height:0;";
+  document.body.appendChild(probe);
+  const computed = getComputedStyle(probe);
+  /** @type {Record<string, string>} */
+  const out = {};
+  for (const p of props) {
+    const v = computed.getPropertyValue(p).trim();
+    if (v) out[p] = v;
+  }
+  probe.remove();
+  return out;
 }
