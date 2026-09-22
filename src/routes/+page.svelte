@@ -548,6 +548,13 @@
   let exportEdge = $state(2048);
   let exportBorder = $state(false);
   let exportFolder = $state("");
+  // True while the photo's own volume is unreachable. Not an error state —
+  // the cache still answers — so it is shown as a quiet mark, not a toast: a
+  // toast fades, and this condition lasts until the mount comes back.
+  let sourceOffline = $state(false);
+  /** @type {ReturnType<typeof setInterval> | undefined} */
+  let sourceWatch;
+
   let appMessage = $state("");
   /** @type {ReturnType<typeof setTimeout> | null} */
   let appMessageTimer = null;
@@ -914,6 +921,23 @@
       // Settings lives in its own window and shares no memory with this one;
       // a library added or removed there must still reach the folder tree.
       listen("libraries-changed", () => refreshDirs());
+      // The archive is a NAS mount; it can vanish mid-session or not be up
+      // yet at launch. Reveal keeps working from its local cache, but the
+      // photographer should know they are looking at what this machine
+      // remembers rather than at the archive itself.
+      listen("source-offline", () => {
+        if (sourceOffline) return;
+        sourceOffline = true;
+        clearInterval(sourceWatch);
+        sourceWatch = setInterval(async () => {
+          const probe = photoPath || view[sel]?.path;
+          if (!probe) return;
+          if (await invoke("source_reachable", { path: probe }).catch(() => false)) {
+            sourceOffline = false;
+            clearInterval(sourceWatch);
+          }
+        }, 4000);
+      });
       listen("app-error", (e) => {
         appMessage = e.payload.message ?? String(e.payload);
         setTimeout(() => (appMessage = ""), 5000);
@@ -4775,6 +4799,7 @@
       {zoomMode}
       {panning}
       {developPhotoPercent}
+      {sourceOffline}
       {onPhotoPointerDown}
       {onPhotoPointerMove}
       {onPhotoPointerUp}
@@ -5068,6 +5093,7 @@
       useCanvas={false}
       zoomMode="frame"
       {developPhotoPercent}
+      {sourceOffline}
     />
     {#if view[sel].rating}
       <span class="fullscreen-rating">{stars(view[sel].rating)}</span>

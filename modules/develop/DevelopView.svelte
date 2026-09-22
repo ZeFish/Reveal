@@ -41,6 +41,11 @@
     onPhotoPointerDown = () => {},
     onPhotoPointerMove = () => {},
     onPhotoPointerUp = () => {},
+    /** The photo's own volume is unreachable; what is on screen came from the
+     * local cache. A persistent condition, so it gets a persistent mark in
+     * the one corner already reserved for "what is this view doing", rather
+     * than a toast that fades while the condition does not. */
+    sourceOffline = false,
   } = $props();
 
   // Minimal markdown-to-HTML for the caption overlay — just bold/italic, the
@@ -626,7 +631,15 @@
   onpointercancel={(e) => { onPhotoPointerUp(e); onLoupePointerUp(e); }}
   oncontextmenu={(e) => e.preventDefault()}
 >
-  {#if busyVisible}
+  {#if sourceOffline}
+    <div
+      class="render-badge offline"
+      role="status"
+      title="This folder is unreachable — showing the cached copy"
+    >
+      <Icon name="link-break" size="12px" />
+    </div>
+  {:else if busyVisible}
     <div class="render-badge"><span class="render-spinner"></span></div>
   {/if}
 
@@ -1083,6 +1096,10 @@
     align-items: center;
     gap: 7px;
     animation: badge-in var(--duration-fast, 160ms) ease-out;
+  }
+  .render-badge.offline {
+    color: var(--color-accent);
+    opacity: 0.85;
   }
   @keyframes badge-in {
     from {

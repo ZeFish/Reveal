@@ -1599,6 +1599,44 @@ fn developed_preview_cache_path(
     Ok(dir.join(developed_preview_cache_name(path, max_px, version)))
 }
 
+/// The newest cached render of a photo at a size, whatever version it carries.
+///
+/// The exact key needs the sidecar's mtime, which needs the NAS. Offline —
+/// on a train, in a café — that lookup returns 0 and matches nothing, so a
+/// cache full of this library's photos would sit there unusable. When the
+/// volume is unreachable there is no newer truth to be had, so the newest
+/// thing on this disk IS the answer.
+///
+/// Only ever consulted while the volume is DOWN. Online, an exact miss must
+/// go to the NAS, or an edit made elsewhere would never surface.
+fn newest_cached_render(
+    app: &tauri::AppHandle,
+    path: &std::path::Path,
+    max_px: u32,
+) -> Option<std::path::PathBuf> {
+    let dir = developed_preview_cache_dir(app).ok()?;
+    let prefix = format!("{:016x}-{max_px}-", developed_preview_source_key(path));
+    newest_matching(&dir, &prefix)
+}
+
+/// Newest `.jpg` in `dir` whose name starts with `prefix`.
+///
+/// Split from `newest_cached_render` so the selection can be tested without a
+/// running Tauri app — the prefix carries both the photo and the size, and
+/// getting either wrong would serve one photo's pixels for another.
+fn newest_matching(dir: &std::path::Path, prefix: &str) -> Option<std::path::PathBuf> {
+    std::fs::read_dir(dir)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            e.file_name()
+                .to_str()
+                .is_some_and(|n| n.starts_with(prefix) && n.ends_with(".jpg"))
+        })
+        .max_by_key(|e| e.metadata().and_then(|m| m.modified()).ok())
+        .map(|e| e.path())
+}
+
 /// `{photo}-{size}-{version}.jpg`. Built here, taken apart by
 /// `prune_preview_cache`, which groups on the first two fields — so the
 /// format has one definition and a test that round-trips it.
@@ -2348,6 +2386,17 @@ async fn add_catalog_root(
     index.0.add_root(&path).map_err(|e| e.to_string())?;
     // `scan_root` sets meta.root + re-registers (idempotent) and walks the tree.
     scan_root(app, index, path).await
+}
+
+/// Can we reach the folder this photo lives in right now?
+///
+/// The UI marks a photo as coming from cache while its source is unreachable;
+/// this is how it learns the archive came back, without waiting for the next
+/// failure to tell it.
+#[tauri::command]
+fn source_reachable(path: String) -> bool {
+    let p = std::path::Path::new(&path);
+    apple_photos::is_asset(&path) || is_volume_mounted(p)
 }
 
 /// Every registered library, with its frame count and whether its folder is
@@ -4419,8 +4468,65 @@ pub fn run() {
                         .and_then(|q| q.split('&').find_map(|kv| kv.strip_prefix("p=")))
                         .map(percent_decode)
                         .unwrap_or_default();
-                    if path.is_empty() || !is_volume_mounted(std::path::Path::new(&path)) {
+                    if path.is_empty() {
                         let response = HttpResponse::builder().status(404).body(Vec::new()).unwrap();
+                        responder.respond(response);
+                        return;
+                    }
+                    // The local cache before the mount guard, deliberately.
+                    // These bytes are on this disk; whether the NAS is awake
+                    // is beside the point. Guarding first meant that on a
+                    // cold start — NFS automount not yet materialised — the
+                    // photo you were editing came back "Preview unavailable"
+                    // while its pixels sat in the cache, and only a trip
+                    // through the grid (which woke the mount) fixed it
+                    // (Francis, 2026-09-22).
+                    if let Ok(local) = developed_preview_cache_path(
+                        &app,
+                        std::path::Path::new(&path),
+                        size,
+                        version,
+                    ) {
+                        if let Ok(bytes) = std::fs::read(&local) {
+                            eprintln!(
+                                "thumb: {} (local cache, {} ko, offline-safe)",
+                                path.rsplit('/').next().unwrap_or(&path),
+                                bytes.len() / 1024
+                            );
+                            responder.respond(
+                                HttpResponse::builder()
+                                    .header("Content-Type", "image/jpeg")
+                                    .header("Cache-Control", "max-age=3600")
+                                    .body(bytes)
+                                    .unwrap(),
+                            );
+                            return;
+                        }
+                    }
+                    if !is_volume_mounted(std::path::Path::new(&path)) {
+                        // Offline. The exact key above needed a version the
+                        // NAS alone can tell us, so fall back to the newest
+                        // render this disk holds for the photo — there is no
+                        // fresher truth available to compare it against.
+                        // Tell the UI the source is unreachable. Whether a
+                        // cached copy answers below or not, the photographer
+                        // should know they are looking at what this machine
+                        // remembers rather than at the archive.
+                        let _ = app.emit("source-offline", serde_json::json!({ "path": path }));
+                        let local = newest_cached_render(
+                            &app,
+                            std::path::Path::new(&path),
+                            size,
+                        )
+                        .and_then(|p| std::fs::read(p).ok());
+                        let response = match local {
+                            Some(bytes) => HttpResponse::builder()
+                                .header("Content-Type", "image/jpeg")
+                                .header("Cache-Control", "max-age=3600")
+                                .body(bytes)
+                                .unwrap(),
+                            None => HttpResponse::builder().status(404).body(Vec::new()).unwrap(),
+                        };
                         responder.respond(response);
                         return;
                     }
@@ -4445,36 +4551,6 @@ pub fn run() {
                         }
                         let t = std::time::Instant::now();
                         let source = std::path::Path::new(&path);
-
-                        // Local copy first. The archive lives on a NAS, where
-                        // even a 23 KB read costs ~26ms of latency before any
-                        // bytes move; the same read from the app cache is
-                        // under a millisecond. The two hold the same render —
-                        // this cache IS the `.preview.jpg`, kept locally — so
-                        // reaching over the network for it is pure cost.
-                        if let Ok(local) = developed_preview_cache_path(&app, source, size, version) {
-                            if let Ok(bytes) = std::fs::read(&local) {
-                                eprintln!(
-                                    "thumb: {} (local cache, {} ko, {} ms)",
-                                    source.file_name().unwrap_or_default().to_string_lossy(),
-                                    bytes.len() / 1024,
-                                    t.elapsed().as_millis()
-                                );
-                                // Served verbatim: the entry IS this size.
-                                // `downscale_grid_thumb` re-encodes even when
-                                // it has nothing to resize, so passing a
-                                // cached JPEG back through it would shed
-                                // quality on every single request.
-                                responder.respond(
-                                    HttpResponse::builder()
-                                        .header("Content-Type", "image/jpeg")
-                                        .header("Cache-Control", "max-age=3600")
-                                        .body(bytes)
-                                        .unwrap(),
-                                );
-                                return;
-                            }
-                        }
 
                         // File over app: the developed `.preview.jpg` sibling of
                         // the RAW is the truth. It exists iff the photo was developed.
@@ -4652,6 +4728,7 @@ pub fn run() {
             scan_folder,
             add_catalog_root,
             catalog_roots,
+            source_reachable,
             remove_catalog_root,
             index_dirs,
             story_dirs,
@@ -4906,6 +4983,41 @@ mod preview_cache_tests {
             super::publish_generation_is_current(&a, claim_a),
             "B's edits must not invalidate A's pending publish"
         );
+    }
+
+    /// Offline, the newest local render of a photo is the answer — there is
+    /// no fresher truth to compare it against. Picking the newest matters:
+    /// several versions sit side by side until the prune runs.
+    #[test]
+    fn the_offline_fallback_picks_the_newest_version_on_disk() {
+        let s = Scratch::new("offline-newest");
+        let older = render(&s.0, "aaaa", "", 900); // aaaa-2048-.jpg
+        let newer = s.0.join("aaaa-2048-9a.jpg");
+        std::fs::write(&newer, b"newer").unwrap();
+
+        assert_eq!(
+            super::newest_matching(&s.0, "aaaa-2048-").as_deref(),
+            Some(newer.as_path())
+        );
+        assert!(older.exists(), "the older one was there to be chosen wrongly");
+    }
+
+    /// The prefix carries both the photo and the size. Getting either wrong
+    /// serves one photo's pixels for another, or a 768 for a 2048 request.
+    #[test]
+    fn the_offline_fallback_never_crosses_photos_or_sizes() {
+        let s = Scratch::new("offline-prefix");
+        std::fs::write(s.0.join("aaaa-768-1f.jpg"), b"a-grid").unwrap();
+        std::fs::write(s.0.join("aaaa-2048-1f.jpg"), b"a-full").unwrap();
+        std::fs::write(s.0.join("bbbb-2048-1f.jpg"), b"b-full").unwrap();
+
+        let read = |prefix: &str| {
+            super::newest_matching(&s.0, prefix).map(|p| std::fs::read(p).unwrap())
+        };
+        assert_eq!(read("aaaa-2048-").as_deref(), Some(&b"a-full"[..]));
+        assert_eq!(read("aaaa-768-").as_deref(), Some(&b"a-grid"[..]));
+        assert_eq!(read("bbbb-2048-").as_deref(), Some(&b"b-full"[..]));
+        assert_eq!(super::newest_matching(&s.0, "cccc-2048-"), None);
     }
 
     /// A cache entry must never appear half-written — a truncated JPEG in
