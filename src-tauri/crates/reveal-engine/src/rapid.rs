@@ -687,6 +687,19 @@ fn apply_dehaze(r: f32, g: f32, b: f32, t_blurred: f32, amount: f32) -> (f32, f3
 /// Pre-LUTs run on scene-linear input before exposure/tone controls; post-LUTs
 /// run after tone mapping and grain on display-encoded output.
 pub fn develop_rapid(input: &ImageBuf, recipe: &Recipe, luts_dir: &Path) -> ImageBuf {
+    develop_rapid_with(input, recipe, luts_dir, crate::rapid_gpu::enabled())
+}
+
+/// `develop_rapid` with the GPU decision made by the caller. Exists so the
+/// equivalence test can run the same frame down both paths in one process —
+/// the CPU loop only counts as a fallback for as long as it agrees with the
+/// shader, and that has to be checked, not assumed.
+pub(crate) fn develop_rapid_with(
+    input: &ImageBuf,
+    recipe: &Recipe,
+    luts_dir: &Path,
+    use_gpu: bool,
+) -> ImageBuf {
     let width = input.width as usize;
     let height = input.height as usize;
     let total_pixels = width * height;
@@ -874,10 +887,61 @@ pub fn develop_rapid(input: &ImageBuf, recipe: &Recipe, luts_dir: &Path) -> Imag
             (Vec::new(), 0, 0)
         };
 
-    // Allocate output RGB buffer
-    let mut out_data = vec![0.0f32; total_pixels * 3];
+    // The per-pixel stage on the GPU when there is one. Everything above
+    // (guidance map) and below (grain, post-LUTs) stays on the CPU. A `None`
+    // here means the GPU couldn't, never that it produced nothing — the
+    // Rayon loop below is both the reference implementation and the
+    // fallback, so a photo always develops.
+    let gpu_out = if use_gpu {
+        crate::rapid_gpu::run(
+        &crate::rapid_gpu::Inputs {
+            width,
+            height,
+            data: &work_input.data,
+            blurred: &blurred,
+            down_w,
+            down_h,
+            w_mult,
+            exposure_factor,
+            r_temp,
+            r_tint,
+            g_tint,
+            b_temp,
+            b_tint,
+            brightness_adj: midtones + brightness,
+            saturation_adj: saturation - 1.0,
+            contrast,
+            shadows,
+            blacks,
+            highlights,
+            clarity,
+            structure,
+            dehaze,
+            vibrance,
+            has_hsl,
+            has_color_wheels,
+            has_zones,
+            curves: [
+                curve_luma.clone(),
+                curve_r.clone(),
+                curve_g.clone(),
+                curve_b.clone(),
+            ],
+        },
+        recipe,
+        )
+    } else {
+        None
+    };
+
+    let used_gpu = gpu_out.is_some();
+    let mut out_data = match gpu_out {
+        Some(img) => img.data,
+        None => vec![0.0f32; total_pixels * 3],
+    };
 
     // Process pixels in parallel chunks using Rayon
+    if !used_gpu {
     out_data
         .par_chunks_exact_mut(3)
         .enumerate()
@@ -1301,6 +1365,7 @@ pub fn develop_rapid(input: &ImageBuf, recipe: &Recipe, luts_dir: &Path) -> Imag
                 pixel[2] = agx_b.clamp(0.0, 1.0);
             }
         });
+    } // !used_gpu — the CPU loop is both the reference and the fallback
 
     if recipe.grain_amount > 1e-4 {
         apply_silvergrain(
@@ -1762,6 +1827,141 @@ mod tests {
         );
     }
 
+    /// The GPU path is only a speedup for as long as it renders the same
+    /// image as the CPU path. This is the test that makes the fallback a
+    /// fallback instead of a second, slightly different look — it runs one
+    /// busy recipe (every stage engaged: guidance-map stages, tone, colour
+    /// wheels, zones, HSL, curves, vignette, AgX look) down both paths and
+    /// compares pixel for pixel.
+    ///
+    /// Skips itself when there's no adapter — CI without a GPU shouldn't
+    /// fail, but a machine WITH one must agree.
+    #[test]
+    fn gpu_and_cpu_paths_agree() {
+        if !crate::rapid_gpu::available() {
+            eprintln!("no GPU adapter — skipping GPU/CPU equivalence check");
+            return;
+        }
+
+        // A gradient with colour variation, so hue-dependent stages (HSL
+        // bands, vibrance's skin dampener, the colour wheels) actually do
+        // something rather than all seeing neutral grey.
+        let (w, h) = (64usize, 48usize);
+        let mut data = Vec::with_capacity(w * h * 3);
+        for y in 0..h {
+            for x in 0..w {
+                let fx = x as f32 / w as f32;
+                let fy = y as f32 / h as f32;
+                data.push(0.02 + fx * 1.4);
+                data.push(0.02 + fy * 0.9);
+                data.push(0.02 + (1.0 - fx) * 0.6);
+            }
+        }
+        let input = ImageBuf::from_data(w as u32, h as u32, data);
+
+        let mut recipe = Recipe::default();
+        recipe.engine = "rapid".to_string();
+        recipe.exposure_ev = 0.4;
+        recipe.brightness = 8.0;
+        recipe.midtones = 5.0;
+        recipe.contrast = 0.2;
+        recipe.highlights = -22.0;
+        recipe.shadows = 18.0;
+        recipe.whites = 6.0;
+        recipe.blacks = -9.0;
+        recipe.clarity = 15.0;
+        recipe.structure = 10.0;
+        recipe.dehaze = 8.0;
+        recipe.saturation = 0.15;
+        recipe.vibrance = 20.0;
+        recipe.temperature = 18.0;
+        recipe.tint = -7.0;
+        recipe.hsl_hue = vec![10.0, -5.0, 0.0, 8.0, 0.0, -12.0, 0.0, 4.0];
+        recipe.hsl_sat = vec![15.0, 0.0, -10.0, 0.0, 20.0, 0.0, 0.0, -5.0];
+        recipe.hsl_lum = vec![0.0, 12.0, 0.0, -8.0, 0.0, 6.0, 0.0, 0.0];
+        recipe.shadows_tint = [0.05, -0.02, 0.08];
+        recipe.midtones_tint = [-0.03, 0.04, 0.0];
+        recipe.highlights_tint = [0.02, 0.01, -0.05];
+        recipe.zone_shadows_exposure = 0.3;
+        recipe.zone_shadows_contrast = 12.0;
+        recipe.zone_midtones_saturation = 15.0;
+        recipe.zone_highlights_contrast = -8.0;
+        recipe.vignette_amount = -0.35;
+        recipe.agx_look = "punchy".to_string();
+        recipe.curve_luma = vec![[0.0, 0.03], [0.5, 0.55], [1.0, 0.97]];
+        recipe.curve_b = vec![[0.0, 0.0], [0.5, 0.46], [1.0, 1.0]];
+
+        let cpu = develop_rapid_with(&input, &recipe, Path::new(""), false);
+        let gpu = develop_rapid_with(&input, &recipe, Path::new(""), true);
+
+        assert_eq!(cpu.data.len(), gpu.data.len());
+        let mut worst = 0.0f32;
+        let mut worst_at = 0usize;
+        for (i, (a, b)) in cpu.data.iter().zip(gpu.data.iter()).enumerate() {
+            let d = (a - b).abs();
+            if d > worst {
+                worst = d;
+                worst_at = i;
+            }
+        }
+        // Both paths are f32 doing the same operations in the same order,
+        // but a GPU may fuse a multiply-add or evaluate pow() to a slightly
+        // different last bit. 1/512 of the output range is far below what an
+        // 8-bit export can represent, and far under what a drifting port
+        // would produce.
+        assert!(
+            worst < 0.002,
+            "GPU and CPU diverged by {worst} at index {worst_at} (cpu {}, gpu {})",
+            cpu.data[worst_at],
+            gpu.data[worst_at]
+        );
+    }
+
+    /// Not a correctness test — the measurement that justifies the GPU path
+    /// existing, kept so it can be re-run after any change to either path
+    /// (adding a stage to the shader, say) rather than trusting that the
+    /// gain is still there. Ignored by default; run it with:
+    ///   cargo test --release -p reveal-engine rapid_render_cost -- --ignored --nocapture
+    /// Release matters: in a debug build the CPU loop runs unoptimized and
+    /// the comparison flatters the GPU.
+    #[test]
+    #[ignore = "measurement, not a correctness check"]
+    fn rapid_render_cost() {
+        use std::time::Instant;
+
+        let (w, h) = (2048usize, 1365usize);
+        let mut data = Vec::with_capacity(w * h * 3);
+        for y in 0..h {
+            for x in 0..w {
+                data.push(0.02 + (x as f32 / w as f32) * 1.4);
+                data.push(0.02 + (y as f32 / h as f32) * 0.9);
+                data.push(0.3);
+            }
+        }
+        let input = ImageBuf::from_data(w as u32, h as u32, data);
+        let mut recipe = Recipe::default();
+        recipe.engine = "rapid".to_string();
+        // Engage the guidance-map stages; a recipe of all-defaults would
+        // skip most of the work and measure nothing interesting.
+        recipe.clarity = 15.0;
+        recipe.shadows = 18.0;
+        recipe.vibrance = 20.0;
+        recipe.contrast = 0.2;
+
+        for (label, use_gpu) in [("cpu", false), ("gpu", true)] {
+            if use_gpu && !crate::rapid_gpu::available() {
+                eprintln!("gpu: no adapter");
+                continue;
+            }
+            let _ = develop_rapid_with(&input, &recipe, Path::new(""), use_gpu); // warm up
+            let t = Instant::now();
+            for _ in 0..5 {
+                let _ = develop_rapid_with(&input, &recipe, Path::new(""), use_gpu);
+            }
+            eprintln!("{label}: {:?} per {w}x{h} render", t.elapsed() / 5);
+        }
+    }
+
     #[test]
     fn test_rapid_hsl_conversion() {
         let (h, s, l) = rgb_to_hsl(1.0, 0.0, 0.0);
@@ -1951,3 +2151,4 @@ mod tests {
         );
     }
 }
+

@@ -31,6 +31,7 @@ pub use traits::{EngineInfo, EngineRegistry, RenderEngine};
 mod lut;
 pub use lut::Cube;
 pub mod rapid;
+pub mod rapid_gpu;
 pub mod spektra;
 pub use rapid::develop_rapid;
 pub use rapid::RapidEngine;

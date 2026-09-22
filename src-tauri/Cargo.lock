@@ -3822,7 +3822,9 @@ name = "reveal-engine"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytemuck",
  "image",
+ "pollster",
  "rayon",
  "reveal-decode",
  "serde",
@@ -3830,6 +3832,7 @@ dependencies = [
  "spektrafilm-core",
  "spektrafilm-gpu",
  "spektrafilm-math",
+ "wgpu",
 ]
 
 [[package]]
