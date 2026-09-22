@@ -136,7 +136,16 @@
       {publishing ? "Publishing…" : "Publish (Garden)"}
     </button>
     {#if publishStatus}
-      <p class="hint">{publishStatus}</p>
+      {#if publishStatus.startsWith("http")}
+        <a
+          class="hint published-link"
+          href={publishStatus}
+          onclick={(e) => { e.preventDefault(); invoke("open_path", { path: publishStatus }); }}
+          title="Open the published page"
+        >{publishStatus}</a>
+      {:else}
+        <p class="hint">{publishStatus}</p>
+      {/if}
     {/if}
   </div>
 </div>
@@ -225,5 +234,16 @@
     font-size: 9px;
     color: color-mix(in srgb, var(--color-foreground) 40%, transparent);
     margin: 0;
+  }
+  .published-link {
+    display: block;
+    word-break: break-all;
+    color: var(--color-accent);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+  }
+  .published-link:hover {
+    color: color-mix(in srgb, var(--color-accent) 80%, var(--color-foreground));
   }
 </style>
