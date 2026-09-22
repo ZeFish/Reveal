@@ -1921,7 +1921,7 @@
       const immediate =
         currentMode === "dev" && photoPath === path && imgUrl
           ? imgUrl
-          : thumbUrl(path, frame?.previewVersion ?? 0);
+          : previewUrl(path, frame?.previewVersion ?? 0);
       if (fullscreenUrl?.startsWith("blob:") && fullscreenUrl !== imgUrl) {
         URL.revokeObjectURL(fullscreenUrl);
       }
@@ -3093,8 +3093,21 @@
    * @param {string} path
    * @param {number} [version]
    */
-  function thumbUrl(path, version = 0) {
-    return `reveal://thumb?p=${encodeURIComponent(path)}&v=${version}&size=2048`;
+  // `size` is what the protocol actually serves, and it matters: the grid
+  // shows ~120 cells at once, so a 2048px JPEG per cell meant the webview
+  // held gigabytes of decoded bitmaps and stuttered on every scroll. Cells
+  // ask small; the develop viewer asks for the real thing, because the
+  // durable `.preview.jpg` on disk IS the current recipe at 2048px — there's
+  // no reason to look at a blown-up 640px proxy for the seconds the RAW
+  // decode takes.
+  /** @param {string} path @param {number} [version] @param {number} [size] */
+  function thumbUrl(path, version = 0, size = 640) {
+    return `reveal://thumb?p=${encodeURIComponent(path)}&v=${version}&size=${size}`;
+  }
+  /** The full-resolution developed sidecar, for single-photo views.
+   * @param {string} path @param {number} [version] */
+  function previewUrl(path, version = 0) {
+    return thumbUrl(path, version, 2048);
   }
 
 
@@ -3574,11 +3587,40 @@
    * @param {string} path
    * @param {{ openDevPanel?: boolean }} [opts]
    */
+  // Decode the frames around the open one into the engine's cache while the
+  // user is still looking at this one. On a NAS-hosted library a step to the
+  // next photo is ~3s of network read plus ~1s of decode; doing it ahead of
+  // the request is the difference between a cull that flows and one that
+  // stutters. Next first — that's the direction a cull actually moves.
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
+  let prefetchTimer;
+  /** @param {string} path */
+  function prefetchNeighbours(path) {
+    if (!isTauri) return;
+    // Debounced, and deliberately not immediate: holding the arrow key
+    // through twenty frames would otherwise queue forty decodes competing
+    // with the one photo actually on screen. Waiting until the user pauses
+    // means we prefetch around where they've settled.
+    clearTimeout(prefetchTimer);
+    prefetchTimer = setTimeout(() => {
+      if (photoPath !== path) return; // moved on again
+      const i = view.findIndex((f) => f.path === path);
+      if (i < 0) return;
+      for (const n of [view[i + 1], view[i - 1]]) {
+        if (n?.path) invoke("prefetch_photo", { path: n.path }).catch(() => {});
+      }
+    }, 450);
+  }
+
+  /**
+   * @param {string} path
+   * @param {{ openDevPanel?: boolean }} [opts]
+   */
   async function openPhoto(path, { openDevPanel = true } = {}) {
     if (imgUrl?.startsWith("blob:")) URL.revokeObjectURL(imgUrl);
     photoPath = path;
     picked = path.split("/").pop() ?? null;
-    imgUrl = thumbUrl(path);
+    imgUrl = previewUrl(path);
     useCanvas = false; // start on the <img> thumb; pump() flips this back on
     // only if the photo develops with a canvas (Rapid) engine.
     imgFailed = false;
@@ -3606,6 +3648,7 @@
       recipeUndoStack = [];
       recipeRedoStack = [];
       lastCommittedRecipe = snapshotRecipe(recipe);
+      prefetchNeighbours(path);
       if (developEngine) {
         scheduleRender(PREVIEW_PX);
       } else {
@@ -3807,7 +3850,7 @@
     if (frame) frame.previewVersion = Date.now();
     frames = [...frames]; // raw array — reassign so the grid thumb refreshes
     if (imgUrl?.startsWith("blob:")) URL.revokeObjectURL(imgUrl);
-    imgUrl = thumbUrl(path, frame?.previewVersion ?? Date.now());
+    imgUrl = previewUrl(path, frame?.previewVersion ?? Date.now());
     useCanvas = false; // the thumb is a plain <img>; leaving useCanvas true (from
     // a prior Rapid render) would show the now-blank <canvas> instead.
     status = "";

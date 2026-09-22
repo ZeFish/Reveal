@@ -428,12 +428,17 @@ pub struct Engine {
     luts_dir: PathBuf,
     backend: Box<dyn ComputeBackend>,
     decoder: DecoderRegistry,
-    /// Decoded photo, already in ProPhoto working space. Keyed by (path, fast)
-    /// so a half-res preview decode and a full-res export decode don't evict
-    /// each other's meaning — `fast` previews and full exports cache apart.
-    decoded: Mutex<Option<((PathBuf, bool), Arc<ImageBuf>)>>,
-    /// Downscaled pipeline input for previews.
-    preview_input: Mutex<Option<((PathBuf, u32), Arc<ImageBuf>)>>,
+    /// Decoded photos, already in ProPhoto working space, most-recently-used
+    /// first. Keyed by (path, fast) so a half-res preview decode and a
+    /// full-res export decode don't evict each other's meaning.
+    ///
+    /// Multi-entry because a cull is mostly stepping back and forth: with a
+    /// single slot, returning to the previous frame re-read it off the NAS
+    /// and re-decoded it, ~4s for a frame that was in memory moments before.
+    /// Bounded by bytes, see DECODE_CACHE_BUDGET_BYTES.
+    decoded: Mutex<Vec<((PathBuf, bool), Arc<ImageBuf>)>>,
+    /// Downscaled pipeline inputs for previews, same MRU-first ordering.
+    preview_input: Mutex<Vec<((PathBuf, u32), Arc<ImageBuf>)>>,
     /// Plugin engine registry.
     registry: EngineRegistry,
 }
@@ -467,8 +472,8 @@ impl Engine {
             luts_dir,
             backend,
             decoder: DecoderRegistry,
-            decoded: Mutex::new(None),
-            preview_input: Mutex::new(None),
+            decoded: Mutex::new(Vec::new()),
+            preview_input: Mutex::new(Vec::new()),
             registry,
         })
     }
@@ -690,24 +695,29 @@ impl Engine {
         // Previews (max_px > 0) take the fast half-res decode; the export path
         // (max_px == 0) takes the full-quality decode.
         let fast = max_px != 0;
-        let (full, decode_ms) = {
-            let mut guard = self.decoded.lock().unwrap();
-            match guard.as_ref() {
-                Some(((p, f), img)) if p == path && *f == fast => (img.clone(), 0),
-                _ => {
-                    let t = std::time::Instant::now();
-                    let linear = self
-                        .decoder
-                        .decode_linear(path, fast)
-                        .with_context(|| format!("decoding {}", path.display()))?;
-                    let data = to_prophoto(linear.data, linear.primaries);
-                    let img = Arc::new(ImageBuf::from_data(linear.width, linear.height, data));
-                    let ms = t.elapsed().as_millis();
-                    *guard = Some(((path.to_path_buf(), fast), img.clone()));
-                    // A new decode invalidates the preview-input cache too.
-                    *self.preview_input.lock().unwrap() = None;
-                    (img, ms)
-                }
+        let key = (path.to_path_buf(), fast);
+
+        // Look up and RELEASE the lock before decoding. Holding it across the
+        // decode (which measures ~1s of CPU after ~3s of network read on a
+        // NAS-hosted library) serialised every render behind every other one,
+        // and would have made a background prefetch actively harmful: it would
+        // block the photo the user is actually looking at for its whole
+        // duration. The cost of releasing is that two threads racing for the
+        // same uncached photo may both decode it; the loser's result is simply
+        // dropped on insert, which is far cheaper than the stall.
+        let (full, decode_ms) = match self.cached_decode(&key) {
+            Some(img) => (img, 0),
+            None => {
+                let t = std::time::Instant::now();
+                let linear = self
+                    .decoder
+                    .decode_linear(path, fast)
+                    .with_context(|| format!("decoding {}", path.display()))?;
+                let data = to_prophoto(linear.data, linear.primaries);
+                let img = Arc::new(ImageBuf::from_data(linear.width, linear.height, data));
+                let ms = t.elapsed().as_millis();
+                self.store_decode(key, img.clone());
+                (img, ms)
             }
         };
 
@@ -716,17 +726,76 @@ impl Engine {
         }
 
         let key = (path.to_path_buf(), max_px);
-        let mut guard = self.preview_input.lock().unwrap();
-        if let Some((k, img)) = guard.as_ref() {
-            if *k == key {
-                return Ok((img.clone(), decode_ms));
-            }
+        if let Some(img) = self.cached_preview_input(&key) {
+            return Ok((img, decode_ms));
         }
         let small = Arc::new(downscale(&full, max_px));
-        *guard = Some((key, small.clone()));
+        self.store_preview_input(key, small.clone());
         Ok((small, decode_ms))
     }
+
+    fn cached_decode(&self, key: &(PathBuf, bool)) -> Option<Arc<ImageBuf>> {
+        let mut cache = self.decoded.lock().unwrap();
+        let i = cache.iter().position(|(k, _)| k == key)?;
+        // Move to front: the eviction below is plain LRU.
+        let entry = cache.remove(i);
+        let img = entry.1.clone();
+        cache.insert(0, entry);
+        Some(img)
+    }
+
+    fn store_decode(&self, key: (PathBuf, bool), img: Arc<ImageBuf>) {
+        let mut cache = self.decoded.lock().unwrap();
+        cache.retain(|(k, _)| k != &key);
+        cache.insert(0, (key, img));
+        // Budget in BYTES, not entries: one 102 MP frame is ~300 MB at half
+        // res and ~1.2 GB at full, so "keep 3" would mean wildly different
+        // memory depending on the body. Index 0 is always kept even if it
+        // alone is over budget — that's the photo being worked on.
+        let mut total = 0usize;
+        let mut keep = cache.len();
+        for (i, (_, img)) in cache.iter().enumerate() {
+            total += img.data.len() * std::mem::size_of::<f32>();
+            if i > 0 && total > DECODE_CACHE_BUDGET_BYTES {
+                keep = i;
+                break;
+            }
+        }
+        cache.truncate(keep);
+    }
+
+    fn cached_preview_input(&self, key: &(PathBuf, u32)) -> Option<Arc<ImageBuf>> {
+        let mut cache = self.preview_input.lock().unwrap();
+        let i = cache.iter().position(|(k, _)| k == key)?;
+        let entry = cache.remove(i);
+        let img = entry.1.clone();
+        cache.insert(0, entry);
+        Some(img)
+    }
+
+    fn store_preview_input(&self, key: (PathBuf, u32), img: Arc<ImageBuf>) {
+        let mut cache = self.preview_input.lock().unwrap();
+        cache.retain(|(k, _)| k != &key);
+        cache.insert(0, (key, img));
+        cache.truncate(PREVIEW_INPUT_CACHE_ENTRIES);
+    }
+
+    /// Decode a photo into the cache without rendering it, so stepping to it
+    /// costs nothing. Errors are swallowed: a prefetch that fails just means
+    /// the real open pays what it would have paid anyway.
+    pub fn prefetch(&self, path: &Path, max_px: u32) {
+        let _ = self.pipeline_input(path, max_px);
+    }
 }
+
+/// How much decoded, ProPhoto-f32 image data to keep around. Sized so a
+/// handful of frames from a high-megapixel body fit: stepping back to the
+/// previous photo is the common move in a cull, and it used to re-decode.
+const DECODE_CACHE_BUDGET_BYTES: usize = 3 * 1024 * 1024 * 1024;
+
+/// Downscaled pipeline inputs are small (a 2048px frame is ~37 MB), so this
+/// one counts entries rather than bytes.
+const PREVIEW_INPUT_CACHE_ENTRIES: usize = 8;
 
 /// Recipe → spektrafilm RuntimeParams. Upstream defaults everywhere else —
 /// notably `print_exposure_compensation` + `normalize_print_exposure` stay
@@ -934,4 +1003,77 @@ fn paper_matte(w: u32, h: u32) -> image::RgbImage {
         let px = |c: u8| (c as i16 + noise).clamp(0, 255) as u8;
         image::Rgb([px(PAPER_TINT[0]), px(PAPER_TINT[1]), px(PAPER_TINT[2])])
     })
+}
+
+#[cfg(test)]
+mod perf_probe {
+    use super::*;
+    use std::time::Instant;
+
+    /// Where a develop actually spends its time, split into the three
+    /// parts that have completely different fixes: reading the file (the
+    /// library lives on an NFS mount), decoding it (rawler, upstream), and
+    /// developing it (ours, now on the GPU). Measured once, it reframed the
+    /// whole picture — the develop is ~1% of a cold open.
+    ///
+    ///   REVEAL_BENCH_RAW=/path/to/file.RAF \
+    ///     cargo test --release -p reveal-engine time_split -- --ignored --nocapture
+    #[test]
+    #[ignore = "diagnostic; needs a real RAW via REVEAL_BENCH_RAW"]
+    fn time_split() {
+        let raw = std::path::PathBuf::from(
+            std::env::var("REVEAL_BENCH_RAW").unwrap_or_default(),
+        );
+        if !raw.exists() {
+            eprintln!("set REVEAL_BENCH_RAW to a RAW file");
+            return;
+        }
+        let data_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data");
+        let luts = std::env::temp_dir().join("reveal-bench-luts");
+        let engine = Engine::new(&data_dir, &luts).expect("engine");
+
+        // Separate network/disk I/O from decode CPU: the library lives on an
+        // NFS mount, so "decode is slow" could be either.
+        let t = Instant::now();
+        let bytes = std::fs::read(&raw).expect("read");
+        eprintln!("file read #1: {:?} ({} MB)", t.elapsed(), bytes.len() / 1_048_576);
+        let t = Instant::now();
+        let _ = std::fs::read(&raw).expect("read");
+        eprintln!("file read #2 (OS-cached): {:?}", t.elapsed());
+
+        let mut recipe = Recipe::default();
+        recipe.engine = "rapid".to_string();
+        recipe.clarity = 15.0;
+
+        // Cold decode (preview size)
+        let t = Instant::now();
+        let out = engine.develop_rgba8(&raw, &recipe, 2048).expect("develop");
+        eprintln!(
+            "cold preview: total {:?}  (decode {}ms, render {}ms) {}x{}",
+            t.elapsed(), out.decode_ms, out.render_ms, out.width, out.height
+        );
+
+        // Warm: same photo again — decode should be cached
+        let t = Instant::now();
+        let out = engine.develop_rgba8(&raw, &recipe, 2048).expect("develop");
+        eprintln!(
+            "warm preview: total {:?}  (decode {}ms, render {}ms)",
+            t.elapsed(), out.decode_ms, out.render_ms
+        );
+
+        // Fresh engine: OS page cache is warm now, decode cache is not, so
+        // this is decode CPU with the I/O taken out.
+        let engine2 = Engine::new(&data_dir, &luts).expect("engine2");
+        let t = Instant::now();
+        let out = engine2.develop_rgba8(&raw, &recipe, 2048).expect("develop");
+        eprintln!(
+            "decode with warm OS cache: total {:?} (decode {}ms, render {}ms)",
+            t.elapsed(), out.decode_ms, out.render_ms
+        );
+
+        // Full-resolution export path
+        let t = Instant::now();
+        let (jpeg, w, h) = engine.export_jpeg(&raw, &recipe, 0, 0.0).expect("export");
+        eprintln!("export full: {:?} -> {}x{} ({} KB)", t.elapsed(), w, h, jpeg.len() / 1024);
+    }
 }

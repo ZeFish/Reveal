@@ -1170,18 +1170,18 @@ fn companion_jpeg_path(source: &std::path::Path) -> Option<std::path::PathBuf> {
         .find(|candidate| candidate.is_file())
 }
 
-/// Longest edge (px) of the JPEG the contact-sheet grid receives. The durable
-/// `.preview.jpg` stays 2048px for fullscreen/export; the grid only ever shows
-/// cells a few hundred px wide, so serving the full 2048px preview made the
-/// webview decode ~11 MB bitmaps per cell — a screenful (~120) is ~1.4 GB of
-/// held image memory, and each scroll/load burst of those decodes froze the UI.
-const GRID_THUMB_MAX_EDGE: u32 = 640;
-
-/// Shrink a grid thumbnail's JPEG so the webview decodes a small bitmap. Only
-/// touches what the contact sheet receives — never the on-disk preview. Returns
-/// the original bytes unchanged if it's already small or can't be decoded, so a
-/// weird source can never turn into a broken thumb.
-fn downscale_grid_thumb(bytes: Vec<u8>) -> Vec<u8> {
+/// Shrink a served thumbnail to `max_edge` so the webview decodes a small
+/// bitmap. Only touches what's sent over the protocol — never the on-disk
+/// preview. Returns the original bytes unchanged if it's already small or
+/// can't be decoded, so a weird source can never turn into a broken thumb.
+///
+/// `max_edge` is the caller's requested size, not a constant: the contact
+/// sheet shows ~120 cells at once and a 2048px JPEG each meant the webview
+/// held ~1.4 GB of decoded bitmaps and froze on scroll — but a single-photo
+/// view has exactly one, and blowing a 640px proxy up to fill the window
+/// while the RAW decodes is a worse picture than the 2048px `.preview.jpg`
+/// already sitting on disk at the very recipe being displayed.
+fn downscale_grid_thumb(bytes: Vec<u8>, max_edge: u32) -> Vec<u8> {
     let orientation = match exif::Reader::new().read_from_container(&mut std::io::Cursor::new(&bytes)) {
         Ok(exif_data) => match exif_data.get_field(exif::Tag::Orientation, exif::In::PRIMARY) {
             Some(field) => match field.value.get_uint(0) {
@@ -1210,7 +1210,7 @@ fn downscale_grid_thumb(bytes: Vec<u8>) -> Vec<u8> {
         _ => img,
     };
 
-    if img.width() <= GRID_THUMB_MAX_EDGE && img.height() <= GRID_THUMB_MAX_EDGE {
+    if img.width() <= max_edge && img.height() <= max_edge {
         let mut out = std::io::Cursor::new(Vec::new());
         return match img.write_to(&mut out, image::ImageFormat::Jpeg) {
             Ok(()) => out.into_inner(),
@@ -1218,7 +1218,7 @@ fn downscale_grid_thumb(bytes: Vec<u8>) -> Vec<u8> {
         };
     }
     // `thumbnail` keeps aspect ratio and uses a fast filter — right for grid cells.
-    let small = img.thumbnail(GRID_THUMB_MAX_EDGE, GRID_THUMB_MAX_EDGE);
+    let small = img.thumbnail(max_edge, max_edge);
     let mut out = std::io::Cursor::new(Vec::new());
     match small.write_to(&mut out, image::ImageFormat::Jpeg) {
         Ok(()) => out.into_inner(),
@@ -3725,6 +3725,28 @@ fn list_engines(
     state.0.list_engines()
 }
 
+/// Decode a photo into the engine's cache without rendering it, so stepping
+/// to it is instant. The frontend calls this for the neighbours of whatever
+/// is open: in a cull you almost always go to the next frame, and on a
+/// NAS-hosted library that step costs ~3s of network read plus ~1s of decode
+/// — paid while you're still looking at the current photo instead of after
+/// you've asked for the next one.
+///
+/// Fire-and-forget: it takes no lock the foreground render needs (see
+/// pipeline_input) and any failure just means the real open pays what it
+/// would have paid anyway.
+#[tauri::command]
+async fn prefetch_photo(state: tauri::State<'_, EngineState>, path: String) -> Result<(), String> {
+    let engine = state.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Ok(source) = apple_photos::source(&path) {
+            engine.prefetch(&source, 2048);
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
 /// Whether the Rapid engine's per-pixel pass can run on the GPU here.
 /// The frontend uses it to decide whether a live slider drag can render at
 /// full preview resolution or still needs the low-res proxy: Rapid on the
@@ -4123,7 +4145,7 @@ pub fn run() {
                                 Ok(bytes) => HttpResponse::builder()
                                     .header("Content-Type", "image/jpeg")
                                     .header("Cache-Control", "no-cache")
-                                    .body(if size <= 768 { downscale_grid_thumb(bytes) } else { bytes }).unwrap(),
+                                    .body(if size <= 768 { downscale_grid_thumb(bytes, size) } else { bytes }).unwrap(),
                                 Err(error) => {
                                     eprintln!("Apple Photos thumbnail: {error}");
                                     HttpResponse::builder().status(503).body(error.into_bytes()).unwrap()
@@ -4150,7 +4172,7 @@ pub fn run() {
                                     HttpResponse::builder()
                                         .header("Content-Type", "image/jpeg")
                                         .header("Cache-Control", "max-age=3600")
-                                        .body(downscale_grid_thumb(bytes))
+                                        .body(downscale_grid_thumb(bytes, size))
                                         .unwrap()
                                 }
                                 Err(e) => {
@@ -4179,7 +4201,7 @@ pub fn run() {
                                     preview.bytes.len() / 1024,
                                     t.elapsed().as_millis()
                                 );
-                                let small = downscale_grid_thumb(preview.bytes);
+                                let small = downscale_grid_thumb(preview.bytes, size);
                                 persist_thumb_cache(source, &small);
                                 HttpResponse::builder()
                                     .header("Content-Type", "image/jpeg")
@@ -4204,7 +4226,7 @@ pub fn run() {
                                             bytes.len() / 1024,
                                             t.elapsed().as_millis()
                                         );
-                                        let small = downscale_grid_thumb(bytes);
+                                        let small = downscale_grid_thumb(bytes, size);
                                         persist_thumb_cache(source, &small);
                                         HttpResponse::builder()
                                             .header("Content-Type", "image/jpeg")
@@ -4247,7 +4269,7 @@ pub fn run() {
                                         HttpResponse::builder()
                                             .header("Content-Type", "image/jpeg")
                                             .header("Cache-Control", "max-age=3600")
-                                            .body(downscale_grid_thumb(out.jpeg))
+                                            .body(downscale_grid_thumb(out.jpeg, size))
                                             .unwrap()
                                     }
                                     Err(dev_e) => {
@@ -4348,6 +4370,7 @@ pub fn run() {
             frame_info,
             list_engines,
             gpu_available,
+            prefetch_photo,
             list_profiles,
             list_luts,
             luts_dir,
