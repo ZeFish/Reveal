@@ -1,6 +1,6 @@
 <script>
   import EngineRunner from "@modules/develop/EngineRunner.svelte";
-  import Histogram from "@modules/develop/Histogram.svelte";
+  import Scopes from "@modules/develop/Scopes.svelte";
 
   let {
     recipe = $bindable(),
@@ -21,6 +21,7 @@
     onExport = () => {},
     photoPath = null,
     histogram = null,
+    scopes = null,
     // The "frame" zoom's size as a % of the viewport — a plain view setting,
     // not part of the per-photo recipe. >100 lets it outgrow the frame; past
     // that point dragging the photo pans it instead of opening the loupe
@@ -32,7 +33,7 @@
 
 <div class="pane-scroll">
   <div class="sec-body">
-    <Histogram {histogram} />
+    <Scopes {histogram} {scopes} />
     <div class="frow">
       <span class="din frow-label">Photo Size</span>
       <input

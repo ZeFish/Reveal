@@ -22,6 +22,13 @@
     // or detached — see DevelopPanel.svelte's own docblock) always matches
     // what's actually on screen.
     histogram = $bindable(null),
+    // Waveform + vectorscope for the same frame, off the same pixel read as
+    // the histogram. Deliberately NOT relayed to a detached dev panel the
+    // way `histogram` is (+page.svelte's sendDevStateToPanel) — the
+    // histogram is 4×256 numbers, these are ~130k, which is fine as a plain
+    // prop in the docked window's own JS but absurd through a JSON event on
+    // every slider tick. Detached panel keeps the histogram modes only.
+    scopes = $bindable(null),
     status = "",
     inflight = false,
     pendingPx = null,
@@ -396,23 +403,80 @@
     clipCtx.putImageData(out, 0, 0);
   }
 
+  // Waveform/vectorscope buffers, allocated once per view and refilled in
+  // place — a fresh set every render would be ~600 KB of garbage per slider
+  // tick. Instance-level (not module-level) on purpose: the fullscreen
+  // viewer is a second DevelopView, and two of them sharing one buffer
+  // would interleave their pixels into each other's scope.
+  const WF_COLS = 256; // waveform horizontal resolution (one column per bin)
+  const WF_LEVELS = 128; // waveform vertical (value) resolution
+  const VEC_SIZE = 128; // vectorscope is square, in Cb/Cr
+  const wfR = new Uint32Array(WF_COLS * WF_LEVELS);
+  const wfG = new Uint32Array(WF_COLS * WF_LEVELS);
+  const wfB = new Uint32Array(WF_COLS * WF_LEVELS);
+  const wfL = new Uint32Array(WF_COLS * WF_LEVELS);
+  const vec = new Uint32Array(VEC_SIZE * VEC_SIZE);
+
   function updateHistogram() {
     const source = getSourcePixelData();
     if (!source) return;
+    const { width, height } = source;
     const data = source.data.data;
     const r = new Uint32Array(256);
     const g = new Uint32Array(256);
     const b = new Uint32Array(256);
     const luma = new Uint32Array(256);
-    for (let i = 0; i < data.length; i += 4) {
-      if (data[i + 3] < 10) continue;
-      const rv = data[i], gv = data[i + 1], bv = data[i + 2];
-      r[rv]++;
-      g[gv]++;
-      b[bv]++;
-      luma[(0.2126 * rv + 0.7152 * gv + 0.0722 * bv) | 0]++;
+    wfR.fill(0);
+    wfG.fill(0);
+    wfB.fill(0);
+    wfL.fill(0);
+    vec.fill(0);
+
+    // Every pixel feeds the histogram — that's four increments, the cost it
+    // always had. The waveform and vectorscope take every ROW_STRIDE-th row
+    // instead: a waveform is read column by column, so dropping rows costs
+    // nothing legible while keeping this whole pass near its original cost
+    // even at full preview resolution.
+    const ROW_STRIDE = 3;
+    for (let y = 0; y < height; y++) {
+      const sampleRow = y % ROW_STRIDE === 0;
+      let i = y * width * 4;
+      for (let x = 0; x < width; x++, i += 4) {
+        if (data[i + 3] < 10) continue;
+        const rv = data[i], gv = data[i + 1], bv = data[i + 2];
+        r[rv]++;
+        g[gv]++;
+        b[bv]++;
+        const lv = (0.2126 * rv + 0.7152 * gv + 0.0722 * bv) | 0;
+        luma[lv]++;
+
+        if (!sampleRow) continue;
+        const base = (((x * WF_COLS) / width) | 0) * WF_LEVELS;
+        wfR[base + ((rv * WF_LEVELS) >> 8)]++;
+        wfG[base + ((gv * WF_LEVELS) >> 8)]++;
+        wfB[base + ((bv * WF_LEVELS) >> 8)]++;
+        wfL[base + ((lv * WF_LEVELS) >> 8)]++;
+
+        // BT.709 chroma difference, the same axes a broadcast vectorscope
+        // plots: Cb right, Cr up. Both land in -128..127 for 8-bit RGB.
+        const cb = -0.1146 * rv - 0.3854 * gv + 0.5 * bv;
+        const cr = 0.5 * rv - 0.4542 * gv - 0.0458 * bv;
+        const vx = (((cb + 128) * VEC_SIZE) / 256) | 0;
+        const vy = (((128 - cr) * VEC_SIZE) / 256) | 0;
+        vec[vy * VEC_SIZE + vx]++;
+      }
     }
     histogram = { r, g, b, luma };
+    scopes = {
+      cols: WF_COLS,
+      levels: WF_LEVELS,
+      vecSize: VEC_SIZE,
+      r: wfR,
+      g: wfG,
+      b: wfB,
+      luma: wfL,
+      vector: vec,
+    };
   }
 
   // Capture One-style loupe: press on the photo, a circle follows the

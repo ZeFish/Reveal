@@ -620,6 +620,10 @@
   let imgFailed = $state(false); // loupe image couldn't decode/load (NAS drop, junk file…)
   /** @type {{r: Uint32Array, g: Uint32Array, b: Uint32Array, luma: Uint32Array} | null} */
   let histogram = $state(null); // computed by DevelopView off the same pixels it displays
+  // Waveform/parade/vectorscope buffers from that same read. Stays in this
+  // window only — see the `scopes` prop docblock in DevelopView.svelte for
+  // why it isn't in sendDevStateToPanel's payload.
+  let scopes = $state(null);
   let status = $state("");
   /** @type {number | null} */ let renderMs = $state(null);
   /** @type {Profile[]} */ let films = $state([]);
@@ -4566,6 +4570,7 @@
       bind:canvasEl={canvasEl}
       bind:imgFailed={imgFailed}
       bind:histogram
+      bind:scopes
       {status}
       {inflight}
       {pendingPx}
@@ -4801,6 +4806,7 @@
         bind:publishing={devPublishing}
         bind:publishStatus={devPublishStatus}
         {histogram}
+        {scopes}
         bind:photoScale={developPhotoPercent}
         {showClipping}
         toggleClipping={dockedToggleClipping}
