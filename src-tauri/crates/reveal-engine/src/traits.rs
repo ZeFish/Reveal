@@ -55,6 +55,55 @@ pub enum EngineControl {
         label: String,
         channels: Vec<CurveChannel>,
     },
+    /// "Pick a target, then adjust it." One selector row, then one slider per
+    /// `channel` writing whichever field the selected `band` names for it.
+    ///
+    /// The HSL matrix is 8 bands × 3 channels; laid out flat that was 24
+    /// sliders in a column, which no one can aim at (Francis, 2026-09-22:
+    /// "aucunement agréable à utiliser"). Lightroom and RapidRAW both solve
+    /// it the same way — swatches, then three sliders — and the same shape
+    /// serves zone tone (3 zones × 3 channels), so it's declared here once
+    /// rather than special-cased per group label in the frontend.
+    BandMixer {
+        label: String,
+        bands: Vec<MixerBand>,
+        channels: Vec<MixerChannel>,
+    },
+}
+
+/// One selectable target of a `BandMixer`.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct MixerBand {
+    pub label: String,
+    /// CSS colour for the selector swatch. `None` renders a text chip
+    /// instead, which is what a non-colour axis like Shadows/Midtones wants.
+    #[serde(default)]
+    pub swatch: Option<String>,
+    /// The recipe field each channel writes for this band — same length and
+    /// order as the mixer's `channels`.
+    pub fields: Vec<MixerField>,
+}
+
+/// Where one cell of a `BandMixer` (band × channel) stores its value.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct MixerField {
+    pub id: String,
+    /// Element of a `Vec<f32>` recipe field, for fields like `hsl_hue` that
+    /// hold one value per band. `None` means `id` is a plain scalar.
+    #[serde(default)]
+    pub index: Option<usize>,
+}
+
+/// One slider row of a `BandMixer`, shared across every band.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct MixerChannel {
+    pub label: String,
+    pub min: f32,
+    pub max: f32,
+    pub step: f32,
 }
 
 /// One tab of a curve editor: the recipe field it writes and how to draw it.

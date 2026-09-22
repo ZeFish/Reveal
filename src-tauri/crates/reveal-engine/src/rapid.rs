@@ -11,7 +11,9 @@ use spektrafilm_math::image::ImageBuf;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::traits::{ControlGroup, CurveChannel, EngineControl, RenderEngine};
+use crate::traits::{
+    ControlGroup, CurveChannel, EngineControl, MixerBand, MixerChannel, MixerField, RenderEngine,
+};
 use crate::{Cube, LutLayer, Recipe};
 
 pub struct RapidEngine;
@@ -320,81 +322,77 @@ const HUE_BAND_LABELS: [&str; 8] = [
     "Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple", "Magenta",
 ];
 
-/// Builds the 24 `IndexedSlider` controls (hue/sat/lum × 8 bands) for the
-/// HSL matrix group, each bound to one element of `hsl_hue`/`hsl_sat`/`hsl_lum`.
+/// Swatch colour for each hue band's selector chip. These are the band's own
+/// hue at a legible lightness — they're a target, not a sample of the photo.
+const HUE_BAND_SWATCHES: [&str; 8] = [
+    "#f87171", "#fb923c", "#facc15", "#4ade80", "#2dd4bf", "#60a5fa", "#a78bfa", "#f472b6",
+];
+
+/// The HSL matrix as one band mixer: pick a hue band, adjust its three
+/// channels. Each band indexes the same position in `hsl_hue`/`hsl_sat`/
+/// `hsl_lum`, so the 24 values behind it are unchanged — only the way you
+/// reach them is.
 fn hsl_band_controls() -> Vec<EngineControl> {
-    let mut controls = Vec::with_capacity(24);
-    for (i, name) in HUE_BAND_LABELS.iter().enumerate() {
-        controls.push(EngineControl::IndexedSlider {
-            id: "hsl_hue".to_string(),
-            index: i,
-            label: format!("{name} Hue"),
-            min: -45.0,
-            max: 45.0,
-            step: 1.0,
-        });
-        controls.push(EngineControl::IndexedSlider {
-            id: "hsl_sat".to_string(),
-            index: i,
-            label: format!("{name} Sat."),
-            min: -100.0,
-            max: 100.0,
-            step: 1.0,
-        });
-        controls.push(EngineControl::IndexedSlider {
-            id: "hsl_lum".to_string(),
-            index: i,
-            label: format!("{name} Lum."),
-            min: -100.0,
-            max: 100.0,
-            step: 1.0,
-        });
-    }
-    controls
+    let bands = HUE_BAND_LABELS
+        .iter()
+        .enumerate()
+        .map(|(i, name)| MixerBand {
+            label: (*name).to_string(),
+            swatch: Some(HUE_BAND_SWATCHES[i].to_string()),
+            fields: vec![
+                MixerField { id: "hsl_hue".to_string(), index: Some(i) },
+                MixerField { id: "hsl_sat".to_string(), index: Some(i) },
+                MixerField { id: "hsl_lum".to_string(), index: Some(i) },
+            ],
+        })
+        .collect();
+
+    vec![EngineControl::BandMixer {
+        label: "Color Mixer".to_string(),
+        bands,
+        channels: vec![
+            MixerChannel { label: "Hue".to_string(), min: -45.0, max: 45.0, step: 1.0 },
+            MixerChannel { label: "Saturation".to_string(), min: -100.0, max: 100.0, step: 1.0 },
+            MixerChannel { label: "Luminance".to_string(), min: -100.0, max: 100.0, step: 1.0 },
+        ],
+    }]
 }
 
-/// Builds the 9 "Zone Tone Shaping" sliders (Exposure/Contrast/Saturation ×
-/// Shadows/Midtones/Highlights), each a plain scalar `Recipe` field — unlike
-/// the HSL bands above these aren't `Vec<f32>`-indexed, so plain `Slider`
-/// controls are used. Zone-name prefixes match the labels already used in
-/// the "Tones" group ("Shadows"/"Midtones"/"Highlights") on purpose, so it
-/// reads as the same zone vocabulary — the group title ("Local Tone") is
-/// what distinguishes this from that unrelated tone-recovery
-/// group.
+/// Zone tone shaping (Exposure/Contrast/Saturation × Shadows/Midtones/
+/// Highlights) as the same band mixer as the colour bands above: pick a zone,
+/// adjust its three channels. Nine sliders in a 3×3 grid of cramped tracks
+/// was no more aimable than the flat column it replaced; one interaction for
+/// both sections is also one thing to learn. The zone names match the
+/// unrelated tone-recovery group's labels on purpose — same vocabulary — and
+/// the group title ("Local Tone") is what tells them apart.
 fn zone_tone_controls() -> Vec<EngineControl> {
     const ZONES: [(&str, &str); 3] = [
         ("zone_shadows", "Shadows"),
         ("zone_midtones", "Midtones"),
         ("zone_highlights", "Highlights"),
     ];
-    let mut controls = Vec::with_capacity(9);
-    for (id_prefix, label_prefix) in ZONES {
-        controls.push(EngineControl::Slider {
-            id: format!("{id_prefix}_exposure"),
-            label: format!("{label_prefix} Exposure"),
-            min: -2.0,
-            max: 2.0,
-            step: 0.05,
-            preset: false,
-        });
-        controls.push(EngineControl::Slider {
-            id: format!("{id_prefix}_contrast"),
-            label: format!("{label_prefix} Contrast"),
-            min: -50.0,
-            max: 50.0,
-            step: 0.5,
-            preset: false,
-        });
-        controls.push(EngineControl::Slider {
-            id: format!("{id_prefix}_saturation"),
-            label: format!("{label_prefix} Saturation"),
-            min: -100.0,
-            max: 100.0,
-            step: 1.0,
-            preset: false,
-        });
-    }
-    controls
+    let bands = ZONES
+        .iter()
+        .map(|(id_prefix, label)| MixerBand {
+            label: (*label).to_string(),
+            swatch: None,
+            fields: vec![
+                MixerField { id: format!("{id_prefix}_exposure"), index: None },
+                MixerField { id: format!("{id_prefix}_contrast"), index: None },
+                MixerField { id: format!("{id_prefix}_saturation"), index: None },
+            ],
+        })
+        .collect();
+
+    vec![EngineControl::BandMixer {
+        label: "Zone".to_string(),
+        bands,
+        channels: vec![
+            MixerChannel { label: "Exposure".to_string(), min: -2.0, max: 2.0, step: 0.05 },
+            MixerChannel { label: "Contrast".to_string(), min: -50.0, max: 50.0, step: 0.5 },
+            MixerChannel { label: "Saturation".to_string(), min: -100.0, max: 100.0, step: 1.0 },
+        ],
+    }]
 }
 
 /// ProPhoto RGB (D50) -> Rec.709 / linear sRGB (D65). This is the exact
@@ -1774,6 +1772,53 @@ fn load_lut_stack(lut_layers: &[LutLayer], luts_dir: &Path) -> Vec<(Arc<Cube>, f
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every field a band mixer names must actually exist on `Recipe`, and
+    /// indexed ones must be in range. The frontend writes these ids into a
+    /// plain JSON object, so a typo in the `format!` that builds them would
+    /// not fail anywhere — it would quietly create a field nothing reads,
+    /// and the slider would just do nothing.
+    #[test]
+    fn band_mixer_fields_all_exist_on_the_recipe() {
+        let recipe = serde_json::to_value(Recipe::default()).expect("Recipe serializes");
+        let obj = recipe.as_object().expect("Recipe is a JSON object");
+
+        let mut checked = 0;
+        for group in RapidEngine.control_groups() {
+            for control in group.controls {
+                let EngineControl::BandMixer { label, bands, channels } = control else {
+                    continue;
+                };
+                for band in &bands {
+                    assert_eq!(
+                        band.fields.len(),
+                        channels.len(),
+                        "{label}/{}: one field per channel",
+                        band.label
+                    );
+                    for field in &band.fields {
+                        let value = obj.get(&field.id).unwrap_or_else(|| {
+                            panic!("{label}/{}: no Recipe field `{}`", band.label, field.id)
+                        });
+                        if let Some(i) = field.index {
+                            let arr = value.as_array().unwrap_or_else(|| {
+                                panic!("`{}` is indexed but not an array", field.id)
+                            });
+                            assert!(
+                                i < arr.len(),
+                                "`{}`[{i}] is past the end of a {}-long field",
+                                field.id,
+                                arr.len()
+                            );
+                        }
+                        checked += 1;
+                    }
+                }
+            }
+        }
+        // 8 hue bands × 3 + 3 zones × 3.
+        assert_eq!(checked, 33, "both mixers should have been reached");
+    }
 
     #[test]
     fn test_rapid_exposure_rendering() {

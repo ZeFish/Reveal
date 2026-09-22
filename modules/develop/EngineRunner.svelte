@@ -117,19 +117,32 @@
     return false;
   }
 
-  // "Local Tone" is 9 sliders (3 zones × 3 params) rendered as one flat
-  // list of "SHADOWS EXPOSURE", "SHADOWS CONTRAST", ... rows — labels long
-  // enough to overflow the 106px label column and run straight through the
-  // slider track next to them (Francis: the labels "look struck-through").
-  // A zone-columns × param-rows grid (the layout DaVinci/Lightroom use for
-  // this exact control shape) fixes both the readability and the overflow:
-  // labels shrink to just "EXPOSURE"/"CONTRAST"/"SATURATION" once the zone
-  // is a column header instead of half the label text.
-  const ZONE_COLS = ["shadows", "midtones", "highlights"];
-  const ZONE_ROWS = ["exposure", "contrast", "saturation"];
-  /** @param {any} group @param {string} zone @param {string} param */
-  function zoneControl(group, zone, param) {
-    return group.controls.find((/** @type {any} */ c) => c.id === `zone_${zone}_${param}`);
+  // Which band each band_mixer control currently shows, keyed by its label.
+  // Not persisted: which colour you were last on is a property of the photo
+  // you were working on, not a setting.
+  /** @type {Record<string, number>} */
+  let activeBand = $state({});
+
+  /** @param {any} field */
+  function readField(field) {
+    const v = field.index == null ? recipe[field.id] : recipe[field.id]?.[field.index];
+    return Number(v ?? 0);
+  }
+
+  /** @param {any} field @param {number} value */
+  function writeField(field, value) {
+    if (field.index == null) {
+      recipe[field.id] = value;
+      return;
+    }
+    if (!Array.isArray(recipe[field.id])) recipe[field.id] = [];
+    recipe[field.id][field.index] = value;
+  }
+
+  /** Does this band hold any non-default value? Drives the "touched" dot, so
+   * edits on an unselected band stay findable. @param {any} b */
+  function bandTouched(b) {
+    return b.fields.some((/** @type {any} */ f) => Math.abs(readField(f)) > 1e-6);
   }
 
   /**
@@ -203,47 +216,6 @@
       {/if}
 
       {#if !group.label || !collapsedGroups.has(group.label)}
-        {#if group.label === "Local Tone"}
-          <div class="zone-grid">
-            <div class="zone-grid-row zone-grid-header">
-              <span class="zone-grid-corner"></span>
-              {#each ZONE_COLS as zone}
-                <span class="zone-grid-col-label">{zone}</span>
-              {/each}
-            </div>
-            {#each ZONE_ROWS as param}
-              <div class="zone-grid-row">
-                <span class="zone-grid-row-label">{param}</span>
-                {#each ZONE_COLS as zone}
-                  {@const control = zoneControl(group, zone, param)}
-                  {#if control}
-                    <div class="zone-grid-cell">
-                      <input
-                        type="range"
-                        aria-label={`${zone} ${param}`}
-                        min={control.min}
-                        max={control.max}
-                        step={control.step}
-                        value={recipe[control.id]}
-                        style="--f: {pct(recipe[control.id], control.min, control.max)}"
-                        oninput={(e) => {
-                          recipe[control.id] = parseFloat(e.currentTarget.value);
-                          edited(true);
-                        }}
-                        onchange={(e) => {
-                          recipe[control.id] = parseFloat(e.currentTarget.value);
-                          edited(false);
-                        }}
-                        ondblclick={() => resetControl(control.id)}
-                      />
-                      <span class="zone-grid-val mono">{formatVal(control.id, recipe[control.id])}</span>
-                    </div>
-                  {/if}
-                {/each}
-              </div>
-            {/each}
-          </div>
-        {:else}
         <div class="group-controls">
           {#each group.controls as control}
             {#if control.kind === "toggle"}
@@ -365,6 +337,65 @@
                 </select>
               </div>
 
+            {:else if control.kind === "band_mixer"}
+              {@const sel = Math.min(activeBand[control.label] ?? 0, control.bands.length - 1)}
+              {@const band = control.bands[sel]}
+              <div class="bands" role="radiogroup" aria-label={control.label}>
+                {#each control.bands as b, i}
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={i === sel}
+                    aria-label={b.label}
+                    title={b.label}
+                    class="band"
+                    class:swatch={!!b.swatch}
+                    class:active={i === sel}
+                    class:touched={bandTouched(b)}
+                    style={b.swatch ? `--swatch: ${b.swatch};` : ""}
+                    onclick={() => (activeBand = { ...activeBand, [control.label]: i })}
+                  >{#if !b.swatch}{b.label}{/if}</button>
+                {/each}
+              </div>
+              {#if band}
+                {#each control.channels as ch, ci}
+                  {@const field = band.fields[ci]}
+                  {#if field}
+                    <div class="frow">
+                      <button
+                        type="button"
+                        class="din frow-label reset-label"
+                        aria-label={`Reset ${band.label} ${ch.label} to default`}
+                        title={`${band.label} ${ch.label} — double-click or press Enter/Space to reset`}
+                        onclick={(event) => {
+                          if (event.detail === 0) resetControl(field.id, field.index ?? undefined);
+                        }}
+                        ondblclick={() => resetControl(field.id, field.index ?? undefined)}
+                      >{ch.label}</button>
+                      <input
+                        type="range"
+                        aria-label={`${band.label} ${ch.label}`}
+                        min={ch.min}
+                        max={ch.max}
+                        step={ch.step}
+                        value={readField(field)}
+                        style="--f: {pct(readField(field), ch.min, ch.max)}"
+                        oninput={(e) => {
+                          writeField(field, parseFloat(e.currentTarget.value));
+                          edited(true);
+                        }}
+                        onchange={(e) => {
+                          writeField(field, parseFloat(e.currentTarget.value));
+                          edited(false);
+                        }}
+                        ondblclick={() => resetControl(field.id, field.index ?? undefined)}
+                      />
+                      <span class="val mono">{formatVal(field.id, readField(field))}</span>
+                    </div>
+                  {/if}
+                {/each}
+              {/if}
+
             {:else if control.kind === "curve"}
               <CurveEditor {control} bind:recipe {edited} />
 
@@ -427,7 +458,6 @@
             {/if}
           {/each}
         </div>
-        {/if}
       {/if}
     {/each}
   </div>
@@ -491,56 +521,79 @@
     gap: 1.5px;
   }
 
-  /* Zone tone grid — zones as columns, params as rows, replacing 9 stacked
-     "SHADOWS EXPOSURE"/"SHADOWS CONTRAST"/... rows whose labels overflowed
-     the shared label column and ran through the slider track next to them. */
-  .zone-grid {
+  /* Band mixer selector — the row of targets above a mixer's channel
+     sliders. Both the 24-slider HSL matrix and the 9-slider zone grid put
+     every cell on screen at once and gave each a sliver of width: readable,
+     but not aimable. One band's channels at full width is the trade
+     Lightroom and RapidRAW both make. */
+  .bands {
     display: flex;
-    flex-direction: column;
-    gap: 6px;
-    padding: 2px 0 4px;
-  }
-  .zone-grid-row {
-    display: grid;
-    grid-template-columns: 56px repeat(3, 1fr);
     align-items: center;
-    gap: 6px;
+    justify-content: space-between;
+    gap: 4px;
+    padding: 4px 2px 7px;
   }
-  .zone-grid-header {
-    margin-bottom: 2px;
-  }
-  .zone-grid-corner {
-    width: 56px;
-  }
-  .zone-grid-col-label {
+  .band {
+    all: unset;
+    position: relative;
+    box-sizing: border-box;
+    cursor: pointer;
+    text-align: center;
     font-family: var(--font-header, sans-serif);
     font-size: 9px;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    text-align: center;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-  }
-  .zone-grid-row-label {
-    font-family: var(--font-header, sans-serif);
-    font-size: 9.5px;
     font-weight: 500;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    color: color-mix(in srgb, var(--color-foreground) 60%, transparent);
+    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
+    transition:
+      transform 140ms cubic-bezier(0.34, 1.56, 0.64, 1),
+      color var(--duration-fast) ease,
+      background var(--duration-fast) ease;
   }
-  .zone-grid-cell {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
+  /* Colour bands ARE their swatch; an axis with no colour of its own
+     (Shadows/Midtones/Highlights) stays a text chip rather than being
+     assigned an arbitrary one. */
+  .band.swatch {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--swatch);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
   }
-  .zone-grid-cell input[type="range"] {
-    width: 100%;
+  .band:not(.swatch) {
+    flex: 1;
+    padding: 4px 6px;
+    border-radius: var(--radius-sm, 6px);
+    background: color-mix(in srgb, var(--color-foreground) 6%, transparent);
   }
-  .zone-grid-val {
-    font-size: 8.5px;
-    color: color-mix(in srgb, var(--color-foreground) 50%, transparent);
+  .band:not(.swatch).active {
+    color: var(--color-foreground);
+    background: color-mix(in srgb, var(--color-foreground) 16%, transparent);
+  }
+  .band.swatch.active {
+    transform: scale(1.15);
+    box-shadow:
+      0 0 0 2px var(--color-surface-high),
+      0 0 0 3.5px var(--color-foreground);
+  }
+  .band:hover:not(.active) {
+    transform: scale(1.06);
+    color: var(--color-foreground);
+  }
+  /* Without this, an edit on an unselected band is invisible. */
+  .band.touched::after {
+    content: "";
+    position: absolute;
+    top: -1px;
+    right: -1px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--color-accent);
+  }
+  .band:not(.swatch).touched::after {
+    top: 2px;
+    right: 2px;
   }
 
   /* Form Rows */

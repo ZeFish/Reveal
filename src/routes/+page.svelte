@@ -5540,7 +5540,11 @@
      supplies the rounding), so docking it inline needs this wrapper to
      match rather than sitting flush against the window edge. */
   .docked-panel-frame {
-    height: 100%;
+    /* No `height: 100%` here. As a grid item it already stretches to the
+       row, and that stretch subtracts these margins; `height: 100%` would
+       resolve against the full track and then ADD them, pushing the panel
+       16px past the bottom of the window (Francis, 2026-09-22: "il descend
+       plus bas que l'app"). */
     margin: 8px;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
