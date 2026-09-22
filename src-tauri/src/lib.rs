@@ -4552,7 +4552,7 @@ pub fn run() {
                     ) {
                         if let Ok(bytes) = std::fs::read(&local) {
                             eprintln!(
-                                "thumb: {} (local cache, {} ko, offline-safe)",
+                                "thumb: {} (local cache, {} ko)",
                                 path.rsplit('/').next().unwrap_or(&path),
                                 bytes.len() / 1024
                             );
@@ -4583,11 +4583,18 @@ pub fn run() {
                         )
                         .and_then(|p| std::fs::read(p).ok());
                         let response = match local {
-                            Some(bytes) => HttpResponse::builder()
-                                .header("Content-Type", "image/jpeg")
-                                .header("Cache-Control", "max-age=3600")
-                                .body(bytes)
-                                .unwrap(),
+                            Some(bytes) => {
+                                eprintln!(
+                                    "thumb: {} (offline — newest local copy, {} ko)",
+                                    path.rsplit('/').next().unwrap_or(&path),
+                                    bytes.len() / 1024
+                                );
+                                HttpResponse::builder()
+                                    .header("Content-Type", "image/jpeg")
+                                    .header("Cache-Control", "max-age=3600")
+                                    .body(bytes)
+                                    .unwrap()
+                            }
                             None => HttpResponse::builder().status(404).body(Vec::new()).unwrap(),
                         };
                         responder.respond(response);

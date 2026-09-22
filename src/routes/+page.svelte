@@ -187,7 +187,24 @@
   }
 
   /** @type {"cull" | "dev"} */
-  let currentMode = $state("cull");
+  // Restored from the last session rather than hardcoded to the grid.
+  //
+  // Starting in "cull" always mounted the grid, which fires a thumb request
+  // per visible cell — ~120 of them — and only THEN did the session restore
+  // switch to Develop. On a NAS that is a hundred reads nobody asked for,
+  // competing for bandwidth with the one photo being opened. If the last
+  // session was in Develop, the grid never mounts at all. If the restore
+  // finds no photo to reopen, `openDir` falls back to the grid anyway.
+  // Validated, not cast: localStorage is arbitrary text, and an unknown mode
+  // would mount neither surface and leave an empty window with no way out.
+  let currentMode = $state(
+    /** @type {"dev" | "cull"} */ (
+      (typeof localStorage !== "undefined" &&
+        ["dev", "cull"].includes(localStorage.getItem("reveal.currentMode") ?? "")
+        ? localStorage.getItem("reveal.currentMode")
+        : "cull") ?? "cull"
+    )
+  );
   // Editorial is a display filter on the grid, not a destination — flipping it
   // never changes `currentMode`. On, the grid's WYSIWYG rendering (StoryView)
   // replaces the dense grid: same photos, same interactions, laid out and

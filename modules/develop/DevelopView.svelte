@@ -681,7 +681,16 @@
       onload={handleLoad}
     />
   {:else}
-    <p class="status">{status}</p>
+    <!-- Nothing to show yet: no photo chosen, or the folder is still being
+         read. Not a splash screen — a splash is a step you wait through, and
+         once the parked frame and the priority request do their work there is
+         usually nothing to wait for. This is simply what a window with no
+         photo in it says, and it disappears the instant there is one. -->
+    <div class="empty-stage">
+      <Icon name="aperture" size="40px" />
+      <span class="empty-name">Reveal</span>
+      {#if status}<span class="empty-status">{status}</span>{/if}
+    </div>
   {/if}
 
   {#if showClipping && !imgFailed}
@@ -1143,6 +1152,25 @@
     }
   }
 
+  .empty-stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    color: color-mix(in srgb, var(--color-foreground) 28%, transparent);
+    user-select: none;
+  }
+  .empty-name {
+    font-family: var(--font-header, sans-serif);
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+  }
+  .empty-status {
+    font-family: var(--font-monospace, monospace);
+    font-size: 10px;
+    opacity: 0.8;
+  }
   .status {
     color: var(--color-muted);
     font-size: 0.8rem;
