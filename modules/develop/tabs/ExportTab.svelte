@@ -32,13 +32,30 @@
     if (appPath) onOpenInEditor(appPath);
   }
 
+  // Whether the published note lets a Garden visitor download the full-res
+  // JPEG — a per-publish choice (some photos are meant to be looked at, not
+  // taken), so it lives here as a plain toggle rather than a persisted
+  // develop setting like exportEdge/exportBorder above.
+  const ALLOW_DOWNLOAD_KEY = "reveal.publish.allowDownload";
+  let allowDownload = $state(
+    typeof localStorage !== "undefined" && localStorage.getItem(ALLOW_DOWNLOAD_KEY) === "true"
+  );
+  function toggleAllowDownload() {
+    allowDownload = !allowDownload;
+    try { localStorage.setItem(ALLOW_DOWNLOAD_KEY, String(allowDownload)); } catch (_) {}
+  }
+
   async function publishPhoto() {
     if (!photoPath || publishing || !isTauri) return;
     publishing = true;
     publishStatus = "";
     try {
-      const live = await invoke("publish_photo", { path: photoPath });
+      const live = await invoke("publish_photo", { path: photoPath, allowDownload });
       publishStatus = live;
+      // Hand the finished page straight back: clipboard has the link ready
+      // to paste, and the browser tab is already open on it.
+      try { await navigator.clipboard.writeText(live); } catch (_) {}
+      invoke("open_path", { path: live }).catch(() => {});
     } catch (e) {
       publishStatus = `Error: ${e}`;
     } finally {
@@ -104,6 +121,17 @@
     </div>
     <button class="secondary panel-btn" onclick={() => onExport()} disabled={!photoPath}>Export</button>
     <button class="outline panel-btn" onclick={() => onExportDaily()} disabled={!photoPath}>Note du jour (Obsidian)</button>
+    <div class="frow">
+      <span class="din frow-label">Allow download</span>
+      <span class="spacer"></span>
+      <input
+        type="checkbox"
+        role="switch"
+        aria-label="Allow download"
+        checked={allowDownload}
+        onchange={toggleAllowDownload}
+      />
+    </div>
     <button class="secondary panel-btn" onclick={publishPhoto} disabled={!photoPath || publishing}>
       {publishing ? "Publishing…" : "Publish (Garden)"}
     </button>

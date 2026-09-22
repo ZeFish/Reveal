@@ -2707,6 +2707,7 @@ async fn publish_photo(
     app: tauri::AppHandle,
     state: tauri::State<'_, EngineState>,
     path: String,
+    allow_download: bool,
 ) -> Result<String, String> {
     let engine = state.0.clone();
     let client = garden_client(&app)?;
@@ -2749,7 +2750,7 @@ async fn publish_photo(
         let caption = sidecar.and_then(|s| s.description).unwrap_or_default();
         let now = chrono::Utc::now().to_rfc3339();
         let content = format!(
-            "---\npublish: true\ntype: gallery\ntheme: gallery\ntags:\n  - gallery\n  - photo\ncreated: {now}\nmodified: {now}\n---\n\n![]({url})\n\n{caption}\n"
+            "---\npublish: true\ntype: gallery\ntheme: gallery\ndownload: {allow_download}\ntags:\n  - gallery\n  - photo\ncreated: {now}\nmodified: {now}\n---\n\n![]({url})\n\n{caption}\n"
         );
         client
             .put_note(&slug, &stem, &content)

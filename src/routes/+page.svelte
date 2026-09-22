@@ -2946,6 +2946,15 @@
     }
   }
 
+  // obsidian:// is the reliable way to land on a SPECIFIC note — `open
+  // <path>` would just hand the .md file to whatever app owns that
+  // extension, which isn't necessarily Obsidian, and wouldn't target the
+  // right vault if more than one is registered for it.
+  /** @param {string} notePath */
+  function openInObsidian(notePath) {
+    invoke("open_path", { path: `obsidian://open?path=${encodeURIComponent(notePath)}` }).catch(() => {});
+  }
+
   // Develop photo(s) and append to the Obsidian daily note (Logs/yymmdd.md).
   // Filesystem export into the vault attachments folder + daily note append.
   /** @param {string} [targetPath] @param {Recipe | null} [customRecipe] */
@@ -2967,6 +2976,7 @@
       appMessage = `Dans le journal → ${noteName} (${filename}) ✓`;
       setTimeout(() => (appMessage = ""), 4000);
       setTimeout(() => (status = ""), 3000);
+      openInObsidian(notePath);
     } catch (e) {
       status = `Journal failed: ${e}`;
       appMessage = `Journal export failed: ${e}`;
@@ -3000,6 +3010,7 @@
       setTimeout(() => (appMessage = ""), 4000);
       setTimeout(() => (status = ""), 3000);
       updateActivity(jobId, { done: targets.length, current: noteName, phase: "Complete", status: "completed" });
+      openInObsidian(notePath);
     } catch (e) {
       status = `Journal failed: ${e}`;
       appMessage = `Journal export failed: ${e}`;
