@@ -545,6 +545,17 @@ fn apply_local_contrast_masked(
     if amount == 0.0 || mask < 0.001 {
         return (r, g, b);
     }
+    // Every caller's slider (zone_*_contrast at -50..50, clarity at
+    // -40..60, structure at -30..50 — all percent-like, matching this
+    // group's saturation sliders) hands `amount` in here raw, but both
+    // branches below treat it as a small fraction: the positive branch
+    // feeds it straight into a base-2 EXPONENT (2^(log_ratio * amount)),
+    // and the negative branch uses it as a 0..1 blend weight. Fed a raw
+    // value in the tens, a single slider step already blew past what
+    // either branch was designed for — reported live as "way too much"
+    // from just one step off zero on zone contrast. /100 brings the full
+    // slider range down to the -0.5..0.5-ish span both formulas expect.
+    let amount = amount * 0.01;
 
     if amount < 0.0 {
         let blur_amount = -amount * mask;
@@ -1756,17 +1767,51 @@ mod tests {
     /// that and honor an externally-supplied full-strength mask instead.
     #[test]
     fn test_apply_local_contrast_masked_reaches_highlights() {
-        let (r, _, _) = apply_local_contrast_masked(0.95, 0.95, 0.95, 0.5, 1.0, 1.0);
+        // amount is on the same raw scale the sliders hand in (percent-like,
+        // tens not fractions) — apply_local_contrast_masked divides by 100
+        // internally, so 50.0 here is "most of the way up the slider", not
+        // an arbitrary unit-scale value.
+        let (r, _, _) = apply_local_contrast_masked(0.95, 0.95, 0.95, 0.5, 50.0, 1.0);
         assert!(
             (r - 0.95).abs() > 0.01,
             "full-mask contrast boost should visibly move a near-white pixel, got r={r}"
         );
 
-        let (r_old, _, _) = apply_local_contrast(0.95, 0.95, 0.95, 0.5, 1.0);
+        let (r_old, _, _) = apply_local_contrast(0.95, 0.95, 0.95, 0.5, 50.0);
         assert!(
             (r_old - 0.95).abs() < (r - 0.95).abs(),
             "apply_local_contrast's internal highlight protection should suppress \
              the effect much more than the explicit full mask does"
+        );
+    }
+
+    /// A single slider step (0.5, on the zone_*_contrast/clarity/structure
+    /// -50..50-ish scale) used to blow straight through both branches of
+    /// apply_local_contrast_masked — reported live as "way too much" from
+    /// just one step off zero. Locks in that one step now reads as subtle,
+    /// and a full-strength push (50.0) still lands in a sane, non-blown-out
+    /// range for both the boost and the flatten direction.
+    #[test]
+    fn test_local_contrast_slider_scale_is_usable() {
+        let (r, g, b) = (0.8f32, 0.8f32, 0.8f32);
+        let t_blurred = 0.4f32; // strong local luma difference to act on
+
+        let (r1, _, _) = apply_local_contrast_masked(r, g, b, t_blurred, 0.5, 1.0);
+        assert!(
+            (r1 - r).abs() < 0.02,
+            "one slider step should be a subtle nudge, not a dramatic shift, got r={r1}"
+        );
+
+        let (r_boost, _, _) = apply_local_contrast_masked(r, g, b, t_blurred, 50.0, 1.0);
+        assert!(
+            r_boost.is_finite() && r_boost < 4.0,
+            "full-strength positive contrast shouldn't blow up into an extreme multiplier, got r={r_boost}"
+        );
+
+        let (r_flat, _, _) = apply_local_contrast_masked(r, g, b, t_blurred, -50.0, 1.0);
+        assert!(
+            (0.0..=1.0).contains(&r_flat),
+            "full-strength negative contrast (flattening toward the blurred luma) should stay in range, got r={r_flat}"
         );
     }
 

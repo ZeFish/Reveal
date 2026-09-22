@@ -116,6 +116,21 @@
     return false;
   }
 
+  // "Local Tone" is 9 sliders (3 zones × 3 params) rendered as one flat
+  // list of "SHADOWS EXPOSURE", "SHADOWS CONTRAST", ... rows — labels long
+  // enough to overflow the 106px label column and run straight through the
+  // slider track next to them (Francis: the labels "look struck-through").
+  // A zone-columns × param-rows grid (the layout DaVinci/Lightroom use for
+  // this exact control shape) fixes both the readability and the overflow:
+  // labels shrink to just "EXPOSURE"/"CONTRAST"/"SATURATION" once the zone
+  // is a column header instead of half the label text.
+  const ZONE_COLS = ["shadows", "midtones", "highlights"];
+  const ZONE_ROWS = ["exposure", "contrast", "saturation"];
+  /** @param {any} group @param {string} zone @param {string} param */
+  function zoneControl(group, zone, param) {
+    return group.controls.find((/** @type {any} */ c) => c.id === `zone_${zone}_${param}`);
+  }
+
   /**
    * @param {string} id
    * @param {number | undefined | null} v
@@ -187,6 +202,47 @@
       {/if}
 
       {#if !group.label || !collapsedGroups.has(group.label)}
+        {#if group.label === "Local Tone"}
+          <div class="zone-grid">
+            <div class="zone-grid-row zone-grid-header">
+              <span class="zone-grid-corner"></span>
+              {#each ZONE_COLS as zone}
+                <span class="zone-grid-col-label">{zone}</span>
+              {/each}
+            </div>
+            {#each ZONE_ROWS as param}
+              <div class="zone-grid-row">
+                <span class="zone-grid-row-label">{param}</span>
+                {#each ZONE_COLS as zone}
+                  {@const control = zoneControl(group, zone, param)}
+                  {#if control}
+                    <div class="zone-grid-cell">
+                      <input
+                        type="range"
+                        aria-label={`${zone} ${param}`}
+                        min={control.min}
+                        max={control.max}
+                        step={control.step}
+                        value={recipe[control.id]}
+                        style="--f: {pct(recipe[control.id], control.min, control.max)}"
+                        oninput={(e) => {
+                          recipe[control.id] = parseFloat(e.currentTarget.value);
+                          edited(true);
+                        }}
+                        onchange={(e) => {
+                          recipe[control.id] = parseFloat(e.currentTarget.value);
+                          edited(false);
+                        }}
+                        ondblclick={() => resetControl(control.id)}
+                      />
+                      <span class="zone-grid-val mono">{formatVal(control.id, recipe[control.id])}</span>
+                    </div>
+                  {/if}
+                {/each}
+              </div>
+            {/each}
+          </div>
+        {:else}
         <div class="group-controls">
           {#each group.controls as control}
             {#if control.kind === "toggle"}
@@ -367,6 +423,7 @@
             {/if}
           {/each}
         </div>
+        {/if}
       {/if}
     {/each}
   </div>
@@ -428,6 +485,58 @@
     display: flex;
     flex-direction: column;
     gap: 1.5px;
+  }
+
+  /* Zone tone grid — zones as columns, params as rows, replacing 9 stacked
+     "SHADOWS EXPOSURE"/"SHADOWS CONTRAST"/... rows whose labels overflowed
+     the shared label column and ran through the slider track next to them. */
+  .zone-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 2px 0 4px;
+  }
+  .zone-grid-row {
+    display: grid;
+    grid-template-columns: 56px repeat(3, 1fr);
+    align-items: center;
+    gap: 6px;
+  }
+  .zone-grid-header {
+    margin-bottom: 2px;
+  }
+  .zone-grid-corner {
+    width: 56px;
+  }
+  .zone-grid-col-label {
+    font-family: var(--font-header, sans-serif);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-align: center;
+    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
+  }
+  .zone-grid-row-label {
+    font-family: var(--font-header, sans-serif);
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--color-foreground) 60%, transparent);
+  }
+  .zone-grid-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+  .zone-grid-cell input[type="range"] {
+    width: 100%;
+  }
+  .zone-grid-val {
+    font-size: 8.5px;
+    color: color-mix(in srgb, var(--color-foreground) 50%, transparent);
   }
 
   /* Form Rows */
