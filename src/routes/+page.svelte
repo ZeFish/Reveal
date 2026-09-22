@@ -28,8 +28,8 @@
   import Alert from "@stnd/ui/Alert.svelte";
   import { AppController } from "$lib/controllers/AppController.js";
   import { extractGardenUrl } from "$lib/story.js";
-  import { storyTheme, colorScheme, updateStoryTheme, contrastInk, getFontFamilyWithFallback, currentThemeFontPackages } from "$lib/story-theme.svelte.js";
-  import { loadFontPackages } from "$lib/app-theme.js";
+  import { storyTheme, colorScheme, updateStoryTheme, contrastInk, getFontFamilyWithFallback, currentThemeFontPackages, currentThemeId } from "$lib/story-theme.svelte.js";
+  import { loadFontPackages, measureThemeTokens } from "$lib/app-theme.js";
 
   // ---- shared shapes (plain-JS JSDoc typing — no runtime effect) ----------
   /** A catalogue frame row, as returned by `index_frames` / `list_dir`. */
@@ -499,6 +499,31 @@
   // story_set_theme already writes font-ratio into the note's frontmatter,
   // which Garden's own site DOES render typography from.
   let appFontRatio = $derived(storyTheme.fontRatio ?? undefined);
+
+  // Extends the same "app-wide mood" mechanism above (colors, fonts) to a
+  // themed folder's actual shape — its curated theme's real CSS
+  // (packages/themes/<id>/<id>.scss) also carries radius, derived the same
+  // way colors are, which garden-themes.generated.json never modeled.
+  // Reported live after this SAME fix already landed for the Editorial
+  // preview: "back in grid and we lose it" — the grid never got it because
+  // that fix only touched StoryView. measureThemeTokens (app-theme.js)
+  // resolves it off a real, offscreen element carrying the theme's
+  // data-theme attribute (this framework's own radius/color derivation
+  // only resolves at :root by design, not at a nested scope) — see its own
+  // comment for why reconfiguring that package-wide isn't the fix here.
+  let appThemeId = $derived(currentThemeId());
+  /** @type {Record<string, string>} */
+  let appMeasuredRadius = $state({});
+  $effect(() => {
+    const id = appThemeId;
+    if (!id) {
+      appMeasuredRadius = {};
+      return;
+    }
+    measureThemeTokens(id, ["--radius", "--radius-sm", "--radius-lg"]).then((tokens) => {
+      if (appThemeId === id) appMeasuredRadius = tokens;
+    });
+  });
 
   let minRating = $state(0);
   let scanning = $state(false);
@@ -4000,6 +4025,9 @@
     style:--font-header={appFontHeader}
     style:--font-text={appFontText}
     style:--font-ratio={appFontRatio}
+    style:--radius={appMeasuredRadius["--radius"]}
+    style:--radius-sm={appMeasuredRadius["--radius-sm"]}
+    style:--radius-lg={appMeasuredRadius["--radius-lg"]}
   >
     <div class="body">
       {#if sidebarVisible}
@@ -4520,6 +4548,9 @@
     style:--font-header={appFontHeader}
     style:--font-text={appFontText}
     style:--font-ratio={appFontRatio}
+    style:--radius={appMeasuredRadius["--radius"]}
+    style:--radius-sm={appMeasuredRadius["--radius-sm"]}
+    style:--radius-lg={appMeasuredRadius["--radius-lg"]}
     onmousedown={startWindowDrag}
   >
     <DevelopView
