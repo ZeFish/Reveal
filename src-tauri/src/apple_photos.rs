@@ -555,13 +555,13 @@ mod tests {
     fn duplicate_export_names_never_replace_another_photo() {
         let temp = tempfile::tempdir().unwrap();
         let destination = temp.path().join("IMG_0001.jpg");
-        let first = super::super::write_photo_export(
+        let first = crate::export::write_photo_export(
             "apple-photos://aa/IMG_0001.HEIC",
             &destination,
             b"one",
         )
         .unwrap();
-        let second = super::super::write_photo_export(
+        let second = crate::export::write_photo_export(
             "apple-photos://bb/IMG_0001.HEIC",
             &destination,
             b"two",
