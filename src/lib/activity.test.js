@@ -8,6 +8,9 @@ import {
   updateActivity,
   setActive,
   releaseActive,
+  setProgress,
+  patchProgress,
+  advanceProgress,
 } from "./activity.svelte.js";
 
 describe("the message line", () => {
@@ -128,5 +131,44 @@ describe("the job queue", () => {
 
     releaseActive(theirs);
     expect(activity.activeId).toBe(null);
+  });
+});
+
+describe("the live progress readout", () => {
+  beforeEach(() => {
+    setProgress(null);
+  });
+
+  it("is absent until something is running", () => {
+    expect(activity.progress).toBe(null);
+    setProgress({ verb: "import", done: 0, total: 12 });
+    expect(activity.progress).toMatchObject({ verb: "import", total: 12 });
+    setProgress(null);
+    expect(activity.progress).toBe(null);
+  });
+
+  /**
+   * The call sites used to write `progress = { ...progress, done: n }`.
+   * Spreading a null readout builds a half-formed one — a bar with a `done`
+   * and no `verb` or `total`, which the markup then divides by.
+   */
+  it("refuses to patch a readout that does not exist", () => {
+    patchProgress({ done: 5 });
+    expect(activity.progress).toBe(null);
+    expect(advanceProgress()).toBe(0);
+    expect(activity.progress).toBe(null);
+  });
+
+  it("patches without restating the rest", () => {
+    setProgress({ verb: "export", done: 0, total: 4, current: "a.RAF" });
+    patchProgress({ current: "b.RAF" });
+    expect(activity.progress).toMatchObject({ verb: "export", total: 4, current: "b.RAF", done: 0 });
+  });
+
+  it("advances and hands back the new count", () => {
+    setProgress({ verb: "export", done: 0, total: 3 });
+    expect(advanceProgress()).toBe(1);
+    expect(advanceProgress()).toBe(2);
+    expect(activity.progress?.done).toBe(2);
   });
 });

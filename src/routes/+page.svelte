@@ -8,7 +8,7 @@
   } from "$lib/library.svelte.js";
   import {
     activity, notify, hold, dismiss,
-    startActivity, updateActivity, setActive, releaseActive, setQueueOpen,
+    startActivity, updateActivity, setActive, releaseActive, setQueueOpen, setProgress, patchProgress, advanceProgress,
   } from "$lib/activity.svelte.js";
   import {
     selection, positionIn, anchorIn, focusAt, selectOnly, selectGridItem,
@@ -557,7 +557,6 @@
   let minRating = $state(0);
   let scanning = $state(false);
   /** @type {Card[]} */ let cards = $state([]);
-  /** @type {Progress | null} */ let progress = $state(null); // {verb, done, total, current}
   // The Swift export prefs, faithfully: long edge Plein/4096/2048/1600/1024
   // (default 2048), border toggle, and a remembered export folder ("" = the
   // Desktop, resolved Rust-side) — no dialog on every export.
@@ -899,7 +898,7 @@
       listen("card-mounted", (e) => {
         const card = e.payload;
         notify(`card detected · ${card.name} (${card.raw_count})`, 4000);
-        if (autoImport && !progress) importCard(card);
+        if (autoImport && !activity.progress) importCard(card);
       });
       listen("card-unmounted", (e) => {
         // Card physically pulled (or ejected): drop any stale eject affordance.
@@ -939,7 +938,7 @@
       let lastImportRefresh = 0;
       listen("import-progress", async (e) => {
         const payload = e.payload;
-        progress = { verb: "import", ...payload };
+        setProgress({ verb: "import", ...payload });
         if (payload?.destDir && payload?.dest) {
           const list = importedByFolder.get(payload.destDir) ?? [];
           list.push(payload.dest);
@@ -966,11 +965,11 @@
         }
       });
       listen("import-started", (e) => {
-        progress = { verb: "import", done: 0, total: 1, current: "Starting..." };
+        setProgress({ verb: "import", done: 0, total: 1, current: "Starting..." });
         importedByFolder = new Map();
       });
       listen("import-finished", async (e) => {
-        progress = null;
+        setProgress(null);
         notify(`Import complete ✓`, 4000);
         const stats = e.payload;
         if (stats?.folders?.length) {
@@ -990,7 +989,7 @@
         }
       });
       listen("import-failed", (e) => {
-        progress = null;
+        setProgress(null);
         notify(`Import failed: ${e.payload.message}`, 6000);
       });
       // AI cull toasts — same notify() path as import/export
@@ -1005,7 +1004,7 @@
         // The bottom-center activity indicator already shows this live, no
         // separate toast needed — `progress` itself is still needed as the
         // concurrency guard other handlers check before starting.
-        progress = { verb: "cull", done: p.done, total: p.total, current: phaseLabel };
+        setProgress({ verb: "cull", done: p.done, total: p.total, current: phaseLabel });
         if (cullTaskId) updateActivity(cullTaskId, { current: phaseLabel, done: p.done, total: p.total });
       });
       listen("cull-finished", (e) => {
@@ -1014,7 +1013,7 @@
           ? (stats.marked > 0 ? `added to story, exported → ${stats.exported_to}` : `exported → ${stats.exported_to}`)
           : (stats.marked > 0 ? "added to story" : "kept");
         notify(`AI Culling ✓ ${stats.picked}/${stats.considered} kept · ${outcome}`, 6000);
-        if (progress?.verb === "cull") progress = null;
+        if (activity.progress?.verb === "cull") setProgress(null);
         if (cullTaskId) {
           updateActivity(cullTaskId, { done: stats.picked, total: stats.considered, current: outcome, phase: "Complete", status: "completed" });
           releaseActive(cullTaskId);
@@ -1023,7 +1022,7 @@
       });
       listen("cull-failed", (e) => {
         notify(`AI Culling : ${e.payload.message}`, 6000);
-        if (progress?.verb === "cull") progress = null;
+        if (activity.progress?.verb === "cull") setProgress(null);
         if (cullTaskId) {
           updateActivity(cullTaskId, { phase: String(e.payload.message), status: "failed" });
           releaseActive(cullTaskId);
@@ -1031,7 +1030,7 @@
         }
       });
       listen("export-progress", (e) => {
-        progress = { verb: "export", ...e.payload };
+        setProgress({ verb: "export", ...e.payload });
         if (activity.activeId) {
           updateActivity(activity.activeId, {
             current: e.payload.current || "Finishing",
@@ -1046,11 +1045,11 @@
           });
         }
         if (e.payload.done === e.payload.total || e.payload.cancelled) {
-          setTimeout(() => { progress = null; }, 3000);
+          setTimeout(() => { setProgress(null); }, 3000);
         }
       });
       listen("publish-progress", (e) => {
-        progress = { verb: e.payload.phase || "publication", ...e.payload };
+        setProgress({ verb: e.payload.phase || "publication", ...e.payload });
         if (publishTaskId) {
           updateActivity(publishTaskId, {
             current: e.payload.current || e.payload.phase || "",
@@ -2052,7 +2051,7 @@
         await exportSelectionToDailyNote(path);
         return;
       }
-      progress = { verb: "Developing", done: 0, total: 1, current: path.split("/").pop() };
+      setProgress({ verb: "Developing", done: 0, total: 1, current: path.split("/").pop() });
       devJobId = startActivity("develop", `Developing ${path.split("/").pop()}`, 1);
       await invoke("export_photo", {
         path,
@@ -2061,16 +2060,16 @@
         longEdge: exportEdge,
         borderFrac: exportBorder ? 0.04 : 0,
       });
-      progress = { ...progress, done: 1 };
+      patchProgress({ done: 1 });
       updateActivity(devJobId, { done: 1, phase: "Complete", status: "completed" });
     } catch (error) {
       hold(`Development failed: ${error}`);
       if (devJobId) updateActivity(devJobId, { phase: String(error), status: "failed" });
     } finally {
       releaseActive(devJobId);
-      if (progress) {
+      if (activity.progress) {
         setTimeout(() => {
-          progress = null;
+          setProgress(null);
         }, 1200);
       }
     }
@@ -2235,7 +2234,7 @@
       return;
     }
     const srcDirs = new Set(toMove.map(parentOf));
-    progress = { verb: "move", done: 0, total: toMove.length, current: "" };
+    setProgress({ verb: "move", done: 0, total: toMove.length, current: "" });
     const jobId = startActivity("move", `Moving ${toMove.length} photo(s)`, toMove.length);
     let moved = 0;
     const errors = [];
@@ -2243,7 +2242,7 @@
       try {
         await invoke("move_photo", { path: p, destDir });
         moved += 1;
-        progress = { verb: "move", done: moved, total: toMove.length, current: p.split("/").pop() };
+        setProgress({ verb: "move", done: moved, total: toMove.length, current: p.split("/").pop() });
         updateActivity(jobId, { done: moved, current: p.split("/").pop() });
       } catch (e) {
         errors.push(`${p.split("/").pop()} : ${e}`);
@@ -2257,7 +2256,7 @@
     await refreshDirs();
     if (library.curDir) await openDir(library.curDir);
     clearSelection();
-    progress = null;
+    setProgress(null);
     const destName = destDir.split("/").pop();
     hold(
       errors.length
@@ -2702,7 +2701,7 @@
     const d = library.dir;
     if (!d || !storySet.size || !gardenAccount?.signed_in || activity.anyRunning) return;
     liveUrl = null;
-    progress = { verb: "publication", done: 0, total: storySet.size, current: "" };
+    setProgress({ verb: "publication", done: 0, total: storySet.size, current: "" });
     publishTaskId = startActivity("publish", `Publier l'histoire · ${storySet.size} photos`, storySet.size);
     try {
       liveUrl = await invoke("publish_story", { dir: d, dryRun: false });
@@ -2712,7 +2711,7 @@
       notify(`erreur : ${e}`, 5000);
       updateActivity(publishTaskId, { phase: String(e), status: "failed" });
     } finally {
-      progress = null;
+      setProgress(null);
       releaseActive(publishTaskId);
       publishTaskId = null;
     }
@@ -2724,7 +2723,7 @@
     const dest = await invoke("pick_folder");
     if (!dest) return;
     liveUrl = null;
-    progress = { verb: "export", done: 0, total: storySet.size, current: "" };
+    setProgress({ verb: "export", done: 0, total: storySet.size, current: "" });
     const jobId = startActivity("export", `Exporter l'histoire · ${storySet.size} photos`, storySet.size);
     try {
       await invoke("export_local_story", {
@@ -2739,7 +2738,7 @@
       notify(`erreur : ${e}`, 5000);
       updateActivity(jobId, { phase: String(e), status: "failed" });
     } finally {
-      progress = null;
+      setProgress(null);
       releaseActive(jobId);
     }
   }
@@ -2754,7 +2753,7 @@
       archive = await invoke("pick_folder");
       if (!archive) return;
     }
-    progress = { verb: "import", done: 0, total: card.raw_count, current: "" };
+    setProgress({ verb: "import", done: 0, total: card.raw_count, current: "" });
     lastImportedFolder = null;
     importingCard = card;
     ejectableCard = null;
@@ -2776,7 +2775,7 @@
       // the ingest loop's last step, offered in the rail rather than forced.
       if (card.volume) ejectableCard = card;
     } finally {
-      progress = null;
+      setProgress(null);
       importingCard = null;
       cards = await invoke("find_cards");
     }
@@ -2824,8 +2823,8 @@
       return;
     }
     const d = library.dir;
-    if (!d || !view.length || progress) return;
-    progress = { verb: "cull", done: 0, total: view.length, current: "" };
+    if (!d || !view.length || activity.progress) return;
+    setProgress({ verb: "cull", done: 0, total: view.length, current: "" });
     hold(`AI Culling · ${view.length} photos…`);
     cullTaskId = startActivity("cull", `AI Culling · ${view.length} photos`, view.length);
     try {
@@ -2851,7 +2850,7 @@
       notify(`AI Culling : ${error}`, 6000);
       updateActivity(cullTaskId, { phase: String(error), status: "failed" });
     } finally {
-      progress = null;
+      setProgress(null);
       releaseActive(cullTaskId);
       cullTaskId = null;
     }
@@ -3218,13 +3217,13 @@
    * @param {Frame[]} targetFrames
    */
   async function applyRecipeToFrames(recipeToApply, targetFrames) {
-    if (!recipeToApply || !targetFrames.length || progress) return;
+    if (!recipeToApply || !targetFrames.length || activity.progress) return;
     const snapshot = { ...recipeToApply };
-    progress = { verb: "Applying settings", done: 0, total: targetFrames.length, current: "" };
+    setProgress({ verb: "Applying settings", done: 0, total: targetFrames.length, current: "" });
     const jobId = startActivity("develop", `Synchroniser ${targetFrames.length} photo(s)`, targetFrames.length);
     try {
       for (const [i, frame] of targetFrames.entries()) {
-        progress = { ...progress, current: frame.name };
+        patchProgress({ current: frame.name });
         updateActivity(jobId, { current: frame.name });
 
         // Load existing sidecar to preserve each destination photo's unique crop
@@ -3258,8 +3257,7 @@
         const bytes = await developing;
         await invoke("save_recipe", { path: frame.path, recipe: frameRecipe });
         frame.previewVersion = await freshPreviewVersion(frame.path);
-        progress = { ...progress, done: progress.done + 1 };
-        updateActivity(jobId, { done: progress.done });
+        updateActivity(jobId, { done: advanceProgress() });
 
         if (frame.path === photoPath) {
           recipe = { ...frameRecipe };
@@ -3281,7 +3279,7 @@
       notify(`Could not apply settings: ${e}`);
       updateActivity(jobId, { phase: String(e), status: "failed" });
     } finally {
-      progress = null;
+      setProgress(null);
       releaseActive(jobId);
     }
   }
@@ -4289,7 +4287,7 @@
           onDevelopStory={exportLocalStory}
           onPublishStory={publishStory}
           onExportLocalStory={exportLocalStory}
-          publishing={!!progress}
+          publishing={!!activity.progress}
           publishStatus={status}
         />
       {/if}
@@ -4352,7 +4350,7 @@
             onDevelopStory={exportLocalStory}
             onPublishStory={publishStory}
             onExportLocalStory={exportLocalStory}
-            publishing={!!progress}
+            publishing={!!activity.progress}
             publishStatus={status}
             {gardenUrl}
           />
@@ -4475,7 +4473,7 @@
                the live chip below instead, so hide its button. -->
           {#each cards as card (card.dcim)}
             {#if !importingCard || importingCard.dcim !== card.dcim}
-              <button class="import rail-action" onclick={() => importCard(card)} disabled={!!progress}>
+              <button class="import rail-action" onclick={() => importCard(card)} disabled={!!activity.progress}>
                 Import {card.name} ({card.raw_count})
               </button>
             {/if}
@@ -4494,21 +4492,21 @@
 
           <!-- The live import chip — same DIN/mono treatment as export, plus
                a stop control; the copy finishes its current file then halts. -->
-          {#if progress && progress.verb === "import"}
+          {#if activity.progress && activity.progress.verb === "import"}
             <span class="export-chip">
-              {#if progress.path}
+              {#if activity.progress.path}
                 <!-- Live preview of the frame being copied (embedded RAW JPEG),
                      keyed on the path so each new file swaps the image. -->
-                {#key progress.path}
-                  <img class="chip-thumb" src={thumbUrl(progress.path)} alt="" />
+                {#key activity.progress.path}
+                  <img class="chip-thumb" src={thumbUrl(activity.progress.path)} alt="" />
                 {/key}
               {/if}
               <span class="chip-label">Importing</span>
-              <span class="chip-count">{progress.done}/{progress.total}</span>
+              <span class="chip-count">{activity.progress.done}/{activity.progress.total}</span>
               <span class="chip-bar">
                 <span
                   class="chip-fill"
-                  style="width: {progress.total ? (progress.done / progress.total) * 100 : 0}%"
+                  style="width: {activity.progress.total ? (activity.progress.done / activity.progress.total) * 100 : 0}%"
                 ></span>
               </span>
               <button class="chip-stop" onclick={stopImport} title="Stop the import">
@@ -4519,14 +4517,14 @@
 
           <!-- The live export chip — DIN label, mono count, a thin accent
                bar filling as frames finish; gone when the batch ends. -->
-          {#if progress && progress.verb === "export"}
+          {#if activity.progress && activity.progress.verb === "export"}
             <span class="export-chip">
               <span class="chip-label">Developing</span>
-              <span class="chip-count">{progress.done}/{progress.total}</span>
+              <span class="chip-count">{activity.progress.done}/{activity.progress.total}</span>
               <span class="chip-bar">
                 <span
                   class="chip-fill"
-                  style="width: {progress.total ? (progress.done / progress.total) * 100 : 0}%"
+                  style="width: {activity.progress.total ? (activity.progress.done / activity.progress.total) * 100 : 0}%"
                 ></span>
               </span>
             </span>
@@ -4536,7 +4534,7 @@
             <button
               class="rail-btn"
               onclick={exportSelection}
-              disabled={!!progress}
+              disabled={!!activity.progress}
               title={selection.paths.size > 1 ? (selection.paths.size === view.length ? `Export all photos (${view.length}) (r)` : `Export the ${selection.paths.size} selected photos (r)`) : `Export the selected photo (r)`}
             >
               <Icon name="export" size="12px" />
@@ -4571,12 +4569,12 @@
                 {#if storySet.size && gardenAccount?.signed_in}
                   <button
                     class="std-menu-item"
-                    class:disabled={!!progress}
+                    class:disabled={!!activity.progress}
                     onclick={() => {
                       layoutMenuOpen = false;
                       publishStory();
                     }}
-                    disabled={!!progress}
+                    disabled={!!activity.progress}
                   >
                     <span class="item-label">Publier l'histoire ({storySet.size})</span>
                     <Icon name="lightning" size="10px" />
@@ -4585,12 +4583,12 @@
                 {#if (library.curDir || library.folder) && view.length}
                   <button
                     class="std-menu-item"
-                    class:disabled={!!progress}
+                    class:disabled={!!activity.progress}
                     onclick={() => {
                       layoutMenuOpen = false;
                       cullCurrentFolder();
                     }}
-                    disabled={!!progress}
+                    disabled={!!activity.progress}
                   >
                     <span class="item-label">AI Culling</span>
                     <Icon name="lightning" size="10px" />
@@ -4664,7 +4662,7 @@
           {view}
           {storySet}
           {storyContent}
-          {progress}
+          progress={activity.progress}
           liveUrl={liveUrl ?? undefined}
           {thumbUrl}
           {saveStoryContent}
@@ -4681,7 +4679,7 @@
           {marginScale}
           {cellAspect}
           {fillCells}
-          {progress}
+          progress={activity.progress}
           bind:currentScrollTop={currentScrollTop}
           curDir={library.curDir}
           {minRating}
@@ -5983,7 +5981,7 @@
     font-weight: bold;
     color: var(--color-foreground);
   }
-  .queue-progress-bar {
+  .queue-activity.progress-bar {
     width: 100%;
     height: 4px;
     background: var(--color-background);

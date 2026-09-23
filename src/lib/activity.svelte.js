@@ -25,6 +25,18 @@
  */
 
 /**
+ * The bar under the job that is running right now: how far along it is and
+ * what it is on. Coarser than the queue — the queue records what happened,
+ * this is the live readout, and it is `null` when nothing is running.
+ * @typedef {Object} Progress
+ * @property {string} verb
+ * @property {number} done
+ * @property {number} total
+ * @property {string} [current]
+ * @property {string} [path]
+ */
+
+/**
  * @typedef {Object} Activity
  * @property {string} id
  * @property {string} kind e.g. "import" | "export" | "cull" | "publish" | "move" | "develop"
@@ -41,6 +53,7 @@ const state = $state({
   /** @type {string} */ message: "",
   /** @type {Activity[]} */ queue: [],
   /** @type {string | null} */ activeId: null,
+  /** @type {Progress | null} */ progress: null,
   queueOpen: false,
 });
 
@@ -69,6 +82,9 @@ export const activity = {
   },
   get queueOpen() {
     return state.queueOpen;
+  },
+  get progress() {
+    return state.progress;
   },
   /** Whether any job is still running — drives the ambient indicator. */
   get anyRunning() {
@@ -168,6 +184,38 @@ export function setActive(id) {
  */
 export function releaseActive(id) {
   if (id && state.activeId === id) state.activeId = null;
+}
+
+/**
+ * Set or clear the live progress readout. `null` means nothing is running,
+ * which is what hides the bar.
+ * @param {Progress | null} value
+ */
+export function setProgress(value) {
+  state.progress = value;
+}
+
+/**
+ * Advance the readout without restating it. Does nothing when nothing is
+ * running — the call sites used to spread the current value, which quietly
+ * turned a missing readout into a half-built one.
+ * @param {Partial<Progress>} patch
+ */
+export function patchProgress(patch) {
+  if (state.progress) state.progress = { ...state.progress, ...patch };
+}
+
+/**
+ * One more done. Returns the new count so the caller can mirror it onto the
+ * queue entry without reading the readout back and having to prove it exists.
+ * @param {number} [by]
+ * @returns {number}
+ */
+export function advanceProgress(by = 1) {
+  if (!state.progress) return 0;
+  const done = state.progress.done + by;
+  state.progress = { ...state.progress, done };
+  return done;
 }
 
 /** @param {boolean} [open] omit to toggle */
