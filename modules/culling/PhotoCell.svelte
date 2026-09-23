@@ -101,7 +101,9 @@
   tabindex="0"
   style="aspect-ratio: {layout === 'masonry' ? naturalAspect : aspect};"
 >
-  <div class="matte" class:loaded style="aspect-ratio: {loaded ? naturalAspect : aspect};">
+  <!-- `hug` only where it means anything: masonry already gives the slot the
+       photo's shape, and `fill` deliberately crops to the slot. -->
+  <div class="matte" class:loaded class:hug={layout !== "masonry" && !fill}>
     <img
       data-no-zoom
       bind:this={imgEl}
@@ -223,18 +225,8 @@
   }
 
   .matte {
-    /* Sized by the photo, capped by the slot: a portrait becomes a narrow
-       tall card instead of a wide one with negative space either side.
-       Until the image loads its shape is unknown, so the card starts at the
-       slot's aspect and settles into the photo's — what masonry already does. */
-    /* `height` and not just `max-height`: `aspect-ratio` needs one definite
-       dimension to work from, and with only the maximums the card collapsed
-       to its placeholder glyph before the image had loaded. Height comes
-       from the slot, width follows the aspect, and max-width clamps a
-       panorama wider than the slot (the height then follows it back down). */
+    width: 100%;
     height: 100%;
-    width: auto;
-    max-width: 100%;
     position: relative;
     overflow: hidden;
     box-sizing: border-box;
@@ -253,6 +245,24 @@
     isolation: isolate;
   }
 
+  /* The card takes the photo's proportion instead of padding it with negative
+     space either side (Francis, 2026-09-23, on a portrait frame).
+
+     The IMAGE sizes the card here, rather than the card being handed a ratio.
+     An `aspect-ratio` plus a definite `height: 100%` is not contain-sizing —
+     it is a definite height with a width hung off it, so a landscape photo
+     stayed letterboxed in a tall slot, and masonry (where the slot already
+     carries the photo's shape) came out flattened.
+
+     Before it loads the image has no size and the card would collapse onto
+     its placeholder glyph, so until then it fills the slot as it always did. */
+  .matte.hug.loaded,
+  .matte.hug.loaded img {
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 100%;
+  }
   .matte img {
     width: 100%;
     height: 100%;
