@@ -4425,7 +4425,7 @@
               <button class="chrome-btn" onclick={toggleAppearance} title="Toggle system light / dark mode (l)">
                 <Icon name="circle-half" size="12px" />
               </button>
-              <button class="wordmark" onclick={() => (shortcutsOpen = true)} title="Keyboard shortcuts">
+              <button class="wordmark titlebar-text" onclick={() => (shortcutsOpen = true)} title="Keyboard shortcuts">
                 {library.curDir && library.curDir !== library.root ? (dirLabel(library.curDir) ?? "").toUpperCase() : "REVEAL"}
               </button>
             </div>
@@ -4489,7 +4489,7 @@
                 </DropdownItem>
           </Dropdown>
 
-          <span class="frame-count">
+          <span class="frame-count titlebar-text">
             {#if view.length !== frames.length}
               {view.length}/{frames.length} FRAMES
             {:else}
@@ -4499,7 +4499,7 @@
 
           <span class="rail-spacer"></span>
           {#if applePhotosActive}
-            <span class="frame-count">{frames.length} / {applePhotosTotal} Apple Photos</span>
+            <span class="frame-count titlebar-text">{frames.length} / {applePhotosTotal} Apple Photos</span>
             {#if applePhotosOffset < applePhotosTotal}
               <button class="rail-action" onclick={loadMoreApplePhotos} disabled={applePhotosBusy}>
                 {applePhotosBusy ? "Loading..." : "Load more photos"}
@@ -5409,9 +5409,10 @@
   }
 
   /* ── The top rail — canvas-toned (the Swift rule: the grid dissolves
-     into it), icons only, one 44px toolbar line across the window. */
+     into it), icons only, one title-bar line across the window, centred on
+     the traffic lights (--titlebar-height, packages/styles/app.scss). */
   .rail {
-    height: 44px;
+    height: var(--titlebar-height);
     flex-shrink: 0;
     display: flex;
     align-items: center;
@@ -5775,8 +5776,8 @@
   .open {
     align-self: flex-start;
   }
-  /* Same floating-card treatment as the real sidebar (modules/sidebar/
-     Sidebar.svelte's `nav`: margin 8px, --radius-lg, that exact shadow) —
+  /* Same floating-pane treatment as the real sidebar (modules/sidebar/
+     Sidebar.svelte's `nav`: the same four window-chrome tokens) —
      DevelopPanel's own .panel is edge-to-edge on purpose (it also fills a
      whole DETACHED OS window, where the window chrome itself already
      supplies the rounding), so docking it inline needs this wrapper to
@@ -5787,10 +5788,10 @@
        resolve against the full track and then ADD them, pushing the panel
        16px past the bottom of the window (Francis, 2026-09-22: "il descend
        plus bas que l'app"). */
-    margin: 8px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+    margin: var(--window-inset);
+    border: var(--border);
+    border-radius: var(--pane-radius);
+    box-shadow: var(--shadow-raised);
     overflow: hidden;
     min-height: 0;
     /* Matches nav's own self-painted background (Sidebar.svelte) exactly —

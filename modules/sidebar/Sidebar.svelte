@@ -814,17 +814,17 @@
     <button class="chrome-btn" onclick={onToggleAppearance} title="Toggle system light/dark appearance (L)">
       <Icon name="circle-half" size="12px" />
     </button>
-    <button class="wordmark" onclick={onShowShortcuts} title="Keyboard shortcuts">REVEAL</button>
+    <button class="wordmark titlebar-text" onclick={onShowShortcuts} title="Keyboard shortcuts">REVEAL</button>
   </div>
 
   <!-- FRAMES ↔ EDITORIAL — a display filter on the same grid, not a mode.
        Both tabs call the same toggle; only Editorial is guarded (nothing to
        compose without a folder or in the read-only Apple Photos library). -->
-  <div class="tabs">
-    <button class="tab" class:active={!previewFilter} onclick={() => previewFilter && onTogglePreview()}>Frames</button>
+  <div class="tabs seg" role="group" aria-label="View">
+    <button class="seg-btn" class:on={!previewFilter} onclick={() => previewFilter && onTogglePreview()}>Frames</button>
     <button
-      class="tab"
-      class:active={previewFilter}
+      class="seg-btn"
+      class:on={previewFilter}
       disabled={isLibrary || applePhotos?.active}
       onclick={() => !previewFilter && onTogglePreview()}
       title={isLibrary ? "Choose a folder to compose a story" : "Editorial (S)"}
@@ -1285,11 +1285,15 @@
   nav {
     width: 224px;
     flex-shrink: 0;
-    margin: 8px;
+    /* A pane floating in the window: inset, concentric corner, raised.
+       --shadow-raised already draws the hairline ring, so the border is
+       the theme's own --border (zero width in many themes), not a second
+       hardcoded 1px on top of it. */
+    margin: var(--window-inset);
     background: var(--color-surface-high);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+    border: var(--border);
+    border-radius: var(--pane-radius);
+    box-shadow: var(--shadow-raised);
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -1304,14 +1308,15 @@
   }
 
   .brand {
-    height: 34px;
+    /* The title-bar band, measured from the WINDOW's top edge: the negative
+       margin cancels the card's own inset, so these controls centre on the
+       traffic lights and on the rail beside them. */
+    height: var(--titlebar-height);
+    margin-top: calc(-1 * var(--window-inset));
     flex-shrink: 0;
     display: flex;
     align-items: center;
     gap: 8px;
-    /* Cancel the card's 8px top inset so these controls stay on the same
-       window-chrome baseline as the rail when the sidebar is hidden. */
-    transform: translateY(-4px);
     /* Native traffic lights overlay the window top-left — start past them. */
     padding: 0 16px 0 var(--window-controls-offset-sidebar, 78px);
   }
@@ -1361,30 +1366,11 @@
     color: var(--color-foreground);
   }
 
+  /* The Frames / Editorial switch is the app's .seg (app.scss); this only
+     places it in the card. */
   .tabs {
-    display: flex;
-    gap: 2px;
-    padding: 0px 12px 6px;
+    margin: 0 12px 6px;
     flex-shrink: 0;
-  }
-  .tab {
-    all: unset;
-    cursor: pointer;
-    font-family: var(--font-header, sans-serif);
-    font-size: 10.8px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-    padding: 2px 8px;
-    border-radius: 999px;
-  }
-  .tab.active {
-    color: var(--color-foreground);
-    background: color-mix(in srgb, var(--color-foreground) 10%, transparent);
-  }
-  .tab:disabled {
-    color: color-mix(in srgb, var(--color-foreground) 18%, transparent);
-    cursor: default;
   }
 
   .tree {
@@ -1407,12 +1393,13 @@
      same columns: a caret slot (--lead), the name, the count, and a trailing
      icon slot (--trail). Same gap, same horizontal padding, so names start on
      one line and counts and icons end on another. A child folder steps in by
-     exactly one caret + gap, which puts its caret under its parent's name. */
+     one caret width — tighter than a caret + gap, which ate the name column
+     four levels down. */
   .tree {
     --lead: 10px;
     --trail: 14px;
     --row-gap: 5px;
-    --indent: calc(var(--lead) + var(--row-gap));
+    --indent: var(--lead);
   }
   .lib-row {
     gap: var(--row-gap);
