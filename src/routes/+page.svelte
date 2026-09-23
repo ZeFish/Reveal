@@ -5553,10 +5553,12 @@
     flex-direction: column;
     gap: 6px;
   }
+  /* Same rule as the framework's .std-menu-separator — thickness and
+     spacing from its tokens, not restated in px. */
   .pop-divider {
-    height: 1px;
+    height: var(--stroke-width);
     background: var(--color-border);
-    margin: 4px 0;
+    margin: var(--space-d4) 0;
   }
   /* A menu row that cannot be chosen, and the count that says why. Dimmed
      rather than hidden: the option still belongs in the list, it just is not
