@@ -984,8 +984,10 @@
     margin: 0;
     padding: 0;
     height: 100%;
-    background: var(--color-surface-high, #18181b);
-    color: var(--color-foreground, #f4f4f5);
+    /* The same ground as the main window's photo area: the settings sit
+       on the recessed canvas, the categories float above it. */
+    background: var(--canvas);
+    color: var(--color-foreground);
     overflow: hidden;
   }
 
@@ -994,19 +996,27 @@
     display: flex;
   }
 
-  /* Categories rail — macOS System Settings' left column. */
+  /* Categories — the same floating pane as the main window's sidebar
+     (Sidebar.svelte's nav): inset, concentric corner, raised. The traffic
+     lights overlay its top, as they do the sidebar's. */
   .categories {
     width: 190px;
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
+    gap: 2px;
+    margin: var(--window-inset);
     padding: 0 8px 8px;
-    background: color-mix(in srgb, var(--color-foreground, #fff) 2%, var(--color-surface-low, #18181b));
-    border-right: 1px solid color-mix(in srgb, var(--color-foreground, #fff) 8%, transparent);
+    background: var(--color-surface-high);
+    border: var(--border);
+    border-radius: var(--pane-radius);
+    box-shadow: var(--shadow-raised);
     overflow-y: auto;
   }
+  /* Clears the traffic lights: the title-bar band, less the pane's own
+     inset from the window top. */
   .categories-spacer {
-    height: 46px;
+    height: calc(var(--titlebar-height) - var(--window-inset));
     flex-shrink: 0;
   }
   .category-btn {
@@ -1017,19 +1027,22 @@
     gap: 8px;
     width: 100%;
     padding: 6px 10px;
-    margin-bottom: 2px;
-    border-radius: var(--radius-sm, 6px);
+    border-radius: var(--radius);
     font-family: var(--font-text, sans-serif);
     font-size: 12px;
-    color: color-mix(in srgb, var(--color-foreground, #fff) 75%, transparent);
+    color: color-mix(in srgb, var(--color-foreground) 60%, transparent);
     cursor: pointer;
   }
+  /* Selection reads exactly like a folder row in the sidebar: a quiet
+     foreground wash and full-strength text, not an accent block. */
   .category-btn:hover {
-    background: color-mix(in srgb, var(--color-foreground, #fff) 6%, transparent);
+    background: color-mix(in srgb, var(--color-foreground) 6%, transparent);
+    color: var(--color-foreground);
   }
   .category-btn.active {
-    background: var(--color-accent, #d6202c);
-    color: #fff;
+    background: color-mix(in srgb, var(--color-foreground) 12%, transparent);
+    color: var(--color-foreground);
+    font-weight: 600;
   }
 
   .detail {
@@ -1039,7 +1052,7 @@
     flex-direction: column;
   }
   .detail-scroll {
-    padding: 46px 1.5rem 1.25rem;
+    padding: var(--titlebar-height) 1.5rem 1.25rem;
     overflow-y: auto;
     flex: 1;
     min-height: 0;
@@ -1283,8 +1296,7 @@
 
   .settings-footer {
     padding: 0.85rem 1.25rem;
-    background: color-mix(in srgb, var(--color-foreground, #fff) 2%, var(--color-surface-low, #18181b));
-    border-top: 1px solid color-mix(in srgb, var(--color-foreground, #fff) 8%, transparent);
+    border-top: var(--border);
     display: flex;
     align-items: center;
     justify-content: flex-end;

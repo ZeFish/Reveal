@@ -4425,7 +4425,7 @@
               <button class="chrome-btn" onclick={toggleAppearance} title="Toggle system light / dark mode (l)">
                 <Icon name="circle-half" size="12px" />
               </button>
-              <button class="wordmark titlebar-text" onclick={() => (shortcutsOpen = true)} title="Keyboard shortcuts">
+              <button class="wordmark" onclick={() => (shortcutsOpen = true)} title="Keyboard shortcuts">
                 {library.curDir && library.curDir !== library.root ? (dirLabel(library.curDir) ?? "").toUpperCase() : "REVEAL"}
               </button>
             </div>
@@ -5470,9 +5470,14 @@
   .focus-glyph.on::after {
     background: currentColor;
   }
+  /* A 1em line box, NOT the cap trim the rest of the title bar uses: the
+     theme's header font declares a cap height larger than its drawn caps,
+     so trimming to it put the wordmark 1.5pt high (measured 2026-09-23,
+     19.25 against the lights' 20.75). */
   .wordmark {
     all: unset;
     cursor: pointer;
+    line-height: 1;
     font-family: var(--font-header, sans-serif);
     font-size: 10.8px;
     letter-spacing: 0.12em;

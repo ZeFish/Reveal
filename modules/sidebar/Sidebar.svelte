@@ -814,7 +814,7 @@
     <button class="chrome-btn" onclick={onToggleAppearance} title="Toggle system light/dark appearance (L)">
       <Icon name="circle-half" size="12px" />
     </button>
-    <button class="wordmark titlebar-text" onclick={onShowShortcuts} title="Keyboard shortcuts">REVEAL</button>
+    <button class="wordmark" onclick={onShowShortcuts} title="Keyboard shortcuts">REVEAL</button>
   </div>
 
   <!-- FRAMES ↔ EDITORIAL — a display filter on the same grid, not a mode.
@@ -1354,9 +1354,14 @@
   .focus-glyph.on::after {
     background: currentColor;
   }
+  /* A 1em line box, NOT the cap trim the rest of the title bar uses: the
+     theme's header font declares a cap height larger than its drawn caps,
+     so trimming to it put the wordmark 1.5pt high (measured 2026-09-23,
+     19.25 against the lights' 20.75). */
   .wordmark {
     all: unset;
     cursor: pointer;
+    line-height: 1;
     font-family: var(--font-header, sans-serif);
     font-size: 10.8px;
     letter-spacing: 0.12em;
@@ -1393,13 +1398,13 @@
      same columns: a caret slot (--lead), the name, the count, and a trailing
      icon slot (--trail). Same gap, same horizontal padding, so names start on
      one line and counts and icons end on another. A child folder steps in by
-     one caret width — tighter than a caret + gap, which ate the name column
-     four levels down. */
+     6px — less than a caret, so the name column survives deep trees; the
+     caret column still reads the hierarchy. */
   .tree {
     --lead: 10px;
     --trail: 14px;
     --row-gap: 5px;
-    --indent: var(--lead);
+    --indent: 6px;
   }
   .lib-row {
     gap: var(--row-gap);
@@ -1516,7 +1521,8 @@
 
   .dir-row {
     gap: var(--row-gap);
-    padding: 4px 8px 4px calc(8px + (var(--depth) + 1) * var(--indent));
+    /* 6px, not 4: a taller target, easier to hit the folder you meant. */
+    padding: 6px 8px 6px calc(8px + (var(--depth) + 1) * var(--indent));
     position: relative;
   }
   .dir-row.current {

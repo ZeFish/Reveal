@@ -61,7 +61,9 @@
 }
 
 /* Title-bar text sits on its capitals, not its line box: a line box keeps
-   room for descenders, so centred caps rode half a point high. */
+   room for descenders, so centred caps rode half a point high. Only as good
+   as the font's declared cap height: right for the monospace frame count,
+   wrong for the header font (see .wordmark in Sidebar.svelte). */
 .titlebar-text {
   text-box: trim-both cap alphabetic;
 }
