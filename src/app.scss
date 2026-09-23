@@ -1,75 +1,15 @@
+@use "../../../packages/styles/app";
+
 // Reveal — app adapter over the Standard framework.
 //
 // standard.scss is a NOTE framework: it assumes a document read in a
 // browser — fluid type that grows with the viewport, a mobile breakpoint
 // that BUMPS text size up on narrow screens, a reading measure on body.
 // An app window is none of that: density is fixed, chrome is chrome, and
-// a narrow window is just a small window. This file re-grounds the
-// framework's tokens for the app context. Import it AFTER the theme.
-//
-// Knobs, by intent:
-//   --font-text-size  overall UI scale (native macOS text runs ~13px)
-//   --font-ratio      heading/modular scale (framework default is silver 1.414)
-//   --font-density    line-height (the reveal theme already sets 1.2)
-
-// Unconditional :root, not [data-theme="reveal"] — these are app-window
-// facts (fixed density, chrome not prose), true no matter which Standard
-// theme supplies the color/font seeds. Same specificity as a themed :root
-// selector still wins the clamp() below since this file imports last.
-:root {
-  /* Fixed UI scale. Wins over the fluid clamp() in
-     _standard-03-typography.scss by specificity (:root + [data-theme]). */
-  --font-text-size: 13px;
-  --font-size: var(--font-text-size);
-
-  /* The <768px breakpoint re-sets --font-size / --gap* from these mobile
-     tokens with !important — on the web that means comfort on a phone, in
-     an app it means text GROWS when the window shrinks. Point the mobile
-     tokens at the desktop values so the breakpoint becomes a no-op.
-     (Gap formulas are duplicated rather than var(--gap)-referenced —
-     referencing the token they feed would create a custom-property cycle.) */
-  --font-size-mobile: var(--font-text-size);
-  --gap-mobile: calc(var(--space) * var(--optical-ratio));
-  --gap-body-mobile: var(--space-2);
-  --gap-header-mobile: var(--space-8);
-
-  /* Tighter modular scale than the silver default — in an app, headings
-     are labels and section chrome, not display type. */
-  --font-ratio: 1.333;
-
-  /* ---- Motion -----------------------------------------------------------
-     The framework's durations (350 / 500 / 1000ms) are paced for a document
-     you READ — a page settling under your eyes. App chrome has to feel
-     immediate under the cursor, so the scale is re-grounded to the timings
-     the UI was already hand-written with. Names stay the framework's, so
-     components reference --duration-* and the pacing stays themeable from
-     one place instead of 37 scattered literals. */
-  --duration-instant: 120ms;
-  --duration-fast: 150ms;
-  --duration-standard: 180ms;
-  --duration-slow: 300ms;
-
-  /* ---- Radius -----------------------------------------------------------
-     The framework derives --radius from --leading, i.e.
-     (line-height - 1) * font-size — with this theme's 1.2 line-height and
-     13px text that is ~2.6px, a TYPOGRAPHIC rhythm value, not a chrome
-     corner. --corner is the framework's own escape hatch for exactly this,
-     so set it to the app's real dominant radius rather than fighting the
-     derivation.
-
-     --radius-sm must be set explicitly too: the framework computes it as
-     min(8px, var(--radius)), which with a 6px radius collapses to 6px and
-     stops being a distinct small step.
-
-     --radius-lg has no framework equivalent (the framework ships only
-     --radius / --radius-sm). It is declared HERE so it is a real, defined,
-     themeable token — the opposite of the invented --shadow-md / --accent
-     references this audit just removed, which were never defined anywhere
-     and so silently voided their whole declaration. */
-  --corner: 6px; /* feeds --radius */
-  --radius-sm: 4px;
-  --radius-lg: 12px;
-}
+// a narrow window is just a small window. The app TOKENS for that (type
+// scale, motion, radius, window chrome) live in the framework, in
+// packages/styles/app.scss, so every app shares them. What stays here is
+// Reveal's own app-shell behaviour. Import it AFTER the theme.
 
 /* App-shell behaviors a document never needs. */
 html {

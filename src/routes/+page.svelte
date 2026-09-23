@@ -5208,32 +5208,45 @@
     z-index: 1;
     overflow: hidden;
   }
-  /* Folder mood (.cull and .app, dev mode further below) — re-derives the
-     surface/border scale from the SAME --color-background/--color-foreground
-     the framework's own dark-mode block computes them from
-     (packages/styles/_standard-02-color.scss), just off our per-library.folder
-     override instead of the theme default. Gated behind .themed so an
-     unthemed library.folder's surfaces stay byte-identical to before this existed —
-     only folders with an actual story-theme note shift.
+  /* Folder mood (.cull and .app) — re-derives the surface/border scale from
+     the folder's own --color-background/--color-foreground with the SAME
+     formulas as packages/styles/_standard-02-color.scss. Custom properties
+     are resolved where they are declared, so the framework's :root scale
+     (and our :root --canvas) keep the APP theme's colours; a folder theme
+     has to state them again here. Gated behind .themed so an unthemed
+     folder's surfaces come straight from the framework.
+
+     Both schemes, as the framework does. This block used to apply the
+     dark-mode formulas in light too (surface 6% toward the foreground,
+     elevation toward the foreground), which in a light theme put every
+     "raised" panel BELOW the canvas — the sidebar darker than the photos.
+
      `background`/`color` are painted here explicitly: nothing under .cull/
-     .app actually draws with --color-background itself (only the outer
-     `html` does, per _standard-07-base.scss) — .cull/.app were always
-     transparent, relying on html's single background layer showing through.
-     Redefining the CSS VARIABLE alone on a transparent descendant changes
-     nothing visible; only html (an ANCESTOR, unreachable from here since
-     custom properties don't inherit upward) painted with it. */
+     .app draws with --color-background itself (only `html` does, per
+     _standard-07-base.scss), and custom properties don't inherit upward. */
   .cull.themed,
   .app.themed {
-    --color-surface: color-mix(in srgb, var(--color-foreground) 6%, var(--color-background));
+    --color-surface: color-mix(in srgb, var(--color-foreground) 3%, var(--color-background));
     --color-border: color-mix(in srgb, var(--color-foreground) 14%, transparent);
-    --color-surface-low: color-mix(in srgb, black 3%, var(--color-surface));
-    --color-surface-lowest: color-mix(in srgb, black 7%, var(--color-surface-low));
-    /* Toward white, not toward --color-foreground: a light story theme has a
-       dark foreground, and "elevated" must still mean lighter. */
-    --color-surface-high: color-mix(in srgb, white 4%, var(--color-surface));
-    --color-surface-highest: color-mix(in srgb, white 4%, var(--color-surface-high));
+    --color-surface-low: color-mix(in srgb, var(--color-foreground) 3%, var(--color-surface));
+    --color-surface-lowest: color-mix(in srgb, var(--color-foreground) 3%, var(--color-surface-low));
+    --color-surface-lower: color-mix(in srgb, var(--color-foreground) 3%, transparent);
+    --color-surface-high: color-mix(in srgb, white 50%, var(--color-surface));
+    --color-surface-highest: color-mix(in srgb, white 50%, var(--color-surface-high));
+    --canvas: linear-gradient(var(--color-surface-lower), var(--color-surface-lower))
+      var(--color-background);
     background: var(--color-background);
     color: var(--color-foreground);
+  }
+  @media (prefers-color-scheme: dark) {
+    .cull.themed,
+    .app.themed {
+      --color-surface-low: color-mix(in srgb, black 3%, var(--color-surface));
+      --color-surface-lowest: color-mix(in srgb, black 7%, var(--color-surface-low));
+      --color-surface-lower: color-mix(in srgb, black 7%, transparent);
+      --color-surface-high: color-mix(in srgb, var(--color-foreground) 3%, var(--color-surface));
+      --color-surface-highest: color-mix(in srgb, var(--color-foreground) 3%, var(--color-surface-high));
+    }
   }
   .window-controls-zone {
     position: fixed;
@@ -5762,8 +5775,8 @@
   .open {
     align-self: flex-start;
   }
-  /* Same floating-card treatment as the real sidebar (modules/sidebar/
-     Sidebar.svelte's `nav`: margin 8px, --radius-lg, that exact shadow) —
+  /* Same floating-pane treatment as the real sidebar (modules/sidebar/
+     Sidebar.svelte's `nav`: the same four window-chrome tokens) —
      DevelopPanel's own .panel is edge-to-edge on purpose (it also fills a
      whole DETACHED OS window, where the window chrome itself already
      supplies the rounding), so docking it inline needs this wrapper to
@@ -5774,10 +5787,10 @@
        resolve against the full track and then ADD them, pushing the panel
        16px past the bottom of the window (Francis, 2026-09-22: "il descend
        plus bas que l'app"). */
-    margin: 8px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+    margin: var(--window-inset);
+    border: var(--border);
+    border-radius: var(--pane-radius);
+    box-shadow: var(--shadow-raised);
     overflow: hidden;
     min-height: 0;
     /* Matches nav's own self-painted background (Sidebar.svelte) exactly —
