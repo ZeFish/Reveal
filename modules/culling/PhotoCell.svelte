@@ -161,45 +161,48 @@
         <Icon name={failed ? "image-broken" : "image"} size="26px" />
       </div>
     {/if}
-  </div>
 
-  <!-- Stars: fill = the app background, stroke = the hairline — the one star
-       look everywhere (Swift `Stars`), no black chip behind. -->
-  {#if rating > 0}
-    <div class="stars-overlay">
-      {#each Array(rating) as _}
-        <svg class="star" viewBox="0 0 24 24" width="11" height="11">
-          <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
-        </svg>
-      {/each}
+    <!-- The overlays live INSIDE the card, not the slot: the card hugs the
+         photo now, so anything anchored to the slot floated off its edges.
+         The matte's overflow + radius clips them to the print. -->
+    <!-- Stars: fill = the app background, stroke = the hairline — the one star
+         look everywhere (Swift `Stars`), no black chip behind. -->
+    {#if rating > 0}
+      <div class="stars-overlay">
+        {#each Array(rating) as _}
+          <svg class="star" viewBox="0 0 24 24" width="11" height="11">
+            <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
+          </svg>
+        {/each}
+      </div>
+    {/if}
+
+    <!-- Story dot: in-story = a quiet bg-coloured marker (not a loud red dot);
+         hover-only when it isn't, so empty dots don't clutter the grid. -->
+    <button
+      class="story-dot-btn"
+      disabled={path.startsWith("apple-photos://")}
+      hidden={path.startsWith("apple-photos://")}
+      class:in-story={inStory}
+      onclick={(e) => {
+        e.stopPropagation();
+        onToggleStory();
+      }}
+      title={inStory ? "Remove from story" : "Add to story"}
+      aria-label={inStory ? "Remove from story" : "Add to story"}
+    ></button>
+
+    {#if isExporting || isRendering}
+      <div class="render-badge" title={isExporting ? "Export en cours…" : "Rendu en cours…"}>
+        <span class="badge-dot"></span>
+      </div>
+    {/if}
+
+    <!-- Hover caption — the theme's own deepest surface as scrim, its
+         foreground as text, the name centred under the print. -->
+    <div class="caption-overlay">
+      <span class="name">{stem(name)}</span>
     </div>
-  {/if}
-
-  <!-- Story dot: in-story = a quiet bg-coloured marker (not a loud red dot);
-       hover-only when it isn't, so empty dots don't clutter the grid. -->
-  <button
-    class="story-dot-btn"
-    disabled={path.startsWith("apple-photos://")}
-    hidden={path.startsWith("apple-photos://")}
-    class:in-story={inStory}
-    onclick={(e) => {
-      e.stopPropagation();
-      onToggleStory();
-    }}
-    title={inStory ? "Remove from story" : "Add to story"}
-    aria-label={inStory ? "Remove from story" : "Add to story"}
-  ></button>
-
-  {#if isExporting || isRendering}
-    <div class="render-badge" title={isExporting ? "Export en cours…" : "Rendu en cours…"}>
-      <span class="badge-dot"></span>
-    </div>
-  {/if}
-
-  <!-- Hover caption — always the DARK palette's scrim + light text, even in
-       light mode (a white wash is unreadable over a bright photo). -->
-  <div class="caption-overlay">
-    <span class="name">{stem(name)}</span>
   </div>
 </div>
 
@@ -386,18 +389,24 @@
     background: var(--color-accent);
   }
 
-  /* Just tall enough to seat the caption — not a wash over half the photo —
-     toned to the dark palette's photoFrame (#171717), not flat black. */
+  /* Just tall enough to seat the caption — not a wash over half the photo.
+     Toned from the theme's deepest surface, with its foreground on top, so
+     the scrim follows light and dark instead of always being black. */
   .caption-overlay {
     position: absolute;
     bottom: 0;
     left: 0;
     right: 0;
     z-index: 10;
-    background: linear-gradient(to top, rgba(23, 23, 23, 0.92) 20%, rgba(23, 23, 23, 0));
+    background: linear-gradient(
+      to top,
+      color-mix(in srgb, var(--color-surface-lowest) 92%, transparent) 20%,
+      transparent
+    );
     padding: 18px 8px 6px;
     display: flex;
     flex-direction: column;
+    align-items: center;
     pointer-events: none;
     opacity: 0;
     transition: opacity var(--duration-instant) var(--ease-soft);
@@ -408,7 +417,8 @@
   .caption-overlay .name {
     font-family: var(--font-text, sans-serif);
     font-size: 10px;
-    color: #fff;
+    color: var(--color-foreground);
+    max-width: 100%;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

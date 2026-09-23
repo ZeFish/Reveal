@@ -5232,7 +5232,7 @@
        dark foreground, and "elevated" must still mean lighter. */
     --color-surface-high: color-mix(in srgb, white 4%, var(--color-surface));
     --color-surface-highest: color-mix(in srgb, white 4%, var(--color-surface-high));
-    background: var(--color-surface-lowest);
+    background: var(--color-background);
     color: var(--color-foreground);
   }
   .window-controls-zone {
@@ -5667,11 +5667,11 @@
        --color-background over its own column — leaving the docked panel's
        margin gutter, uncovered by either, showing that lighter body tone.
        Paint the whole grid one flat shade so both columns' gutters match.
-       surface-lowest, not --color-background: the canvas is the recessed
-       level in BOTH themes. --color-background is the darkest pole in dark
-       mode but the lightest in light mode, which left the photo area
-       brighter than the sidebar and the panels in light. */
-    background: var(--color-surface-lowest);
+       The canvas sits one step BELOW the app's ground (--color-background,
+       the sidebar's): --color-surface-lower is the framework's "sunk" wash,
+       foreground-tinted in light and black in dark, so it darkens in both
+       themes. Layered over the ground so the result is opaque. */
+    background: var(--canvas);
   }
   .photo-mat {
     box-sizing: border-box;

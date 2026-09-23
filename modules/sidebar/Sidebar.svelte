@@ -615,9 +615,9 @@
     return !applePhotos?.active && !isLibrary && node.abs === curDir;
   }
 
-  // The import-destination accent: the chosen folder gets a filled accent
-  // dot, every ancestor gets a faint left-edge stripe so you can trace the
-  // branch down to the destination. Both are derived client-side from the
+  // The import-destination accent: the chosen folder's name turns accent
+  // (it used to carry a status dot, a column of circles that cost every row
+  // its width for a signal only an import needs). Both are derived client-side from the
   // folder's absolute path — no new data from the backend.
   /** @param {string} abs */
   function isImportDest(abs) {
@@ -664,10 +664,6 @@
 
 
 </script>
-
-{#snippet statusDot(/** @type {boolean} */ filled, /** @type {boolean} */ accent)}
-  <span class="dot" class:filled class:accent aria-hidden="true"></span>
-{/snippet}
 
 {#snippet row(/** @type {TreeNode} */ node, /** @type {number} */ depth)}
   <div
@@ -716,7 +712,6 @@
     {:else}
       <span class="disc"></span>
     {/if}
-    {@render statusDot(isCurrent(node), isImportDest(node.abs))}
     {#if renamingPath === node.abs}
       <input
         class="dir-rename"
@@ -774,7 +769,6 @@
     }}
   >
     <span class="disc"></span>
-    {@render statusDot(curDir === g.abs, false)}
     <span class="dir-name" title={g.abs}>{g.name}</span>
     <span class="dir-spacer"></span>
     <span class="dir-count"></span>
@@ -785,7 +779,6 @@
 {#snippet newFolderInput(/** @type {number} */ depth)}
   <div class="dir-row" style="--depth: {depth}">
     <span class="disc"></span>
-    {@render statusDot(false, false)}
     <input
       class="dir-rename"
       value={createValue}
@@ -857,7 +850,7 @@
         if (e.key === "Enter" && root && e.target === e.currentTarget) onOpenLibrary();
       }}
     >
-      {@render statusDot(isLibrary, true)}
+      <span class="lead" aria-hidden="true"></span>
       <span class="lib-label">All Library</span>
       <span class="dir-spacer"></span>
       {#if scanning}
@@ -1410,9 +1403,24 @@
     border-radius: var(--radius);
     cursor: pointer;
   }
+  /* Every row in the tree — All Library, a catalogue, a folder — shares the
+     same columns: a caret slot (--lead), the name, the count, and a trailing
+     icon slot (--trail). Same gap, same horizontal padding, so names start on
+     one line and counts and icons end on another. A child folder steps in by
+     exactly one caret + gap, which puts its caret under its parent's name. */
+  .tree {
+    --lead: 10px;
+    --trail: 14px;
+    --row-gap: 5px;
+    --indent: calc(var(--lead) + var(--row-gap));
+  }
   .lib-row {
-    gap: 8px;
+    gap: var(--row-gap);
     padding: 4px 8px;
+  }
+  .lead {
+    width: var(--lead);
+    flex-shrink: 0;
   }
   .lib-row.current {
     background: color-mix(in srgb, var(--color-foreground) 10%, transparent);
@@ -1459,8 +1467,9 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 14px;
+    width: var(--trail);
     height: 14px;
+    flex-shrink: 0;
     border-radius: var(--radius-sm);
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
   }
@@ -1475,8 +1484,8 @@
   .section {
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 6px 8px 2px;
+    gap: var(--row-gap);
+    padding: 4px 8px;
     margin-top: 4px;
   }
   .cat-disc {
@@ -1485,8 +1494,9 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 14px;
+    width: var(--lead);
     height: 14px;
+    flex-shrink: 0;
     color: color-mix(in srgb, var(--color-foreground) 45%, transparent);
     transition: color var(--duration-instant);
   }
@@ -1512,10 +1522,14 @@
   .section-main:hover .section-name {
     color: var(--color-foreground);
   }
+  .section-main.import-dest .section-name,
+  .dir-row.import-dest .dir-name {
+    color: var(--color-accent);
+  }
 
   .dir-row {
-    gap: 8px;
-    padding: 4px 8px 4px calc(8px + var(--depth) * 12px);
+    gap: var(--row-gap);
+    padding: 4px 8px 4px calc(8px + (var(--depth) + 1) * var(--indent));
     position: relative;
   }
   .dir-row.current {
@@ -1554,7 +1568,7 @@
   .disc {
     all: unset;
     cursor: pointer;
-    width: 8px;
+    width: var(--lead);
     height: 8px;
     box-sizing: content-box;
     /* The visible chevron stays 8px, but an 8x8 hit target is easy to miss
@@ -1584,29 +1598,6 @@
   }
   span.disc {
     cursor: default;
-  }
-
-  /* The status dot — filled = the folder you're viewing, hollow otherwise;
-     the library root carries the Leica red. */
-  .dot {
-    width: 6.5px;
-    height: 6.5px;
-    border-radius: 50%;
-    border: 1px solid color-mix(in srgb, var(--color-foreground) 25%, transparent);
-    flex-shrink: 0;
-  }
-  .dot.filled {
-    width: 7.5px;
-    height: 7.5px;
-    border: none;
-    background: var(--color-foreground);
-  }
-  .dot.accent {
-    border-color: color-mix(in srgb, var(--color-accent) 70%, transparent);
-  }
-  .dot.accent.filled {
-    background: var(--color-accent);
-    box-shadow: 0 0 4px color-mix(in srgb, var(--color-accent) 50%, transparent);
   }
 
   .dir-name {
@@ -1642,7 +1633,7 @@
   /* Fixed slot for the story marker — present on every row (empty or not) so it
      never shifts the count. */
   .story-slot {
-    width: 5px;
+    width: var(--trail);
     flex-shrink: 0;
     display: flex;
     align-items: center;

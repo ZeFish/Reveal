@@ -54,15 +54,17 @@
 <style>
   :global(:root) {
     --window-controls-offset-sidebar: 78px;
+    /* The photo canvas: the ground plus the framework's sunk wash. */
+    --canvas: linear-gradient(var(--color-surface-lower), var(--color-surface-lower))
+      var(--color-background);
     --window-controls-offset-content: 86px;
   }
-  /* The recessed canvas: a quiet depth layer as body background
-     (a fixed ::before overlay mis-sizes and mis-stacks in WKWebView).
-     The app-vs-website resets (measure, margins, user-select) live in
-     app.scss — this block is only reveal's visual canvas. */
+  /* The app's ground is the framework's own --color-background — what the
+     sidebar sits on. The photo canvas is recessed below it (see .dev-grid in
+     +page.svelte). The app-vs-website resets (measure, margins, user-select)
+     live in app.scss — this block is only reveal's visual ground. */
   :global(body:not(.is-transparent-window)) {
     background-color: var(--color-background);
-    background-image: linear-gradient(var(--color-surface-low), var(--color-surface-low));
     color: var(--color-foreground);
     font-family: var(--font-text, system-ui, sans-serif);
     -webkit-font-smoothing: antialiased;
