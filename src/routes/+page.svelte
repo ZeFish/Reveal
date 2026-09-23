@@ -54,6 +54,8 @@
    * @property {string} path
    * @property {string} name
    * @property {number} rating
+   * @property {number} [width] as seen, sensor rotation applied — absent until rescanned
+   * @property {number} [height]
    * @property {number} [previewVersion]
    * @property {string | number} [capture_at]
    * @property {number} [aperture]

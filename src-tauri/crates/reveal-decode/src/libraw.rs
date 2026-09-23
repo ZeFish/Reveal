@@ -166,7 +166,62 @@ pub fn capture_timestamp(path: &Path) -> Option<i64> {
     }
 }
 
+/// Everything the indexer wants from a RAW's header, in ONE open.
+///
+/// The scan reads this for every new or changed file in a 105,000-photo
+/// library that lives on an NFS mount, so asking libraw twice — once for the
+/// date, once for the size — would double the round trips for nothing. No
+/// pixel decode either way; this is header metadata.
+///
+/// Returns `(captured_at, width, height)`, each `None` when the file does not
+/// state it.
+pub fn capture_header(path: &Path) -> (Option<i64>, Option<u32>, Option<u32>) {
+    let Ok(cpath) = CString::new(path.to_string_lossy().as_bytes()) else {
+        return (None, None, None);
+    };
+    unsafe {
+        let lr = ffi::libraw_init(0);
+        if lr.is_null() {
+            return (None, None, None);
+        }
+        let _guard = LibrawGuard(lr);
+        if ffi::libraw_open_file(lr, cpath.as_ptr()) != 0 {
+            return (None, None, None);
+        }
+        let ts = (*lr).other.timestamp as i64;
+        let sizes = &(*lr).sizes;
+        let (w, h) = oriented_dimensions(
+            u32::from(sizes.width),
+            u32::from(sizes.height),
+            sizes.flip as i32,
+        );
+        let dims = (w > 0 && h > 0).then_some((w, h));
+        ((ts > 0).then_some(ts), dims.map(|d| d.0), dims.map(|d| d.1))
+    }
+}
+
+/// Turn libraw's sensor dimensions into the ones the photo is actually seen
+/// at, using `sizes.flip`.
+///
+/// A portrait frame is shot on a landscape sensor: the header says 7380x4928
+/// and the photo on screen is 4928x7380, because `dcraw_process` rotates it
+/// on the way out. Measured on 200603 - Ann-Julie Simard0951.NEF.
+///
+/// libraw's flip follows the same convention as dcraw: 0 none, 3 half turn,
+/// 5 and 6 the quarter turns — and only those two swap the axes. Anything
+/// else (including the -1 some decoders report for "unknown") is left alone,
+/// which is the safe way round: a frame shown in the wrong orientation is
+/// better than one whose dimensions claim an orientation it does not have.
+pub fn oriented_dimensions(width: u32, height: u32, flip: i32) -> (u32, u32) {
+    match flip {
+        5 | 6 => (height, width),
+        _ => (width, height),
+    }
+}
+
 /// Visible RAW dimensions from libraw's header metadata; no pixel decode.
+///
+/// "Visible" includes the sensor rotation — see `oriented_dimensions`.
 pub fn capture_dimensions(path: &Path) -> Option<(u32, u32)> {
     let cpath = CString::new(path.to_string_lossy().as_bytes()).ok()?;
     unsafe {
@@ -181,7 +236,8 @@ pub fn capture_dimensions(path: &Path) -> Option<(u32, u32)> {
         let sizes = &(*lr).sizes;
         let width = u32::from(sizes.width);
         let height = u32::from(sizes.height);
-        (width > 0 && height > 0).then_some((width, height))
+        (width > 0 && height > 0)
+            .then(|| oriented_dimensions(width, height, sizes.flip as i32))
     }
 }
 
@@ -308,4 +364,32 @@ unsafe fn bmp_from_libraw_bitmap(img: *mut ffi::libraw_processed_image_t) -> Res
     }
 
     Ok(out)
+}
+
+#[cfg(test)]
+mod orientation_tests {
+    use super::oriented_dimensions;
+
+    /// The case the whole thing exists for. A portrait frame's header reports
+    /// the landscape sensor; only the quarter turns swap the axes.
+    #[test]
+    fn a_quarter_turn_swaps_the_axes() {
+        assert_eq!(oriented_dimensions(7380, 4928, 5), (4928, 7380));
+        assert_eq!(oriented_dimensions(7380, 4928, 6), (4928, 7380));
+    }
+
+    #[test]
+    fn no_turn_and_a_half_turn_leave_them_alone() {
+        assert_eq!(oriented_dimensions(7380, 4928, 0), (7380, 4928));
+        assert_eq!(oriented_dimensions(7380, 4928, 3), (7380, 4928));
+    }
+
+    /// Some decoders report -1 for "unknown". Guessing a swap there would
+    /// claim an orientation the file never stated.
+    #[test]
+    fn an_unknown_flip_changes_nothing() {
+        for flip in [-1, 1, 2, 4, 7, 99] {
+            assert_eq!(oriented_dimensions(7380, 4928, flip), (7380, 4928), "flip {flip}");
+        }
+    }
 }

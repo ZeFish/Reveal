@@ -24,6 +24,7 @@
    * @property {(e: DragEvent) => void} [onDragStart]
    * @property {string} [layout]
    * @property {number} [aspect]
+   * @property {number} [knownAspect] the photo's own ratio, from the index
    * @property {boolean} [fill]
    * @property {number} [idx]
    */
@@ -45,19 +46,41 @@
     onDragStart = () => {},
     layout = "uniform",
     aspect = 1.5,
+    knownAspect = undefined,
     fill = true,
     idx
   } = $props();
 
   let loaded = $state(false);
   let failed = $state(false);
-  let naturalAspect = $state(1.5);
+  /**
+   * What the loaded image turned out to be, once it has loaded. `null` until
+   * then — and again whenever this cell is recycled for another photo, which
+   * the virtual grid does constantly.
+   * @type {number | null}
+   */
+  let measuredAspect = $state(null);
+  /**
+   * The photo's own ratio.
+   *
+   * Derived, not seeded: a `$state` initialiser captures its value once, and
+   * a recycled cell would go on describing the photo it used to hold.
+   *
+   * The index answers first, so a folder can be laid out — portraits included
+   * — before a single thumbnail has come back from the NAS. 1.5 is the guess
+   * for a row indexed before that column existed, or a file libraw cannot
+   * read; the image corrects whichever of the two it was.
+   */
+  const naturalAspect = $derived(measuredAspect ?? knownAspect ?? 1.5);
+  /** Masonry gives the slot the photo's shape already, and `fill` crops to
+   *  the slot on purpose; neither wants a card of its own. */
+  const hugs = $derived(layout !== "masonry" && !fill);
   let imgEl = $state();
 
   function handleLoad() {
     loaded = true;
     if (imgEl && imgEl.naturalWidth && imgEl.naturalHeight) {
-      naturalAspect = imgEl.naturalWidth / imgEl.naturalHeight;
+      measuredAspect = imgEl.naturalWidth / imgEl.naturalHeight;
     }
   }
 
@@ -101,9 +124,21 @@
   tabindex="0"
   style="aspect-ratio: {layout === 'masonry' ? naturalAspect : aspect};"
 >
-  <!-- `hug` only where it means anything: masonry already gives the slot the
-       photo's shape, and `fill` deliberately crops to the slot. -->
-  <div class="matte" class:loaded class:hug={layout !== "masonry" && !fill}>
+  <!-- Which side binds is arithmetic, not a CSS guess: a photo wider than its
+       slot is limited by width, a narrower one by height. Saying so outright
+       beats `aspect-ratio` plus a definite dimension, which is a definite
+       dimension with the other hung off it — the mistake that letterboxed
+       landscapes and flattened masonry an hour ago. -->
+  <div
+    class="matte"
+    class:loaded
+    class:hug={hugs}
+    style={hugs
+      ? `aspect-ratio:${naturalAspect};${
+          naturalAspect >= aspect ? "width:100%;height:auto" : "height:100%;width:auto"
+        }`
+      : ""}
+  >
     <img
       data-no-zoom
       bind:this={imgEl}
@@ -246,20 +281,11 @@
   }
 
   /* The card takes the photo's proportion instead of padding it with negative
-     space either side (Francis, 2026-09-23, on a portrait frame).
-
-     The IMAGE sizes the card here, rather than the card being handed a ratio.
-     An `aspect-ratio` plus a definite `height: 100%` is not contain-sizing —
-     it is a definite height with a width hung off it, so a landscape photo
-     stayed letterboxed in a tall slot, and masonry (where the slot already
-     carries the photo's shape) came out flattened.
-
-     Before it loads the image has no size and the card would collapse onto
-     its placeholder glyph, so until then it fills the slot as it always did. */
-  .matte.hug.loaded,
-  .matte.hug.loaded img {
-    width: auto;
-    height: auto;
+     space either side (Francis, 2026-09-23, on a portrait frame). Its ratio
+     and the side that binds are set inline — from the index when the scan
+     knows the size, from the loaded image otherwise — so a folder lays out
+     correctly, portraits included, before a thumbnail has arrived. */
+  .matte.hug {
     max-width: 100%;
     max-height: 100%;
   }

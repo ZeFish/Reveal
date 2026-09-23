@@ -17,7 +17,7 @@
     node.focus();
   }
 
-  /** @typedef {{ path: string, name: string, previewVersion?: number, rating?: number }} PhotoFrame */
+  /** @typedef {{ path: string, name: string, previewVersion?: number, rating?: number, width?: number, height?: number }} PhotoFrame */
 
   let {
     frames = [],
@@ -263,6 +263,7 @@
         name={f.name}
         previewVersion={f.previewVersion}
         rating={f.rating}
+        knownAspect={f.width && f.height ? f.width / f.height : undefined}
         selected={selectedPaths.has(f.path)}
         inStory={storySet.has(stem(f.name))}
         isExporting={isExporting(f)}

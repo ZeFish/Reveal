@@ -53,6 +53,13 @@ pub struct FrameRow {
     pub name: String,
     pub rating: u8,
     pub capture_at: Option<i64>,
+    /// The photo's size as it is SEEN — the sensor rotation already applied
+    /// (see `reveal_decode::oriented_dimensions`). `None` for a row indexed
+    /// before this column existed, or a file libraw cannot read: the grid
+    /// treats that as "shape unknown" and waits for the thumbnail, which is
+    /// what it did for every photo until now.
+    pub width: Option<u32>,
+    pub height: Option<u32>,
 }
 
 /// A registered library as the management UI needs to see it.
@@ -105,6 +112,14 @@ impl Index {
         // the hash here pays that read once in a file's life instead of once
         // per import. NULL means "not known yet", never "no hash".
         let _ = conn.execute("ALTER TABLE frames ADD COLUMN content_hash TEXT", []);
+        // Migration: the photo's size as seen, read from the RAW header at
+        // scan (no pixel decode, and in the same libraw open as capture_at).
+        // Lets the grid lay a folder out — including which frames are
+        // portrait — before a single thumbnail has come back from the NAS.
+        // NULL means "not known yet", for rows indexed before this and for
+        // files libraw cannot read.
+        let _ = conn.execute("ALTER TABLE frames ADD COLUMN width INTEGER", []);
+        let _ = conn.execute("ALTER TABLE frames ADD COLUMN height INTEGER", []);
         let _ = conn.execute("DELETE FROM frames WHERE name LIKE '.%' OR name LIKE '._%'", []);
         // Migration: seed `roots` from the legacy single `meta.root` so an
         // existing catalogue keeps working — first launch after the upgrade
@@ -319,7 +334,8 @@ impl Index {
                 // write lock; only the upserts hold the connection. Both are
                 // paid for new/changed files only — the mtime skip covers
                 // rescans.
-                let mut rows: Vec<(String, String, String, i64, u8, Option<i64>)> = Vec::new();
+                type Row = (String, String, String, i64, u8, Option<i64>, Option<u32>, Option<u32>);
+                let mut rows: Vec<Row> = Vec::new();
                 for (path, dir, name, mtime) in batch {
                     let fresh = !known.contains(&(path.clone(), mtime));
                     found_paths.insert(path.clone());
@@ -331,13 +347,15 @@ impl Index {
                         .flatten()
                         .and_then(|s| s.rating)
                         .unwrap_or(0);
-                    let captured = reveal_decode::capture_timestamp(Path::new(&path));
-                    rows.push((path, dir, name, mtime, rating, captured));
+                    // One header open for both — two would double the NFS
+                    // round trips over a six-figure library for nothing.
+                    let (captured, w, h) = reveal_decode::capture_header(Path::new(&path));
+                    rows.push((path, dir, name, mtime, rating, captured, w, h));
                 }
                 if !rows.is_empty() {
                     let mut conn = self.conn.lock().unwrap();
                     let tx = conn.transaction()?;
-                    for (path, dir, name, mtime, rating, captured) in &rows {
+                    for (path, dir, name, mtime, rating, captured, w, h) in &rows {
                         tx.execute(
                             // A remembered content_hash survives a rescan, but
                             // only while mtime is unchanged — a file rewritten
@@ -345,13 +363,14 @@ impl Index {
                             // empty promise of an old hash and make a genuinely
                             // new photo look like a duplicate. Bare `mtime` in
                             // DO UPDATE is the existing row's value.
-                            "INSERT INTO frames(path,dir,name,mtime,rating,capture_at)
-                             VALUES(?1,?2,?3,?4,?5,?6)
+                            "INSERT INTO frames(path,dir,name,mtime,rating,capture_at,width,height)
+                             VALUES(?1,?2,?3,?4,?5,?6,?7,?8)
                              ON CONFLICT(path) DO UPDATE
                              SET dir=?2,name=?3,mtime=?4,rating=?5,capture_at=?6,
+                                 width=?7,height=?8,
                                  content_hash = CASE WHEN mtime = excluded.mtime
                                                      THEN content_hash ELSE NULL END",
-                            rusqlite::params![path, dir, name, mtime, rating, captured],
+                            rusqlite::params![path, dir, name, mtime, rating, captured, w, h],
                         )?;
                         added += 1;
                     }
@@ -475,7 +494,7 @@ impl Index {
         // shows its own frames AND every subfolder's — so the root shows the
         // whole library ("All Library").
         let mut stmt = conn.prepare(
-            "SELECT path, name, rating, capture_at FROM frames
+            "SELECT path, name, rating, capture_at, width, height FROM frames
              WHERE (dir=?1 OR dir LIKE ?1 || '/%') AND rating>=?2 AND name NOT LIKE '.%' AND name NOT LIKE '._%'
              ORDER BY COALESCE(capture_at, 0), name",
         )?;
@@ -485,6 +504,8 @@ impl Index {
                 name: r.get(1)?,
                 rating: r.get::<_, i64>(2)? as u8,
                 capture_at: r.get(3)?,
+                width: r.get(4)?,
+                height: r.get(5)?,
             })
         })?;
         Ok(rows.flatten().collect())
@@ -710,5 +731,54 @@ mod tests {
 
         index.scan(&root).unwrap();
         assert_eq!(frame_count(&index), 0);
+    }
+}
+
+#[cfg(test)]
+mod dimension_tests {
+    use super::*;
+
+    /// Scan a real folder into a throwaway database and check the photos come
+    /// back with the size they are SEEN at.
+    ///
+    /// Reads the photos, writes only to a temp file — the library is never
+    /// touched. Ignored by default because it needs a folder of real RAWs:
+    ///
+    ///   REVEAL_TEST_DIR=/path/to/a/folder \
+    ///     cargo test --release -p reveal-index dimensions -- --ignored --nocapture
+    #[test]
+    #[ignore = "integration; needs a real folder via REVEAL_TEST_DIR"]
+    fn a_scan_records_the_size_a_photo_is_seen_at() {
+        let dir = std::env::var("REVEAL_TEST_DIR").unwrap_or_default();
+        if dir.is_empty() || !Path::new(&dir).is_dir() {
+            eprintln!("set REVEAL_TEST_DIR to a folder of RAWs");
+            return;
+        }
+        let db = std::env::temp_dir().join(format!("reveal-dims-{}.sqlite", std::process::id()));
+        let _ = std::fs::remove_file(&db);
+        let index = Index::open(&db).expect("open");
+        index.add_root(&dir).expect("add_root");
+        let stats = index.scan(Path::new(&dir)).expect("scan");
+        let rows = index.frames(&dir, 0).expect("frames");
+        eprintln!("scanné {} fichiers en {} ms", stats.added, stats.ms);
+
+        let sized: Vec<_> = rows.iter().filter(|r| r.width.is_some()).collect();
+        let portrait = sized.iter().filter(|r| r.height > r.width).count();
+        eprintln!(
+            "{}/{} avec dimensions · {} en portrait",
+            sized.len(),
+            rows.len(),
+            portrait
+        );
+        for r in sized.iter().take(3) {
+            eprintln!("   {} {:?}x{:?}", r.name, r.width.unwrap(), r.height.unwrap());
+        }
+
+        assert!(!sized.is_empty(), "no photo came back with a size");
+        assert!(
+            portrait > 0,
+            "not one portrait: the sensor rotation is being ignored again"
+        );
+        let _ = std::fs::remove_file(&db);
     }
 }

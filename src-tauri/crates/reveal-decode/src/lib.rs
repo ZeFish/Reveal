@@ -13,7 +13,7 @@ use std::path::Path;
 
 mod libraw;
 pub use libraw::{
-    capture_dimensions, capture_timestamp, extract_thumb_jpeg, extract_thumb_preview,
+    capture_dimensions, capture_header, capture_timestamp, oriented_dimensions, extract_thumb_jpeg, extract_thumb_preview,
     LibrawDecoder, ThumbPreview,
 };
 
