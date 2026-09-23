@@ -1222,6 +1222,37 @@ mod perf_probe {
     ///
     ///   REVEAL_BENCH_RAW=/path/to/file.RAF \
     ///     cargo test --release -p reveal-engine time_split -- --ignored --nocapture
+    /// What an export at a web size actually costs.
+    ///
+    /// `export_jpeg` asks for `max_px = 0`, the full-resolution decode, and
+    /// then throws most of those pixels away in a resize. For X-Trans that
+    /// decode is Markesteijn 3-pass. This measures the gap against asking for
+    /// the size actually wanted.
+    ///
+    ///   REVEAL_BENCH_RAW=/path/to/file.RAF \
+    ///     cargo test --release -p reveal-engine export_cost -- --ignored --nocapture
+    #[test]
+    #[ignore = "diagnostic; needs a real RAW via REVEAL_BENCH_RAW"]
+    fn export_cost() {
+        let raw = std::path::PathBuf::from(std::env::var("REVEAL_BENCH_RAW").unwrap_or_default());
+        if !raw.exists() {
+            eprintln!("set REVEAL_BENCH_RAW to a RAW file");
+            return;
+        }
+        let data_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data");
+        let luts = std::env::temp_dir().join("reveal-bench-luts");
+        let engine = Engine::new(&data_dir, &luts).expect("engine");
+        let mut recipe = Recipe::default();
+        recipe.engine = "rapid".to_string();
+
+        for max_px in [0u32, 2048] {
+            let label = if max_px == 0 { "full (what export asks for)" } else { "2048 (what it keeps)" };
+            let t = Instant::now();
+            let (_, w, h, _, _) = engine.develop_rgb8(&raw, &recipe, max_px).expect("develop");
+            eprintln!("{label:<30} {w}x{h}  {:?}", t.elapsed());
+        }
+    }
+
     #[test]
     #[ignore = "diagnostic; needs a real RAW via REVEAL_BENCH_RAW"]
     fn time_split() {
