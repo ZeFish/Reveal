@@ -7,6 +7,7 @@
 //! index as phantom frames; they start with `@`/`#`, not `.`, so a
 //! hidden-files check misses them.
 
+use rayon::prelude::*;
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Mutex;
@@ -335,23 +336,33 @@ impl Index {
                 // paid for new/changed files only — the mtime skip covers
                 // rescans.
                 type Row = (String, String, String, i64, u8, Option<i64>, Option<u32>, Option<u32>);
-                let mut rows: Vec<Row> = Vec::new();
-                for (path, dir, name, mtime) in batch {
-                    let fresh = !known.contains(&(path.clone(), mtime));
-                    found_paths.insert(path.clone());
-                    if !fresh {
-                        continue; // unchanged: no reads, no write needed
-                    }
-                    let rating = reveal_meta::read(Path::new(&path))
-                        .ok()
-                        .flatten()
-                        .and_then(|s| s.rating)
-                        .unwrap_or(0);
-                    // One header open for both — two would double the NFS
-                    // round trips over a six-figure library for nothing.
-                    let (captured, w, h) = reveal_decode::capture_header(Path::new(&path));
-                    rows.push((path, dir, name, mtime, rating, captured, w, h));
-                }
+                let rows: Vec<Row>;
+                let to_read: Vec<_> = batch
+                    .into_iter()
+                    .filter(|(path, _, _, mtime)| {
+                        found_paths.insert(path.clone());
+                        !known.contains(&(path.clone(), *mtime)) // unchanged: nothing to do
+                    })
+                    .collect();
+                // Two reads per file, both of them a round trip to the NAS: the
+                // XMP sidecar for the rating, and the RAW's header for the date
+                // and the size. Done one file at a time that is ~99ms of
+                // waiting each, measured on a 61-photo folder. They are
+                // independent, so wait for them together.
+                rows = to_read
+                    .into_par_iter()
+                    .map(|(path, dir, name, mtime)| {
+                        let rating = reveal_meta::read(Path::new(&path))
+                            .ok()
+                            .flatten()
+                            .and_then(|s| s.rating)
+                            .unwrap_or(0);
+                        // One header open for both — two would double the
+                        // round trips over a six-figure library for nothing.
+                        let (captured, w, h) = reveal_decode::capture_header(Path::new(&path));
+                        (path, dir, name, mtime, rating, captured, w, h)
+                    })
+                    .collect();
                 if !rows.is_empty() {
                     let mut conn = self.conn.lock().unwrap();
                     let tx = conn.transaction()?;
@@ -440,24 +451,41 @@ impl Index {
         // Backfill: rows that predate the capture_at column — their mtime
         // skip means the walk above never re-reads them. NULL = never read;
         // 0 = read, no EXIF date (so we don't re-pay the read every scan).
+        // Backfill. The walk above skips any file whose mtime is unchanged, so
+        // a column added after a library was indexed would otherwise never
+        // fill — a rescan reads nothing. This pass is how `capture_at` caught
+        // up when it was added, and `width`/`height` ride along in the same
+        // header read rather than paying a second one.
         let missing: Vec<String> = {
             let conn = self.conn.lock().unwrap();
-            let mut stmt = conn
-                .prepare("SELECT path FROM frames WHERE capture_at IS NULL AND path LIKE ?1")?;
+            let mut stmt = conn.prepare(
+                "SELECT path FROM frames
+                 WHERE (capture_at IS NULL OR width IS NULL) AND path LIKE ?1",
+            )?;
             let rows = stmt.query_map([&root_like], |r| r.get::<_, String>(0))?;
             rows.flatten().collect()
         };
         for chunk in missing.chunks(64) {
-            let vals: Vec<(&String, i64)> = chunk
-                .iter()
-                .map(|p| (p, reveal_decode::capture_timestamp(Path::new(p)).unwrap_or(0)))
+            // In parallel: each of these is one open of a file on an NFS
+            // mount, so the chunk's cost is latency, not work, and waiting for
+            // them one at a time is waiting for nothing.
+            let vals: Vec<(&String, i64, u32, u32)> = chunk
+                .par_iter()
+                .map(|p| {
+                    let (ts, w, h) = reveal_decode::capture_header(Path::new(p));
+                    // 0 for "asked, and the file does not say" — the same
+                    // sentinel `capture_at` has always used. NULL would mean
+                    // "not asked yet" and this pass would read the file again
+                    // on every scan, forever.
+                    (p, ts.unwrap_or(0), w.unwrap_or(0), h.unwrap_or(0))
+                })
                 .collect();
             let mut conn = self.conn.lock().unwrap();
             let tx = conn.transaction()?;
-            for (p, ts) in &vals {
+            for (p, ts, w, h) in &vals {
                 tx.execute(
-                    "UPDATE frames SET capture_at=?2 WHERE path=?1",
-                    rusqlite::params![p, ts],
+                    "UPDATE frames SET capture_at=?2, width=?3, height=?4 WHERE path=?1",
+                    rusqlite::params![p, ts, w, h],
                 )?;
             }
             tx.commit()?;
@@ -746,6 +774,40 @@ mod dimension_tests {
     ///
     ///   REVEAL_TEST_DIR=/path/to/a/folder \
     ///     cargo test --release -p reveal-index dimensions -- --ignored --nocapture
+    /// The case the first version of this test missed: a library that was
+    /// already indexed. The scan skips any file whose mtime has not changed,
+    /// so a plain rescan reads nothing and a column added later never fills.
+    #[test]
+    #[ignore = "integration; needs a real folder via REVEAL_TEST_DIR"]
+    fn a_rescan_fills_a_size_that_was_missing() {
+        let dir = std::env::var("REVEAL_TEST_DIR").unwrap_or_default();
+        if dir.is_empty() || !Path::new(&dir).is_dir() {
+            return;
+        }
+        let db = std::env::temp_dir().join(format!("reveal-refill-{}.sqlite", std::process::id()));
+        let _ = std::fs::remove_file(&db);
+        let index = Index::open(&db).expect("open");
+        index.add_root(&dir).expect("add_root");
+        index.scan(Path::new(&dir)).expect("first scan");
+
+        // Stand in for a library indexed before the column existed.
+        {
+            let conn = index.conn.lock().unwrap();
+            conn.execute("UPDATE frames SET width=NULL, height=NULL", []).unwrap();
+        }
+        index.scan(Path::new(&dir)).expect("rescan");
+
+        let sized = index
+            .frames(&dir, 0)
+            .unwrap()
+            .iter()
+            .filter(|r| r.width.is_some())
+            .count();
+        eprintln!("après réindexage : {sized} photos avec dimensions");
+        let _ = std::fs::remove_file(&db);
+        assert!(sized > 0, "a rescan left the sizes empty");
+    }
+
     #[test]
     #[ignore = "integration; needs a real folder via REVEAL_TEST_DIR"]
     fn a_scan_records_the_size_a_photo_is_seen_at() {

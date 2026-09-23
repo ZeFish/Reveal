@@ -3850,6 +3850,7 @@ dependencies = [
 name = "reveal-index"
 version = "0.1.0"
 dependencies = [
+ "rayon",
  "reveal-decode",
  "reveal-meta",
  "rusqlite",
