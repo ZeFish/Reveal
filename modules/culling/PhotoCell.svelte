@@ -101,7 +101,7 @@
   tabindex="0"
   style="aspect-ratio: {layout === 'masonry' ? naturalAspect : aspect};"
 >
-  <div class="matte" class:loaded>
+  <div class="matte" class:loaded style="aspect-ratio: {loaded ? naturalAspect : aspect};">
     <img
       data-no-zoom
       bind:this={imgEl}
@@ -167,20 +167,20 @@
 </div>
 
 <style>
+  /* The SLOT, not the card. Its aspect stays the configured one because
+     PhotoGrid derives rowPitch from that same value (`rowH = cellW / aspect`)
+     — if this box took the photo's shape instead, the DOM rows and the
+     virtual geometry would disagree and scrolling would drift. The card is
+     `.matte`, which sizes itself to the photo inside this box. */
   .cell {
     all: unset;
     cursor: pointer;
     position: relative;
-    display: block;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     width: 100%;
     box-sizing: border-box;
-    border: 3px solid var(--color-surface);
-    border-radius: var(--radius);
-    background: var(--color-surface);
-    /* The quiet print-on-a-table depth. */
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
-    transition: box-shadow var(--duration-standard) var(--ease-soft), border-color var(--duration-standard) var(--ease-soft);
-    overflow: hidden;
     /* Own compositing layer: on the translucent window WKWebView otherwise
        smears each cell's box-shadow sideways into the next grid column
        (a shared-layer paint bug). Isolating the cell contains its shadow. */
@@ -190,12 +190,13 @@
 
   /* Selected, light mode: deep soft elevation lift without a harsh dark stroke. */
   .cell.selected {
-    border-color: var(--color-surface);
+    z-index: 5;
+  }
+  .cell.selected .matte {
     box-shadow:
       0 0 0 1px rgba(0, 0, 0, 0.12),
       0 6px 20px rgba(0, 0, 0, 0.4);
     transform: translateY(-1px) translateZ(0);
-    z-index: 5;
   }
   /* Selected, dark mode: subtle luminous edge and deep shadow. */
   @media (prefers-color-scheme: dark) {
@@ -222,11 +223,34 @@
   }
 
   .matte {
-    width: 100%;
+    /* Sized by the photo, capped by the slot: a portrait becomes a narrow
+       tall card instead of a wide one with negative space either side.
+       Until the image loads its shape is unknown, so the card starts at the
+       slot's aspect and settles into the photo's — what masonry already does. */
+    /* `height` and not just `max-height`: `aspect-ratio` needs one definite
+       dimension to work from, and with only the maximums the card collapsed
+       to its placeholder glyph before the image had loaded. Height comes
+       from the slot, width follows the aspect, and max-width clamps a
+       panorama wider than the slot (the height then follows it back down). */
     height: 100%;
+    width: auto;
+    max-width: 100%;
     position: relative;
     overflow: hidden;
-    border-radius: var(--radius-sm);
+    box-sizing: border-box;
+    border: 3px solid var(--color-surface);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    /* The quiet print-on-a-table depth. */
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+    transition:
+      box-shadow var(--duration-standard) var(--ease-soft),
+      transform var(--duration-standard) var(--ease-soft);
+    /* Own compositing layer: on the translucent window WKWebView otherwise
+       smears each card's box-shadow sideways into the next grid column
+       (a shared-layer paint bug). Isolating the card contains its shadow. */
+    transform: translateZ(0);
+    isolation: isolate;
   }
 
   .matte img {
