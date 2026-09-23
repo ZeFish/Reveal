@@ -48,7 +48,7 @@
   import { storyTheme, colorScheme, updateStoryTheme, contrastInk, getFontFamilyWithFallback, currentThemeFontPackages, currentThemeId } from "$lib/story-theme.svelte.js";
   import { loadFontPackages, measureThemeTokens } from "$lib/app-theme.js";
 
-  // ---- shared shapes (plain-JS JSDoc typing — no runtime effect) ----------
+  // ---- shared shapes (plain-JS JSDoc typing — no runtime effect) -----------------
   /** A catalogue frame row, as returned by `index_frames` / `list_dir`. */
   /** @typedef {Object} Frame
    * @property {string} path
@@ -766,7 +766,9 @@
     if (currentMode === "dev" && photoPath) session.setLastPhoto(photoPath);
   });
 
-  // ---- boot -------------------------------------------------------------
+  // ---- the backend event bus -----------------------------------------------------
+  // Sixty-one of the app's sixty-two `listen()` registrations, in one effect
+  // that runs once and now tears them all down again if it ever re-runs.
   $effect(() => {
     // Every backend listener registered here, so they can all be dropped
     // again. The effect runs once today — measured, not assumed — but 61
@@ -1278,11 +1280,9 @@
     };
   });
 
-  async function toggleAutoImport() {
-    const prefs = await invoke("toggle_auto_import");
-    autoImport = !!prefs.auto_import;
-    notify(autoImport ? "auto-import enabled" : "auto-import disabled", 2500);
-  }
+  // ---- modes, and the photo surface ----------------------------------------------
+  // Switching between grid and Develop, the zoom cycle, the pan gesture, and
+  // focus mode with the pointer-presence effect that feeds it.
 
   function saveLayouts() {
     session.setModeLayouts(layouts);
@@ -1453,6 +1453,9 @@
     };
   });
 
+  // ---- the detached panels -------------------------------------------------------
+  // Develop and its palettes as separate OS windows: what they are told, where
+  // they are put (see $lib/palettePlacement.js), and when they are synced.
   function sendDevStateToPanel() {
     if (isTauri && currentMode === "dev") {
       emit("main-dev-state", {
@@ -1631,6 +1634,7 @@
     }
   });
 
+  // ---- window chrome -------------------------------------------------------------
   function toggleSidebar() {
     closeSidebarPeek();
     layouts[currentMode].sidebar = !layouts[currentMode].sidebar;
@@ -1680,7 +1684,8 @@
     await invoke("hide_contact_sheet");
   }
 
-  // ---- index --------------------------------------------------------------
+  // ---- refreshing the library and its stories ------------------------------------
+
   // `light` skips the story-dot probe — one fs read per folder, too heavy to
   // repeat mid-scan over the NFS mount.
   /**
@@ -1751,6 +1756,10 @@
     recentStories = [...all].sort((a, b) => b.mtime - a.mtime).slice(0, 12);
   }
 
+
+  // ---- what the grid shows -------------------------------------------------------
+  // The one derivation every other surface reads, and the selection positions
+  // resolved against it, plus the preferences that shape it.
   function saveGridPrefs() {
     session.setGridPrefs({ cols, marginScale, cellAspect, fillCells, sortDesc });
   }
@@ -1801,6 +1810,8 @@
   function closePhotoMenu() {
     photoMenu = null;
   }
+
+  // ---- the settings window, and the Garden account -------------------------------
 
   // Settings is always its own OS window (Francis: it should feel like any
   // other app's Settings, never a dialog over the main one) — same
@@ -1873,6 +1884,7 @@
     }
   }
 
+  // ---- the main window, and fullscreen -------------------------------------------
   async function closeMainWindow() {
     try {
       await getCurrentWindow().close();
@@ -1991,6 +2003,8 @@
   }
 
   /** @param {string} path */
+  // ---- opening a photo somewhere else --------------------------------------------
+  // Finder, Preview, an external editor, or Develop from the menu bar.
   async function revealPhotoInFinder(path) {
     closePhotoMenu();
     try {
@@ -2072,6 +2086,9 @@
     }
   }
 
+  // ---- the catalogue's roots -----------------------------------------------------
+  // Adding, listing, forgetting and rescanning the folders the index is built
+  // from — the library is a SET of roots, not one.
   async function indexRoot() {
     const path = await invoke("pick_folder");
     if (!path) return;
@@ -2173,6 +2190,12 @@
     }
   }
 
+  async function toggleAutoImport() {
+    const prefs = await invoke("toggle_auto_import");
+    autoImport = !!prefs.auto_import;
+    notify(autoImport ? "auto-import enabled" : "auto-import disabled", 2500);
+  }
+
   // Set the import destination folder (the sidebar's context-menu action).
   // The backend persists it and emits shell-prefs-changed, which updates
   // `importDir` reactively — so the sidebar's accent follows without a
@@ -2188,7 +2211,7 @@
     }
   }
 
-  // ---- drag a photo onto a sidebar folder to move it there -------------------
+  // ---- dragging a photo onto a folder to move it there ---------------------------
   // The dragged frame carries its path(s) on the drag session; a folder row in
   // the sidebar reads them on drop and calls movePhotos. Dragging a photo that's
   // part of the current selection moves the whole selection.
@@ -2283,7 +2306,7 @@
     if (paths.length) movePhotos(paths, destDir);
   }
 
-  // ---- folder-level file management (rename / create / move a folder) ------
+  // ---- renaming, creating and moving folders -------------------------------------
   // All three touch the filesystem directly, then reconcile via `scan_root`
   // rather than a scoped `scan_folder`: the folder's OLD path no longer
   // exists after a rename/move, and reveal-index's walker treats an
@@ -2469,7 +2492,7 @@
   }
 
 
-  // ---- stories ---------------------------------------------------------------
+  // ---- stories -------------------------------------------------------------------
   /** @param {string} name */
   const stem = (name) => name.replace(/\.[^.]+$/, "");
 
@@ -2746,7 +2769,7 @@
     }
   }
 
-  // ---- import ---------------------------------------------------------------
+  // ---- importing from a memory card ----------------------------------------------
   /** @param {Card} card */
   async function importCard(card) {
     // Prefer the explicitly-chosen import folder; fall back to the primary
@@ -2875,7 +2898,7 @@
     }
   }
 
-  // ---- export ---------------------------------------------------------------
+  // ---- exporting -----------------------------------------------------------------
   function saveExportPrefs() {
     session.setExportPrefs({ edge: exportEdge, border: exportBorder, folder: exportFolder });
   }
@@ -3050,7 +3073,7 @@
     }
   }
 
-  // ---- grille -------------------------------------------------------------
+  // ---- opening a folder, and the URLs its photos are drawn from ------------------
   async function pickFolder() {
     const path = await invoke("pick_folder");
     if (path) openFolder(path);
@@ -3187,6 +3210,7 @@
     }
   }
 
+  // ---- copying a recipe from one photo to others ---------------------------------
   async function copySettings() {
     const source = view[sel];
     if (!source) return;
@@ -3291,6 +3315,11 @@
     if (!copiedRecipe) return;
     await applyRecipeToFrames(copiedRecipe, selectedFrames(view));
   }
+
+  // ---- the keyboard --------------------------------------------------------------
+  // `onKey` is 262 lines and the largest function in the file. It reads as a
+  // table because that is what it is; the decisions behind the mode keys live
+  // in $lib/controllers/AppController.js, which returns an action this applies.
 
   /** @param {any} res */
   function applyWorkflowResult(res) {
@@ -3599,7 +3628,7 @@
     e.preventDefault();
   }
 
-  // ---- develop ------------------------------------------------------------
+  // ---- developing the open photo -------------------------------------------------
   /** @param {string} path */
   /**
    * @param {string} path
@@ -4010,7 +4039,7 @@
     status = "";
   }
 
-  // ---- docked Develop panel ------------------------------------------------
+  // ---- the docked Develop panel's controls ---------------------------------------
   // Same mutation logic the detached panel runs locally before its emit
   // (dev-panel/+page.svelte) — here there's nothing to emit, `edited` above
   // already IS the notification (it schedules the render and the disk save).
