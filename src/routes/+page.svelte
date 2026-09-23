@@ -390,8 +390,8 @@
       if (preserve) {
         const restored = restorePhotoSelection(view, previous);
         selectedPaths = restored.selected;
-        sel = restored.index;
-        selectionAnchor = restored.anchor;
+        focusAt(restored.index);
+        anchorPath = view[restored.anchor]?.path ?? null;
         // Keep layout/filter, active Develop photo/recipe and scroll. PhotoGrid
         // keeps a moved focused row visible using its existing virtual geometry.
       } else {
@@ -399,7 +399,7 @@
         filterStory = false;
         previewFilter = false;
         storySet = new Set();
-        sel = 0;
+        focusAt(0);
         selectOnly(0);
         currentScrollTop = 0;
       }
@@ -446,9 +446,34 @@
     }
   }
   let loading = $state(false); // a folder open is in flight — suppresses the empty-state splash so switching folders doesn't flash "REVEAL"
-  let sel = $state(0);
+  /**
+   * The focused photo and the range anchor, held as PATHS.
+   *
+   * They used to be indexes into `view`, and `view` is not one list: it
+   * filters by rating and by story, and reverses under `sortDesc`. An index
+   * only means something next to the list it was computed in, and the two
+   * drifted apart in every way they could. Restoring a session looked the
+   * saved photo up in `frames` and assigned the result to `sel` — on a
+   * 61-photo folder that reopened its mirror, positions 16 and 46, every
+   * other launch. Flipping the sort left `sel` alone and quietly moved your
+   * selection to the opposite end.
+   *
+   * A path survives all of it. `sel` below is derived: it answers "where is
+   * the focused photo right now", recomputed whenever the list changes, and
+   * it cannot be set to a position that came from somewhere else.
+   * @type {string | null}
+   */
+  let focusPath = $state(null);
+  /** @type {string | null} */ let anchorPath = $state(null);
+  /**
+   * Where to land when the focused photo is not in `view` at all — filtered
+   * out by a rating, hidden by Editorial, moved or deleted. Keeping the last
+   * position means the grid stays where you were working instead of jumping
+   * to the top.
+   */
+  let focusFallback = $state(0);
   /** @type {Set<string>} */ let selectedPaths = $state(new Set());
-  let selectionAnchor = $state(0);
+
   /** @type {Recipe | null} */ let copiedRecipe = $state(null);
   /** @type {string[]} */ let roots = $state([]); // every catalogue root — the library is a SET of them
   /** @type {string | null} */ let root = $derived(roots[0] ?? null); // primary root, for legacy single-root paths
@@ -1798,18 +1823,49 @@
     return rows;
   });
 
-  $effect(() => {
-    if (sel >= view.length) {
-      sel = Math.max(0, view.length - 1);
-      selectOnly(sel);
-    }
+  /**
+   * The focused photo's position in the CURRENT view.
+   *
+   * The fallback ladder is the one `restorePhotoSelection` already used for
+   * Apple Photos reloads (modules/sidebar/applePhotosBrowsing.js) — identity
+   * first, then the first still-selected photo, then the old position
+   * clamped. That logic was right all along; it was only ever applied to one
+   * code path.
+   */
+  const sel = $derived.by(() => {
+    if (!view.length) return 0;
+    const byFocus = focusPath ? view.findIndex((f) => f.path === focusPath) : -1;
+    if (byFocus >= 0) return byFocus;
+    const bySelection = view.findIndex((f) => selectedPaths.has(f.path));
+    if (bySelection >= 0) return bySelection;
+    return Math.max(0, Math.min(focusFallback, view.length - 1));
   });
+
+  /** The range anchor's position, falling back to the focus. */
+  const selectionAnchor = $derived.by(() => {
+    const i = anchorPath ? view.findIndex((f) => f.path === anchorPath) : -1;
+    return i >= 0 ? i : sel;
+  });
+
+  /**
+   * Move the focus to a position in the view as it stands right now.
+   *
+   * The only way to move it. Everything that used to write `sel` goes
+   * through here, which is what makes an index from the wrong list
+   * impossible to express: the position is resolved to a photo immediately,
+   * and the photo is what is kept.
+   * @param {number} index
+   */
+  function focusAt(index) {
+    focusFallback = index;
+    focusPath = view[index]?.path ?? null;
+  }
 
   /** @param {number} index */
   function selectOnly(index) {
     const frame = view[index];
     selectedPaths = new Set(frame ? [frame.path] : []);
-    selectionAnchor = index;
+    anchorPath = frame?.path ?? null;
   }
 
   /**
@@ -1831,11 +1887,11 @@
       if (next.has(frame.path)) next.delete(frame.path);
       else next.add(frame.path);
       selectedPaths = next;
-      selectionAnchor = index;
+      anchorPath = frame.path;
     } else {
       selectOnly(index);
     }
-    sel = index;
+    focusAt(index);
   }
 
   function selectedFrames() {
@@ -1852,7 +1908,7 @@
     const frame = view[index];
     if (!frame) return;
     if (!selectedPaths.has(frame.path)) selectOnly(index);
-    sel = index;
+    focusAt(index);
     photoMenu = {
       frame,
       x: event.clientX,
@@ -2501,7 +2557,7 @@
     // it observes makes the provisional value permanent.
     folderSession = openFolderSession(dir);
     currentScrollTop = folderSession.scroll || scrollOffsets[dir] || 0;
-    sel = 0;
+    focusAt(0);
     selectOnly(0);
     let restoredToDevelop = false;
     if (restoreSession) {
@@ -2521,8 +2577,8 @@
       // avoid.
       const savedIdx = savedPhoto ? view.findIndex((f) => f.path === savedPhoto) : -1;
       if (savedPhoto && folderSession.mode === "dev" && savedIdx !== -1) {
-        sel = savedIdx;
-        selectOnly(sel);
+        focusAt(savedIdx);
+        selectOnly(savedIdx);
         await openPhoto(savedPhoto, { openDevPanel: layouts.dev.devPanel });
         restoredToDevelop = true;
       }
@@ -3182,7 +3238,7 @@
     filterStory = false;
     previewFilter = false;
     frames = await withPreviewVersions(await invoke("list_dir", { path }));
-    sel = 0;
+    focusAt(0);
     selectOnly(0);
     // The other way into a folder, and it has to remember as much as the
     // first: without its own session this folder's mode would silently stop
@@ -3667,7 +3723,7 @@
       else if (e.key === "ArrowDown") nextSel = Math.min(sel + c, view.length - 1);
       else if (e.key === "ArrowUp") nextSel = Math.max(sel - c, 0);
       
-      sel = nextSel;
+      focusAt(nextSel);
 
       if (e.shiftKey) {
         const from = Math.min(selectionAnchor, sel);
@@ -3717,7 +3773,7 @@
         if (next.has(view[sel].path)) next.delete(view[sel].path);
         else next.add(view[sel].path);
         selectedPaths = next;
-        selectionAnchor = sel;
+        anchorPath = view[sel].path;
       }
       e.preventDefault();
       return;
