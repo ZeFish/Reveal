@@ -1,6 +1,7 @@
 <script>
   import { tick, untrack } from "svelte";
   import { thumbUrl } from "$lib/thumbUrl.js";
+  import { placePalette } from "$lib/palettePlacement.js";
   import { session, openFolderSession } from "$lib/session.js";
   import {
     library, beginOpen, appendFrames, refreshFrames, clearFrames, refreshLoadedFrames, leaveFolder,
@@ -1517,8 +1518,9 @@
    * @param {number} panelWidth
    */
   async function computePalettePosition(index, panelWidth) {
-    const GAP = 12;
-    const CASCADE = 34;
+    // Measuring only. The geometry that decides right / left / other screen
+    // lives in $lib/palettePlacement.js, where its awkward cases are tested
+    // instead of being reproduced by dragging a window around.
     try {
       const main = getCurrentWindow();
       const factor = await main.scaleFactor();
@@ -1527,37 +1529,19 @@
       const mainMon = await currentMonitor();
       if (!mainMon?.position || !mainMon?.size) return null;
 
-      const mainX = outer.x / factor;
-      const mainY = outer.y / factor;
-      const mainW = size.width / factor;
-      const monX = mainMon.position.x / factor;
-      const monW = mainMon.size.width / factor;
+      const onSameMonitor = (/** @type {{ position: { x: number, y: number } }} */ m) =>
+        m.position.x === mainMon.position.x && m.position.y === mainMon.position.y;
+      const others = (await availableMonitors())
+        .filter((m) => !onSameMonitor(m))
+        .map((m) => ({ x: m.position.x / factor, y: m.position.y / factor }));
 
-      const rightX = Math.round(mainX + mainW) + GAP;
-      const fitsRight = rightX + panelWidth <= monX + monW;
-      const leftX = Math.round(mainX) - GAP - panelWidth;
-      const fitsLeft = leftX >= monX;
-
-      let baseX;
-      if (fitsRight) {
-        baseX = rightX;
-      } else if (fitsLeft) {
-        baseX = leftX;
-      } else {
-        const monitors = await availableMonitors();
-        const other = monitors.find(
-          (m) => m.position.x !== mainMon.position.x || m.position.y !== mainMon.position.y
-        );
-        if (other) {
-          const oX = other.position.x / factor;
-          const oY = other.position.y / factor;
-          return { x: Math.round(oX + GAP) + index * CASCADE, y: Math.round(oY + GAP) + index * CASCADE };
-        }
-        // Truly nowhere else on a single monitor with a wide main window —
-        // some overlap is unavoidable; at least stay predictable.
-        baseX = Math.round(monX + monW - panelWidth);
-      }
-      return { x: baseX + index * CASCADE, y: Math.round(mainY) + index * CASCADE };
+      return placePalette({
+        main: { x: outer.x / factor, y: outer.y / factor, width: size.width / factor },
+        monitor: { x: mainMon.position.x / factor, width: mainMon.size.width / factor },
+        otherMonitors: others,
+        index,
+        panelWidth,
+      });
     } catch (_) {
       return null;
     }
