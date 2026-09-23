@@ -1714,7 +1714,22 @@ pub fn run() {
                         size,
                         version,
                     ) {
-                        if let Ok(bytes) = std::fs::read(&local) {
+                        // An entry that is there but empty is not a hit. Serving
+                        // it leaves the cell blank for good; dropping it lets
+                        // this request fall through and the next one re-cache
+                        // properly, so the nine that already exist heal
+                        // themselves the first time they are asked for.
+                        if let Ok(bytes) = std::fs::read(&local).and_then(|b| {
+                            if b.is_empty() {
+                                let _ = std::fs::remove_file(&local);
+                                Err(std::io::Error::new(
+                                    std::io::ErrorKind::InvalidData,
+                                    "empty cache entry",
+                                ))
+                            } else {
+                                Ok(b)
+                            }
+                        }) {
                             eprintln!(
                                 "thumb: {} (local cache, {} ko)",
                                 path.rsplit('/').next().unwrap_or(&path),

@@ -765,6 +765,21 @@ pub(crate) fn write_preview_sidecar_bytes(
 /// file, then rename. Split out from the funnel so the write discipline is
 /// testable without a running Tauri app.
 pub(crate) fn write_cache_entry(dest: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    // An empty entry is worse than no entry: it is a cache HIT that serves
+    // nothing, so the grid cell stays blank forever and never falls back to
+    // the sidecar or the RAW. Nine of these existed on disk when Francis
+    // reported scattered empty cells after a sort change (2026-09-23), all
+    // keyed `-0` — photos with no sidecar at all.
+    //
+    // `downscale_grid_thumb` is how they get here: when the image crate
+    // cannot decode its input it returns that input unchanged, so empty in
+    // gives empty out, and the caller stores it as a success.
+    if bytes.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "refusing to cache an empty preview",
+        ));
+    }
     let tmp = dest.with_extension("part");
     match std::fs::write(&tmp, bytes).and_then(|()| std::fs::rename(&tmp, dest)) {
         Ok(()) => Ok(()),
@@ -1162,6 +1177,29 @@ mod preview_cache_tests {
 
     /// An external edit to `.preview.jpg` moves the version, and the stale
     /// entry must not linger beside the new one.
+    /// An empty entry is a cache hit that serves nothing, so the grid cell
+    /// stays blank for good and never falls back to the sidecar or the RAW.
+    /// Nine were on disk when scattered empty cells were reported;
+    /// `downscale_grid_thumb` makes them, because the image crate returns its
+    /// input unchanged when it cannot decode it, so empty in is empty out.
+    #[test]
+    fn an_empty_preview_is_never_cached() {
+        let dir = std::env::temp_dir().join(format!("reveal-empty-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let dest = dir.join("abc-768-0.jpg");
+
+        assert!(super::write_cache_entry(&dest, b"").is_err());
+        assert!(!dest.exists(), "nothing on disk, not even an empty file");
+        assert!(
+            !dest.with_extension("part").exists(),
+            "and no half-written temp left behind either"
+        );
+
+        super::write_cache_entry(&dest, b"real-bytes").unwrap();
+        assert_eq!(std::fs::read(&dest).unwrap(), b"real-bytes");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     #[test]
     fn a_new_version_replaces_the_old_one_for_that_size() {
         let s = Scratch::new("versions");
