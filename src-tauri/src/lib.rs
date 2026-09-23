@@ -1791,7 +1791,7 @@ pub fn run() {
                                 Ok(bytes) => HttpResponse::builder()
                                     .header("Content-Type", "image/jpeg")
                                     .header("Cache-Control", "no-cache")
-                                    .body(if size <= 768 { downscale_grid_thumb(bytes, size) } else { bytes }).unwrap(),
+                                    .body(if size <= 768 { downscale_grid_thumb(bytes, size, 1) } else { bytes }).unwrap(),
                                 Err(error) => {
                                     eprintln!("Apple Photos thumbnail: {error}");
                                     HttpResponse::builder().status(503).body(error.into_bytes()).unwrap()
@@ -1821,7 +1821,7 @@ pub fn run() {
                                     // per photo per size, and the decode and
                                     // re-encode to once rather than once per
                                     // request.
-                                    let sized = downscale_grid_thumb(bytes, size);
+                                    let sized = downscale_grid_thumb(bytes, size, 1);
                                     cache_developed_preview_locally(&app, source, &sized, size, version);
                                     HttpResponse::builder()
                                         .header("Content-Type", "image/jpeg")
@@ -1855,7 +1855,7 @@ pub fn run() {
                                     preview.bytes.len() / 1024,
                                     t.elapsed().as_millis()
                                 );
-                                let small = downscale_grid_thumb(preview.bytes, size);
+                                let small = downscale_grid_thumb(preview.bytes, size, preview.orientation);
                                 persist_thumb_cache(source, &small, size);
                                 HttpResponse::builder()
                                     .header("Content-Type", "image/jpeg")
@@ -1880,7 +1880,7 @@ pub fn run() {
                                             bytes.len() / 1024,
                                             t.elapsed().as_millis()
                                         );
-                                        let small = downscale_grid_thumb(bytes, size);
+                                        let small = downscale_grid_thumb(bytes, size, 1);
                                         persist_thumb_cache(source, &small, size);
                                         HttpResponse::builder()
                                             .header("Content-Type", "image/jpeg")
@@ -1923,7 +1923,7 @@ pub fn run() {
                                         HttpResponse::builder()
                                             .header("Content-Type", "image/jpeg")
                                             .header("Cache-Control", "max-age=3600")
-                                            .body(downscale_grid_thumb(out.jpeg, size))
+                                            .body(downscale_grid_thumb(out.jpeg, size, 1))
                                             .unwrap()
                                     }
                                     Err(dev_e) => {
@@ -1945,7 +1945,7 @@ pub fn run() {
                                                 HttpResponse::builder()
                                                     .header("Content-Type", "image/jpeg")
                                                     .header("Cache-Control", "max-age=3600")
-                                                    .body(downscale_grid_thumb(bytes, size))
+                                                    .body(downscale_grid_thumb(bytes, size, 1))
                                                     .unwrap()
                                             }
                                             None => {

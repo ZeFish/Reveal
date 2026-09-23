@@ -105,7 +105,7 @@ pub(crate) async fn import_card(
                     // At grid size: this is the camera's own JPEG, seeding the
                     // surface that browses it. Version 0 — nothing has been
                     // developed yet, so there is no sidecar to have an mtime.
-                    let sized = downscale_grid_thumb(preview.bytes, GRID_PREVIEW_EDGE);
+                    let sized = downscale_grid_thumb(preview.bytes, GRID_PREVIEW_EDGE, preview.orientation);
                     cache_developed_preview_locally(
                         &app_for_worker,
                         std::path::Path::new(dest_path),

@@ -77,17 +77,23 @@ pub(crate) fn companion_jpeg_path(source: &std::path::Path) -> Option<std::path:
 /// view has exactly one, and blowing a 640px proxy up to fill the window
 /// while the RAW decodes is a worse picture than the 2048px `.preview.jpg`
 /// already sitting on disk at the very recipe being displayed.
-pub(crate) fn downscale_grid_thumb(bytes: Vec<u8>, max_edge: u32) -> Vec<u8> {
-    let orientation = match exif::Reader::new().read_from_container(&mut std::io::Cursor::new(&bytes)) {
-        Ok(exif_data) => match exif_data.get_field(exif::Tag::Orientation, exif::In::PRIMARY) {
-            Some(field) => match field.value.get_uint(0) {
-                Some(v @ 1..=8) => v,
-                _ => 1,
-            },
-            None => 1,
-        },
-        Err(_) => 1,
-    };
+///
+/// `source_orientation` is what the file the bytes came from says (an EXIF
+/// Orientation value; 1 when there is no such file, or it is the JPEG
+/// itself). The JPEG's own tag wins when it has one; when it is silent —
+/// a RAW's embedded preview often is — the source's applies. A required
+/// parameter, not a default, so no call site can forget to pass it.
+pub(crate) fn downscale_grid_thumb(bytes: Vec<u8>, max_edge: u32, source_orientation: u32) -> Vec<u8> {
+    let own = exif::Reader::new()
+        .read_from_container(&mut std::io::Cursor::new(&bytes))
+        .ok()
+        .and_then(|exif_data| {
+            exif_data
+                .get_field(exif::Tag::Orientation, exif::In::PRIMARY)
+                .and_then(|field| field.value.get_uint(0))
+        })
+        .filter(|v| (1..=8).contains(v));
+    let orientation = own.unwrap_or(source_orientation);
 
     let mut img = match image::load_from_memory(&bytes) {
         Ok(img) => img,
@@ -743,7 +749,7 @@ pub(crate) fn write_preview_sidecar_bytes(
     if let Ok(p) = developed_preview_cache_path(app, source, max_px, version) {
         dests.push(p);
     }
-    let grid = (max_px > GRID_PREVIEW_EDGE).then(|| downscale_grid_thumb(jpeg.to_vec(), GRID_PREVIEW_EDGE));
+    let grid = (max_px > GRID_PREVIEW_EDGE).then(|| downscale_grid_thumb(jpeg.to_vec(), GRID_PREVIEW_EDGE, 1));
     if let (Some(bytes), Ok(p)) = (
         &grid,
         developed_preview_cache_path(app, source, GRID_PREVIEW_EDGE, version),
@@ -1257,5 +1263,38 @@ mod preview_cache_tests {
         prune_preview_cache(&s.0, 2000);
         assert!(names(&s.0).is_empty());
         prune_preview_cache(&s.0.join("nope"), 2000);
+    }
+}
+
+#[cfg(test)]
+mod orientation_tests {
+    use super::downscale_grid_thumb;
+
+    /// A landscape JPEG with no EXIF at all — what an iPhone DNG's embedded
+    /// preview looks like once libraw hands it over.
+    fn silent_landscape() -> Vec<u8> {
+        let img = image::DynamicImage::new_rgb8(40, 20);
+        let mut out = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut out, image::ImageFormat::Jpeg).unwrap();
+        out.into_inner()
+    }
+
+    fn dims(bytes: &[u8]) -> (u32, u32) {
+        let img = image::load_from_memory(bytes).unwrap();
+        (img.width(), img.height())
+    }
+
+    /// The bug of 2026-09-23: the DNG said "rotate 90°", its preview said
+    /// nothing, and the portrait was served lying on its side.
+    #[test]
+    fn a_silent_preview_takes_the_source_orientation() {
+        assert_eq!(dims(&downscale_grid_thumb(silent_landscape(), 768, 6)), (20, 40));
+        assert_eq!(dims(&downscale_grid_thumb(silent_landscape(), 768, 8)), (20, 40));
+    }
+
+    #[test]
+    fn an_upright_source_leaves_it_alone() {
+        assert_eq!(dims(&downscale_grid_thumb(silent_landscape(), 768, 1)), (40, 20));
+        assert_eq!(dims(&downscale_grid_thumb(silent_landscape(), 768, 3)), (40, 20));
     }
 }

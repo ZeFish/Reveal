@@ -97,6 +97,25 @@ impl RawDecoder for LibrawDecoder {
 pub struct ThumbPreview {
     pub bytes: Vec<u8>,
     pub mime: &'static str,
+    /// The RAW's own orientation, as an EXIF Orientation value (1 = upright,
+    /// 3 = half turn, 6 = rotate 90° clockwise, 8 = 90° counter-clockwise).
+    ///
+    /// An embedded preview is stored in SENSOR orientation, and it does not
+    /// always say which way is up: an iPhone DNG exported by Lightroom iOS
+    /// carries Orientation 6 on the DNG and none at all on its preview JPEG,
+    /// so a portrait showed lying on its side (2026-09-23). Whoever renders
+    /// the preview gets this and applies it when the JPEG is silent.
+    pub orientation: u32,
+}
+
+/// libraw's `sizes.flip` (dcraw convention) as an EXIF Orientation value.
+pub fn flip_to_exif_orientation(flip: i32) -> u32 {
+    match flip {
+        3 => 3,
+        5 => 8,
+        6 => 6,
+        _ => 1,
+    }
 }
 
 /// Extract the camera's embedded preview — JPEG when available, otherwise
@@ -121,14 +140,15 @@ pub fn extract_thumb_preview(path: &Path) -> Result<ThumbPreview, DecodeError> {
             )));
         }
         let _mem = MemImageGuard(img);
+        let orientation = flip_to_exif_orientation((*lr).sizes.flip as i32);
         match (*img).type_ {
             ffi::LibRaw_image_formats_LIBRAW_IMAGE_JPEG => {
                 let bytes = std::slice::from_raw_parts((*img).data.as_ptr(), (*img).data_size as usize).to_vec();
-                Ok(ThumbPreview { bytes, mime: "image/jpeg" })
+                Ok(ThumbPreview { bytes, mime: "image/jpeg", orientation })
             }
             ffi::LibRaw_image_formats_LIBRAW_IMAGE_BITMAP => {
                 let bytes = bmp_from_libraw_bitmap(img)?;
-                Ok(ThumbPreview { bytes, mime: "image/bmp" })
+                Ok(ThumbPreview { bytes, mime: "image/bmp", orientation })
             }
             other => Err(DecodeError::Develop(format!(
                 "unsupported embedded thumb format: {other}"
