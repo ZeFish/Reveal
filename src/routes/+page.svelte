@@ -758,11 +758,20 @@
   const anyActivityRunning = $derived(activityQueue.some((j) => j.status === "running"));
   let queueOpen = $state(false);
   let currentScrollTop = $state(0);
+  /**
+   * The folder whose stored scroll has actually been read into
+   * `currentScrollTop`. Until that has happened the value is the initial 0,
+   * which means nothing — and the effect below used to persist it anyway,
+   * wiping the real offset before `openDir` ever got to read it back. The
+   * logs said it plainly: `SCROLL save 0` before `SCROLL restore`.
+   * @type {string | null}
+   */
+  let scrollRestoredFor = $state(null);
   /** @type {PhotoMenu | null} */ let photoMenu = $state(null);
 
   $effect(() => {
     const d = gridDir();
-    if (d && currentMode === "cull") {
+    if (d && d === scrollRestoredFor && currentMode === "cull") {
       scrollOffsets[d] = currentScrollTop;
       if (typeof localStorage !== "undefined") {
         localStorage.setItem(`reveal.scroll.${d}`, String(currentScrollTop));
@@ -2508,6 +2517,23 @@
       debug = `failed: ${e}`;
       /** @type {RevealWindow} */ (window).__log?.(`openDir failed: ${e}`);
     }
+    // Restore the viewport BEFORE the selection, and not on a timer.
+    //
+    // PhotoGrid reads this prop through two effects as soon as it mounts. One
+    // keeps the selected cell visible and bails out only `if (initial &&
+    // scrollTop > 0)` — a guard that is exactly right and was being evaluated
+    // too early. Restoring 50ms later meant the grid mounted believing you
+    // were at the top, scrolled to cell 0 to "keep it visible", and wrote
+    // that 0 back through onScroll, over the position we had just read.
+    //
+    // So the stored offset was saved correctly every time and destroyed on
+    // the way back in. A provisional value plus an observer that writes what
+    // it observes makes the provisional value permanent.
+    currentScrollTop =
+      (typeof localStorage !== "undefined" && Number(localStorage.getItem(`reveal.scroll.${dir}`))) ||
+      scrollOffsets[dir] ||
+      0;
+    scrollRestoredFor = dir; // only now may this folder's offset be persisted
     sel = 0;
     selectOnly(0);
     let restoredToDevelop = false;
@@ -2536,10 +2562,6 @@
     }
     if (!restoredToDevelop) await switchMode("cull");
     refreshStory();
-    const savedScroll = (typeof localStorage !== "undefined" && Number(localStorage.getItem(`reveal.scroll.${dir}`))) || scrollOffsets[dir] || 0;
-    setTimeout(() => {
-      currentScrollTop = savedScroll;
-    }, 50);
     loading = false; // frames have settled — re-enable the empty-state for genuinely empty folders
   }
 

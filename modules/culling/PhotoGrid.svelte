@@ -172,7 +172,13 @@
       isProgrammaticScroll = true;
       top = target;
       gridElement.scrollTop = target;
-      if (target !== scrollTop) untrack(() => onScroll(target));
+      // Report a clamp only once the geometry is real. While `frames` is
+      // still empty `totalRows` is 0, so `limit` computes to 0 and every
+      // restored position clamps to the top — reporting THAT wrote 0 back
+      // over the offset the parent had just read from storage, which is why
+      // reopening a folder always landed at the top however far you had
+      // scrolled. An empty grid cannot clamp anything.
+      if (target !== scrollTop && frames.length) untrack(() => onScroll(target));
       setTimeout(() => {
         isProgrammaticScroll = false;
       }, 50);
