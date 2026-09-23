@@ -1853,6 +1853,13 @@
         resizable: true,
         titleBarStyle: "overlay",
         hiddenTitle: true,
+        // Native traffic lights here, Reveal's own drawn ones in the main
+        // window — so macOS's default spot (centre 16pt down, measured
+        // 2026-09-23) sat 4.75pt above the main window's line and off the
+        // pane's inset. Place the ~14pt buttons so their centre lands on the
+        // main window's measured centre (x 23.75, y 20.75 = half of
+        // --titlebar-height, packages/styles/app.scss).
+        trafficLightPosition: new LogicalPosition(17, 14),
       });
       win.once("tauri://created", () => setTimeout(sendSettingsToPanel, 300));
     }
@@ -3561,11 +3568,11 @@
         const currentVal = Number(/** @type {any} */ (recipe)[lastEditedKey] ?? 0);
         const delta = e.key === "ArrowUp" ? step : -step;
         const newVal = Math.round((currentVal + delta) * 1000) / 1000;
-        
+
         recipe = { ...recipe, [lastEditedKey]: newVal };
         if (!developEngine || developEngine === "none") developEngine = "spektra";
         recipe.engine = developEngine;
-        
+
         edited(true);
         sendDevStateToPanel();
         e.preventDefault();
@@ -3575,14 +3582,14 @@
 
     const c = controller.navColumnCount({ fullscreen, cols });
     const isNav = ["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"].includes(e.key);
-    
+
     if (isNav) {
       let nextSel = sel;
       if (e.key === "ArrowRight") nextSel = Math.min(sel + 1, view.length - 1);
       else if (e.key === "ArrowLeft") nextSel = Math.max(sel - 1, 0);
       else if (e.key === "ArrowDown") nextSel = Math.min(sel + c, view.length - 1);
       else if (e.key === "ArrowUp") nextSel = Math.max(sel - c, 0);
-      
+
       focusAt(view, nextSel);
 
       if (e.shiftKey) {
@@ -3592,7 +3599,7 @@
       } else {
         selectOnly(view, sel);
       }
-      
+
       e.preventDefault();
       if (fullscreen) {
         prepareFullscreenFrame(view[sel].path);
@@ -5478,7 +5485,7 @@
     cursor: pointer;
     line-height: 1;
     font-family: var(--font-header, sans-serif);
-    font-size: 10.8px;
+    font-size: var(--size-xs);
     letter-spacing: 0.12em;
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
   }
@@ -5517,7 +5524,7 @@
   }
   .frame-count {
     font-family: var(--font-monospace, monospace);
-    font-size: 10.8px;
+    font-size: var(--size-xs);
     text-transform: uppercase;
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
     flex-shrink: 0;
@@ -5532,7 +5539,7 @@
     cursor: pointer;
     flex-shrink: 0;
     font-family: var(--font-monospace, monospace);
-    font-size: 10.8px;
+    font-size: var(--size-xs);
     letter-spacing: 0.02em;
     line-height: 1;
     text-transform: uppercase;
@@ -5598,7 +5605,7 @@
     padding: 3px 0;
     border-radius: var(--radius);
     font-family: var(--font-monospace, monospace);
-    font-size: 10.8px;
+    font-size: var(--size-xs);
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
   }
   .pop-chip.on {
