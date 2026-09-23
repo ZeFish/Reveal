@@ -292,6 +292,11 @@ impl Index {
             first = false;
             dirs += 1;
             let mut batch: Vec<(String, String, String, i64)> = Vec::new(); // path,dir,name,mtime
+            // Which sidecars exist, learned from the listing we are already
+            // reading. Asking for `NAME.RAF.xmp` on every photo meant an open
+            // per file, and most have none: a failed lookup on the NAS is still
+            // a round trip — 9.5ms a file, measured cold.
+            let mut xmps: HashSet<String> = HashSet::new();
             for e in entries.flatten() {
                 let p = e.path();
                 let name = e.file_name().to_string_lossy().to_string();
@@ -300,6 +305,10 @@ impl Index {
                     if !name.starts_with('.') && !SKIP_DIRS.contains(&lower.as_str()) {
                         stack.push(p);
                     }
+                    continue;
+                }
+                if lower.ends_with(".xmp") {
+                    xmps.insert(lower.clone());
                     continue;
                 }
                 // macOS writes a "._name.raf" AppleDouble sidecar next to
@@ -344,19 +353,36 @@ impl Index {
                         !known.contains(&(path.clone(), *mtime)) // unchanged: nothing to do
                     })
                     .collect();
-                // Two reads per file, both of them a round trip to the NAS: the
-                // XMP sidecar for the rating, and the RAW's header for the date
-                // and the size. Done one file at a time that is ~99ms of
-                // waiting each, measured on a 61-photo folder. They are
-                // independent, so wait for them together.
+                // Up to two reads per file, both of them round trips to the NAS:
+                // the XMP sidecar for the rating (only when the listing above
+                // says there is one), and the RAW's header for the date and
+                // the size.
+                //
+                // What it costs, measured cold on this library (2026-09-23):
+                // the first touch of a RAW takes ~165ms whether 64 KB or the
+                // whole header is read — it is the NAS finding the file, not
+                // the bytes. So the floor is one touch per new file, which is
+                // what this does, and the only lever left is having several in
+                // flight: one at a time ran 159–209ms a file, rayon's default
+                // (8 here) 67–97ms. More does NOT help — 32 in flight went to
+                // 140ms and 64 to 176ms, the disks fighting over their seeks.
+                //
+                // (libraw cannot be handed a prefix instead: `open_buffer`
+                // validates its offsets against the buffer and refused 26 of
+                // 30 files even at 1 MB.)
                 rows = to_read
                     .into_par_iter()
                     .map(|(path, dir, name, mtime)| {
-                        let rating = reveal_meta::read(Path::new(&path))
-                            .ok()
-                            .flatten()
-                            .and_then(|s| s.rating)
-                            .unwrap_or(0);
+                        let has_sidecar = xmps.contains(&format!("{}.xmp", name.to_lowercase()));
+                        let rating = if has_sidecar {
+                            reveal_meta::read(Path::new(&path))
+                                .ok()
+                                .flatten()
+                                .and_then(|s| s.rating)
+                                .unwrap_or(0)
+                        } else {
+                            0
+                        };
                         // One header open for both — two would double the
                         // round trips over a six-figure library for nothing.
                         let (captured, w, h) = reveal_decode::capture_header(Path::new(&path));
@@ -806,6 +832,43 @@ mod dimension_tests {
         eprintln!("après réindexage : {sized} photos avec dimensions");
         let _ = std::fs::remove_file(&db);
         assert!(sized > 0, "a rescan left the sizes empty");
+    }
+
+    /// Ratings now come only from sidecars the directory listing says exist,
+    /// instead of trying to open one next to every photo. If that lookup ever
+    /// missed a sidecar, its rating would silently read as 0 — so compare
+    /// every row against a direct read.
+    #[test]
+    #[ignore = "integration; needs a real folder via REVEAL_TEST_DIR"]
+    fn ratings_survive_the_sidecar_shortcut() {
+        let dir = std::env::var("REVEAL_TEST_DIR").unwrap_or_default();
+        if dir.is_empty() || !Path::new(&dir).is_dir() {
+            return;
+        }
+        let db = std::env::temp_dir().join(format!("reveal-ratings-{}.sqlite", std::process::id()));
+        let _ = std::fs::remove_file(&db);
+        let index = Index::open(&db).expect("open");
+        index.add_root(&dir).expect("add_root");
+        index.scan(Path::new(&dir)).expect("scan");
+        let rows = index.frames(&dir, 0).unwrap();
+        let (mut with_sidecar, mut rated, mut wrong) = (0, 0, 0);
+        for r in &rows {
+            let direct = reveal_meta::read(Path::new(&r.path)).ok().flatten();
+            if direct.is_some() {
+                with_sidecar += 1;
+            }
+            let want = direct.and_then(|s| s.rating).unwrap_or(0);
+            if want > 0 {
+                rated += 1;
+            }
+            if want != r.rating {
+                wrong += 1;
+                eprintln!("   écart : {} index={} sidecar={}", r.name, r.rating, want);
+            }
+        }
+        eprintln!("{} photos · {with_sidecar} avec sidecar · {rated} notées · {wrong} écarts", rows.len());
+        let _ = std::fs::remove_file(&db);
+        assert_eq!(wrong, 0);
     }
 
     #[test]
