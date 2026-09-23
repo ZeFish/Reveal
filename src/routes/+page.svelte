@@ -1760,6 +1760,15 @@
   // ---- what the grid shows -------------------------------------------------------
   // The one derivation every other surface reads, and the selection positions
   // resolved against it, plus the preferences that shape it.
+  /**
+   * Masonry lays out with CSS `column-count`, and CSS columns cannot be
+   * windowed — you cannot know which items are in view — so unlike the
+   * uniform grid it puts EVERY photo in the DOM at once. That is the whole
+   * reason for the ceiling: not the layout, the absence of virtualisation.
+   */
+  const MASONRY_LIMIT = 500;
+  const masonryTooBig = $derived(library.frames.length > MASONRY_LIMIT);
+
   function saveGridPrefs() {
     session.setGridPrefs({ cols, marginScale, cellAspect, fillCells, sortDesc });
   }
@@ -2434,7 +2443,7 @@
       const rows = (Array.isArray(rawRows) ? rawRows : []).filter(r => r.name && !r.name.startsWith('.') && !r.name.startsWith('._'));
       debug = `received ${rows.length}`;
       if (!open.commit(rows)) return; // overtaken by another folder
-      if (library.frames.length > 500 && layout === "masonry") {
+      if (masonryTooBig && layout === "masonry") {
         layout = "uniform"; // Fallback to virtualized grid to prevent memory/CPU explosion
       }
       withPreviewVersions(rows).then((updated) => {
@@ -2649,8 +2658,8 @@
   }
 
   function toggleLayout() {
-    if (layout === "uniform" && library.frames.length > 500) {
-      notify("Too many images for masonry mode (>500)", 4000);
+    if (layout === "uniform" && masonryTooBig) {
+      notify(`Masonry draws every photo at once — ${library.frames.length} is past the limit of ${MASONRY_LIMIT}`, 4000);
       return;
     }
     layout = layout === "uniform" ? "masonry" : "uniform";
@@ -4644,9 +4653,24 @@
                 </div>
                 <div class="std-menu-separator"></div>
                 <span class="pop-label">Format</span>
-                <button class="std-menu-item" onclick={toggleLayout}>
+                <!-- Disabled rather than clickable-then-refused. The refusal
+                     used to be a toast at the bottom of the window, four
+                     seconds, while the eye was up here in the menu — Francis
+                     never saw it and read the result as masonry being broken. -->
+                <button
+                  class="std-menu-item"
+                  disabled={masonryTooBig}
+                  title={masonryTooBig
+                    ? `Masonry draws every photo at once; ${library.frames.length} is past what stays smooth (limit ${MASONRY_LIMIT})`
+                    : undefined}
+                  onclick={toggleLayout}
+                >
                   <span class="item-label">Masonry</span>
-                  {#if layout === "masonry"}<Icon name="check" size="10px" />{/if}
+                  {#if masonryTooBig}
+                    <span class="item-note">{library.frames.length} &gt; {MASONRY_LIMIT}</span>
+                  {:else if layout === "masonry"}
+                    <Icon name="check" size="10px" />
+                  {/if}
                 </button>
                 {#if layout !== "masonry"}
                   <div class="pop-grid three">
@@ -5510,6 +5534,20 @@
     height: 1px;
     background: var(--color-border);
     margin: 4px 0;
+  }
+  /* A menu row that cannot be chosen, and the count that says why. Dimmed
+     rather than hidden: the option still belongs in the list, it just is not
+     available for this folder. */
+  .std-menu-item[disabled] {
+    opacity: 0.45;
+    cursor: default;
+    pointer-events: auto; /* keep the title tooltip reachable */
+  }
+  .item-note {
+    font-family: var(--font-mono, monospace);
+    font-size: 9px;
+    color: color-mix(in srgb, var(--color-foreground) 50%, transparent);
+    white-space: nowrap;
   }
   .pop-label {
     font-family: var(--font-header, sans-serif);
