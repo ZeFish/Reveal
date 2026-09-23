@@ -4,9 +4,9 @@
   "version": "2.0.0-alpha.0",
   "identifier": "co.utopie.reveal",
   "build": {
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "pnpm dev:web",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "pnpm build:web",
     "frontendDist": "../build"
   },
   "plugins": {

@@ -6,8 +6,10 @@
   "type": "module",
   "license": "GPL-3.0-only",
   "scripts": {
-    "dev": "vite dev",
-    "build": "vite build",
+    "dev": "if [ -n \"$TURBO_HASH\" ]; then vite dev; else tauri dev; fi",
+    "build": "./install.sh",
+    "dev:web": "vite dev",
+    "build:web": "vite build",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./jsconfig.json",
     "tauri": "tauri",

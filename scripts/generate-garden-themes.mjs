@@ -5,6 +5,7 @@
 //
 // Re-run manually after editing any packages/themes/*/tokens.yaml:
 //   pnpm --filter reveal generate:garden-themes
+// (./install.sh — `pnpm build` — runs it on every install.)
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
