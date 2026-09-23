@@ -1,6 +1,15 @@
 <script>
   import PhotoGrid from "./PhotoGrid.svelte";
 
+  /**
+   * Only the one prop whose shape has already bitten is spelled out; the rest
+   * stay loose. `selectGridItem` was once handed the selection module's
+   * `selectGridItem(view, index, event)` — three arguments, called here with
+   * two — so every mouse click selected nothing, and the untyped default let
+   * it through (2026-09-23).
+   * @typedef {{ selectGridItem?: (index: number, event?: MouseEvent) => void, [key: string]: any }} Props
+   */
+  /** @type {Props} */
   let {
     view = [],
     loading = false,

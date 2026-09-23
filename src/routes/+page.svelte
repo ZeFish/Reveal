@@ -4743,7 +4743,8 @@
           {minRating}
           {isTauri}
           {debug}
-          {selectGridItem}
+          selectGridItem={(/** @type {number} */ i, /** @type {MouseEvent | undefined} */ e) =>
+            selectGridItem(view, i, e)}
           {openPhoto}
           {openPhotoMenu}
           {toggleStoryWithPath}
