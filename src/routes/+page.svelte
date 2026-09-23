@@ -241,7 +241,7 @@
   // auto golden-ratio formula off developViewport; now a plain slider in
   // DevTab (Francis: "so we can choose... the photo size"). >100 lets the
   // photo outgrow the frame on purpose — see the loupe/pan split below.
-  let developPhotoPercent = $state(90);
+  let developPhotoPercent = $state(session.photoSize());
   /** @type {Record<"cull" | "dev", Record<string, boolean>>} */
   let layouts = $state({
     cull: { sidebar: true, focus: false, devPanel: false },
@@ -1130,6 +1130,7 @@
         });
         on("dev-panel-photo-scale-changed", (e) => {
           developPhotoPercent = e.payload.photoScale;
+          session.setPhotoSize(developPhotoPercent);
         });
         on("dev-panel-choose-export-folder", () => {
           chooseExportFolder();
@@ -5085,6 +5086,7 @@
         {histogram}
         {scopes}
         bind:photoScale={developPhotoPercent}
+        onPhotoScaleChanged={(/** @type {number} */ percent) => session.setPhotoSize(percent)}
         {showClipping}
         toggleClipping={dockedToggleClipping}
         {showCaption}
@@ -5189,7 +5191,7 @@
     letter-spacing: 0.04em;
     z-index: 100;
     pointer-events: none;
-    box-shadow: var(--shadow-raised);
+    box-shadow: var(--shadow);
   }
   .render-spinner {
     width: 10px;
@@ -5712,7 +5714,7 @@
     padding: var(--space);
     background: var(--color-surface-high);
     border-radius: var(--radius);
-    box-shadow: var(--shadow-raised);
+    box-shadow: var(--shadow);
   }
   @media (prefers-color-scheme: dark) {
     .photo-mat {
@@ -5801,7 +5803,7 @@
        plus bas que l'app"). */
     margin: var(--window-inset);
     border-radius: var(--pane-radius);
-    box-shadow: var(--shadow-raised);
+    box-shadow: var(--shadow);
     overflow: hidden;
     min-height: 0;
     /* Matches nav's own self-painted background (Sidebar.svelte) exactly —

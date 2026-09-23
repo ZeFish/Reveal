@@ -168,7 +168,7 @@
 
   .din {
     font-family: var(--font-header, sans-serif);
-    font-size: 10.8px;
+    font-size: var(--size-xs);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
@@ -176,7 +176,7 @@
 
   .mono {
     font-family: var(--font-monospace, monospace);
-    font-size: 10.8px;
+    font-size: var(--size-xs);
     color: color-mix(in srgb, var(--color-foreground) 90%, transparent);
   }
 
@@ -206,13 +206,13 @@
     width: auto;
     max-width: 170px;
     font-family: var(--font-monospace, monospace);
-    font-size: 10.8px;
+    font-size: var(--size-xs);
     padding: 2px 22px 2px 8px;
   }
 
   .folder-pick {
     font-family: var(--font-monospace, monospace);
-    font-size: 10.8px;
+    font-size: var(--size-xs);
     padding: 2px 8px;
     gap: 4px;
   }
@@ -224,7 +224,7 @@
     display: block;
     width: 100%;
     padding: 8px 0;
-    font-size: 10.8px;
+    font-size: var(--size-xs);
     letter-spacing: 0.12em;
     margin-top: 4px;
   }

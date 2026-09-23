@@ -87,6 +87,12 @@ function readEnum(key, allowed) {
   return raw !== null && allowed.includes(raw) ? raw : null;
 }
 
+/** Develop's photo size slider — its range, and where it starts. */
+export const PHOTO_SIZE_MIN = 40;
+export const PHOTO_SIZE_MAX = 200;
+/** @type {number} */
+export const DEFAULT_PHOTO_SIZE = 75;
+
 /** The two workflow modes, as stored. */
 export const MODES = /** @type {const} */ (["cull", "dev"]);
 
@@ -112,6 +118,17 @@ export const session = {
   lastPhoto: () => readRaw("reveal.lastPhotoPath"),
   /** @param {string} path */
   setLastPhoto: (path) => writeRaw("reveal.lastPhotoPath", path),
+
+  /** Develop's photo size, in percent. Out-of-range or non-numeric → the
+   * default, never a size the slider cannot show.
+   * @returns {number} */
+  photoSize: () => {
+    const raw = readRaw("reveal.photoSize");
+    const n = raw === null ? NaN : Number(raw);
+    return Number.isFinite(n) && n >= PHOTO_SIZE_MIN && n <= PHOTO_SIZE_MAX ? n : DEFAULT_PHOTO_SIZE;
+  },
+  /** @param {number} percent */
+  setPhotoSize: (percent) => writeRaw("reveal.photoSize", String(percent)),
 
   /** @returns {"uniform" | "masonry" | null} */
   gridLayout: () => /** @type {any} */ (readEnum("reveal.layout", ["uniform", "masonry"])),

@@ -1009,7 +1009,7 @@
     padding: 0 8px 8px;
     background: var(--color-surface-high);
     border-radius: var(--pane-radius);
-    box-shadow: var(--shadow-raised);
+    box-shadow: var(--shadow);
     overflow-y: auto;
   }
   /* Clears the traffic lights: the title-bar band, less the pane's own

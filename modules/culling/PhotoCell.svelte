@@ -139,6 +139,11 @@
         }`
       : ""}
   >
+    <!-- The print inside the mat. It carries its own, CONCENTRIC corner
+         (the mat's radius less the mat), so the photo's curve follows the
+         card's instead of being cut by the card's outer arc. The overlays
+         sit on the print, so they are placed from the photo's edge. -->
+    <div class="print">
     <img
       data-no-zoom
       bind:this={imgEl}
@@ -162,9 +167,9 @@
       </div>
     {/if}
 
-    <!-- The overlays live INSIDE the card, not the slot: the card hugs the
+    <!-- The overlays live INSIDE the print, not the slot: the card hugs the
          photo now, so anything anchored to the slot floated off its edges.
-         The matte's overflow + radius clips them to the print. -->
+         The print's overflow + radius clips them to the photo. -->
     <!-- Stars: fill = the app background, stroke = the hairline — the one star
          look everywhere (Swift `Stars`), no black chip behind. -->
     {#if rating > 0}
@@ -203,6 +208,7 @@
     <div class="caption-overlay">
       <span class="name">{stem(name)}</span>
     </div>
+    </div>
   </div>
 </div>
 
@@ -236,8 +242,9 @@
     z-index: 5;
   }
   .cell.selected .matte {
-    box-shadow: var(--shadow-raised), var(--shadow-lift);
+    box-shadow: var(--shadow-hover), var(--shadow-glow);
     transform: translateY(-1px) translateZ(0);
+    background: var(--color-surface-high);
   }
 
   /* Mid-export — a soft accent aura breathing BEHIND the print, not a mark on it. */
@@ -261,20 +268,32 @@
     box-sizing: border-box;
     /* The mat around the print: padding in the mat colour, not a border —
        the hairline edge comes from the shadow. */
-    padding: 3px;
+    --mat: 6px;
+    padding: var(--mat);
     background: var(--color-surface);
     border-radius: var(--radius);
-    background: var(--color-surface);
     /* The quiet print-on-a-table depth. */
-    box-shadow: var(--shadow-raised);
+    box-shadow: var(--shadow);
     transition:
-      box-shadow var(--duration-standard) var(--ease-soft),
-      transform var(--duration-standard) var(--ease-soft);
+    all var(--transition-fast);
     /* Own compositing layer: on the translucent window WKWebView otherwise
        smears each card's box-shadow sideways into the next grid column
        (a shared-layer paint bug). Isolating the card contains its shadow. */
     transform: translateZ(0);
     isolation: isolate;
+  }
+
+  /* A border used to be the mat, and CSS rounds a border's inner edge for
+     free (outer radius − border width). Padding gets no such curve: the
+     card's outer arc cut the photo 4px in, so at a large radius the corners
+     visibly failed to match (Francis, 2026-09-23). The print states the
+     concentric radius itself — the same rule as --pane-radius. */
+  .print {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    border-radius: max(0px, calc(var(--radius) - var(--mat)));
   }
 
   /* The card takes the photo's proportion instead of padding it with negative
@@ -291,11 +310,14 @@
     height: 100%;
     display: block;
     opacity: 0;
+    border:0;
+    box-shadow:none;
     transition: opacity var(--duration-instant) var(--ease-soft);
     pointer-events: none;
     -webkit-user-drag: none;
     -webkit-user-select: none;
     user-select: none;
+    border-radius: 0;
   }
   .matte img.visible,
   .matte.loaded img {
@@ -314,7 +336,7 @@
     opacity: 0.16;
   }
   .matte:not(.loaded) {
-    background: color-mix(in srgb, var(--color-foreground) 6%, transparent);
+    background: var(--color-surface-low);
   }
   .placeholder.failed {
     opacity: 0.32;
@@ -372,7 +394,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: var(--shadow-raised);
+    box-shadow: var(--shadow);
     z-index: 10;
   }
   .badge-dot {
@@ -393,16 +415,16 @@
     z-index: 10;
     background: linear-gradient(
       to top,
-      color-mix(in srgb, var(--color-surface-lowest) 92%, transparent) 20%,
+      var(--color-surface-high),
       transparent
     );
-    padding: 18px 8px 6px;
+    padding: 18px 8px 8px;
     display: flex;
     flex-direction: column;
     align-items: center;
     pointer-events: none;
     opacity: 0;
-    transition: opacity var(--duration-instant) var(--ease-soft);
+    transition: all var(--transition-fast);
   }
   .cell:hover .caption-overlay {
     opacity: 1;

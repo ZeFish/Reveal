@@ -850,7 +850,7 @@
     border-radius: var(--theme-radius, var(--radius-sm));
     overflow: hidden;
     cursor: pointer;
-    box-shadow: var(--shadow-raised);
+    box-shadow: var(--shadow);
     transition:
       transform var(--duration-instant) var(--ease-soft),
       box-shadow var(--duration-instant) var(--ease-soft);
@@ -1277,7 +1277,7 @@
     opacity: 0;
     transform: scale(0.96);
     transition: opacity var(--duration-fast) var(--ease-soft), transform var(--duration-fast) var(--ease-soft), color var(--duration-fast) var(--ease-soft), border-color var(--duration-fast) var(--ease-soft);
-    box-shadow: var(--shadow-raised);
+    box-shadow: var(--shadow);
     z-index: 2;
   }
   .gap:hover .gap-add {

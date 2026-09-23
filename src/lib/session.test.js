@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { session, openFolderSession } from "./session.js";
+import { session, openFolderSession, DEFAULT_PHOTO_SIZE } from "./session.js";
 
 /**
  * The module reaches for `localStorage` lazily on every read and write, so a
@@ -119,5 +119,33 @@ describe("session memory", () => {
     });
     expect(() => session.setLastPhoto("/nas/A/x.RAF")).not.toThrow();
     expect(session.lastPhoto()).toBe(null);
+  });
+});
+
+describe("develop photo size", () => {
+  beforeEach(() => {
+    installStorage();
+  });
+  afterEach(() => {
+    // @ts-expect-error — putting the environment back as it was found
+    delete globalThis.localStorage;
+  });
+
+  it("starts at 75% when nothing was ever chosen", () => {
+    expect(session.photoSize()).toBe(DEFAULT_PHOTO_SIZE);
+    expect(DEFAULT_PHOTO_SIZE).toBe(75);
+  });
+
+  /** Francis: "does it remember where we left it once we change it?" */
+  it("comes back as it was left", () => {
+    session.setPhotoSize(120);
+    expect(session.photoSize()).toBe(120);
+  });
+
+  it("refuses a stored size the slider cannot show", () => {
+    for (const bad of ["20", "900", "big", ""]) {
+      localStorage.setItem("reveal.photoSize", bad);
+      expect(session.photoSize()).toBe(DEFAULT_PHOTO_SIZE);
+    }
   });
 });

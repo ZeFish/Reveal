@@ -340,7 +340,7 @@
 
   .din {
     font-family: var(--font-header, sans-serif);
-    font-size: 10.8px;
+    font-size: var(--size-xs);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
@@ -375,7 +375,7 @@
     flex: 1;
     min-width: 0;
     font-family: var(--font-text, sans-serif);
-    font-size: 10.8px;
+    font-size: var(--size-xs);
     padding: 7px 9px;
   }
   .save-btn {
@@ -422,7 +422,7 @@
   }
   .empty-text {
     font-family: var(--font-text, sans-serif);
-    font-size: 10.8px;
+    font-size: var(--size-xs);
     color: color-mix(in srgb, var(--color-foreground) 45%, transparent);
     line-height: 1.4;
     text-align: center;
@@ -455,7 +455,7 @@
     border-radius: var(--radius);
     overflow: hidden;
     background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
-    box-shadow: var(--shadow-raised);
+    box-shadow: var(--shadow);
     transition: box-shadow var(--duration-fast) var(--ease-soft);
   }
   /* Hover: the accent ring the border used to carry, now in the shadow. */

@@ -778,7 +778,7 @@
     border: 2px solid rgba(255, 255, 255, 0.85);
     /* The framework's own two presets rather than hand-rolled shadows, so the
        glass lifts the way every other raised surface in the app does. */
-    box-shadow: var(--shadow-raised), var(--shadow-lg);
+    box-shadow: var(--shadow-hover);
     background: var(--color-surface-high, #000);
   }
   .loupe canvas {
@@ -830,7 +830,6 @@
     justify-content: center;
     position: relative;
     overflow: hidden;
-    background: var(--canvas);
   }
   /* With a caption, the photo and its plate stack as two ordinary flex
      items in a column — the photo shrinks to leave the caption room below
@@ -847,19 +846,21 @@
     max-height: 90%;
     width: auto;
     height: auto;
+    border: none;
     object-fit: contain;
     /* The mat around the print: padding in the mat colour (an <img> paints
        its background under its padding), not a border — the hairline edge
        comes from the shadow. */
     padding: 12px;
     background: var(--color-surface-high);
-    border-radius: 18px;
-    box-shadow: var(--shadow-raised), var(--shadow-lift);
-    transition: opacity var(--duration-instant);
+    box-shadow: var(--shadow), var(--shadow-glow);
+    transition: all var(--transition-fast);
     -webkit-user-drag: none;
     -webkit-user-select: none;
     user-select: none;
   }
+
+  .photo-mat img {display:none;}
   @media (prefers-color-scheme: dark) {
     .photo-mat {
       padding: 0;

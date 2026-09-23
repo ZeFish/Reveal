@@ -15,6 +15,7 @@
   // owned by the caller, not this component, because what happens after the
   // mutation is exactly the thing that differs between the two hosts.
   import { invoke } from "@tauri-apps/api/core";
+  import { DEFAULT_PHOTO_SIZE } from "$lib/session.js";
   import { isTauri } from "$lib/api.js";
   import Icon from "$lib/components/Icon.svelte";
   import InfoBlock from "./tabs/InfoBlock.svelte";
@@ -101,7 +102,7 @@
     // what actually makes it stick: a no-op when docked (this panel shares
     // memory with the window that owns the photo), a relay emit when
     // detached (see routes/dev-panel/+page.svelte).
-    photoScale = $bindable(90),
+    photoScale = $bindable(DEFAULT_PHOTO_SIZE),
     onPhotoScaleChanged = () => {},
   } = $props();
 
@@ -276,7 +277,7 @@
 
   .din {
     font-family: var(--font-header, sans-serif);
-    font-size: 10.8px;
+    font-size: var(--size-xs);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);

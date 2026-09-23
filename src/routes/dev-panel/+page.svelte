@@ -8,6 +8,7 @@
   // keyboard shortcuts the main window would otherwise never see, and
   // reporting focus/pointer presence for focus-mode dimming.
   import { onMount } from "svelte";
+  import { DEFAULT_PHOTO_SIZE } from "$lib/session.js";
   import { listen, emit } from "@tauri-apps/api/event";
   import { invoke } from "@tauri-apps/api/core";
   import { isTauri } from "$lib/api.js";
@@ -53,7 +54,7 @@
   let showCaption = $state(false);
   /** @type {{r: number[], g: number[], b: number[], luma: number[]} | null} */
   let histogram = $state(null);
-  let photoScale = $state(90);
+  let photoScale = $state(DEFAULT_PHOTO_SIZE);
 
   function photoScaleChanged() {
     emit("dev-panel-photo-scale-changed", { photoScale });
@@ -171,7 +172,7 @@
       tags = state.tags ?? [];
       rating = state.rating ?? 0;
       histogram = state.histogram ?? null;
-      photoScale = state.photoScale ?? 90;
+      photoScale = state.photoScale ?? DEFAULT_PHOTO_SIZE;
     }).then(() => {
       emit("dev-panel-ready", {});
     });

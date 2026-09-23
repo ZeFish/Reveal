@@ -1292,7 +1292,7 @@
     margin: var(--window-inset);
     background: var(--color-surface-high);
     border-radius: var(--pane-radius);
-    box-shadow: var(--shadow-raised);
+    box-shadow: var(--shadow);
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -1362,7 +1362,7 @@
     cursor: pointer;
     line-height: 1;
     font-family: var(--font-header, sans-serif);
-    font-size: 10.8px;
+    font-size: var(--size-xs);
     letter-spacing: 0.12em;
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
   }
@@ -1421,7 +1421,7 @@
   }
   .lib-label {
     font-family: var(--font-header, sans-serif);
-    font-size: 10.8px;
+    font-size: var(--size-xs);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
@@ -1501,7 +1501,7 @@
   }
   .section-name {
     font-family: var(--font-header, sans-serif);
-    font-size: 10.8px;
+    font-size: var(--size-xs);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: color-mix(in srgb, var(--color-foreground) 45%, transparent);
@@ -1525,10 +1525,10 @@
     position: relative;
   }
   .dir-row.current {
-    background: color-mix(in srgb, var(--color-foreground) 12%, transparent);
+    background: var(--color-surface-low);
   }
   .dir-row:hover:not(.current) {
-    background: color-mix(in srgb, var(--color-foreground) 6%, transparent);
+    background: var(--color-surface);
   }
   /* A photo (or another folder) is being dragged over this folder — it will
      land here on drop. */
@@ -1550,7 +1550,7 @@
     flex: 1;
     min-width: 0;
     font-family: var(--font-text, sans-serif);
-    font-size: 10.8px;
+    font-size: var(--size-xs);
     color: var(--color-foreground);
     background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-accent) 50%, transparent);
@@ -1594,8 +1594,8 @@
 
   .dir-name {
     font-family: var(--font-text, sans-serif);
-    font-size: 10.8px;
-    color: color-mix(in srgb, var(--color-foreground) 60%, transparent);
+    font-size: var(--size-xs);
+    color: var(--color-muted);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1616,7 +1616,7 @@
     font-family: var(--font-monospace, monospace);
     font-size: 9px;
     font-variant-numeric: tabular-nums;
-    color: color-mix(in srgb, var(--color-foreground) 28%, transparent);
+    color: var(--color-subtle);
     flex-shrink: 0;
     /* Right-aligned in a fixed slot so every count shares one right edge. */
     min-width: 2.4em;
@@ -1654,7 +1654,7 @@
     align-items: center;
     justify-content: space-between;
     font-family: var(--font-header, sans-serif);
-    font-size: 10.8px;
+    font-size: var(--size-xs);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
@@ -1664,7 +1664,7 @@
   }
   .lib-note {
     font-family: var(--font-text, sans-serif);
-    font-size: 10.8px;
+    font-size: var(--size-xs);
     color: var(--color-foreground);
     background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
     border: 1px solid var(--color-border);
@@ -1679,7 +1679,7 @@
     align-items: center;
     gap: 4px;
     font-family: var(--font-text, sans-serif);
-    font-size: 10.8px;
+    font-size: var(--size-xs);
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
   }
   .lib-open-note:hover {
@@ -1729,7 +1729,7 @@
     gap: 8px;
     min-width: 0;
     font-family: var(--font-text, sans-serif);
-    font-size: 10.8px;
+    font-size: var(--size-xs);
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
   }
   .account-id:hover {
@@ -1766,7 +1766,7 @@
   }
   .pop-title {
     font-family: var(--font-header, sans-serif);
-    font-size: 10.8px;
+    font-size: var(--size-xs);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
@@ -1785,7 +1785,7 @@
   }
   .pop-key {
     font-family: var(--font-monospace, monospace);
-    font-size: 10.8px;
+    font-size: var(--size-xs);
     color: var(--color-foreground);
     background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
     border: 1px solid var(--color-border);
@@ -1806,7 +1806,7 @@
     background: var(--color-foreground);
     color: var(--color-surface-high);
     font-family: var(--font-header, sans-serif);
-    font-size: 10.8px;
+    font-size: var(--size-xs);
     letter-spacing: 0.12em;
     text-transform: uppercase;
   }
@@ -1832,7 +1832,7 @@
     all: unset;
     cursor: pointer;
     font-family: var(--font-header, sans-serif);
-    font-size: 10.8px;
+    font-size: var(--size-xs);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--color-accent);

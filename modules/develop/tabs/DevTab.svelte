@@ -1,5 +1,6 @@
 <script>
   import EngineRunner from "@modules/develop/EngineRunner.svelte";
+  import { DEFAULT_PHOTO_SIZE } from "$lib/session.js";
   import Scopes from "@modules/develop/Scopes.svelte";
 
   let {
@@ -26,7 +27,7 @@
     // not part of the per-photo recipe. >100 lets it outgrow the frame; past
     // that point dragging the photo pans it instead of opening the loupe
     // (see DevelopView.svelte / onPhotoPointerDown in +page.svelte).
-    photoScale = $bindable(90),
+    photoScale = $bindable(DEFAULT_PHOTO_SIZE),
     onPhotoScaleChanged = () => {},
   } = $props();
 </script>
@@ -110,7 +111,7 @@
 
   .din {
     font-family: var(--font-header, sans-serif);
-    font-size: 10.8px;
+    font-size: var(--size-xs);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
