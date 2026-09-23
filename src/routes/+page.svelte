@@ -3,6 +3,10 @@
   import { thumbUrl } from "$lib/thumbUrl.js";
   import { session, openFolderSession } from "$lib/session.js";
   import {
+    library, beginOpen, appendFrames, refreshFrames, clearFrames, refreshLoadedFrames, leaveFolder,
+    setRoots, setDirs, setLoading, dirLabel,
+  } from "$lib/library.svelte.js";
+  import {
     activity, notify, hold, dismiss,
     startActivity, updateActivity, setActive, releaseActive, setQueueOpen,
   } from "$lib/activity.svelte.js";
@@ -248,13 +252,11 @@
   // preview only then, not whenever a non-"original" aspect is just
   // sitting in the recipe from an earlier session).
   let dockedActiveTab = $state("dev");
-  /** @type {string | null} */ let folder = $state(null);
   // RAW, not deep-reactive: the contact sheet holds up to ~22k frames, and a
   // plain $state would wrap every element in a Proxy — then any full-array pass
   // (view's sort, selectedFrames' filter) fires millions of proxy traps and
   // freezes the folder open. Raw means only reassigning `frames` is reactive,
   // so in-place edits (rating, previewVersion) reassign with `frames = [...frames]`.
-  /** @type {Frame[]} */ let frames = $state.raw([]);
   let applePhotosSupported = $state(false);
   let applePhotosActive = $state(false);
   let applePhotosBusy = $state(false);
@@ -311,7 +313,7 @@
         applePhotosAlbums = [];
         applePhotosLoaded = false;
         applePhotosLibraryTotal = null;
-        if (applePhotosActive) frames = [];
+        if (applePhotosActive) clearFrames();
         if (!authorize) return false;
         throw new Error("Allow Reveal in System Settings > Privacy & Security > Photos, then click Apple Photos again.");
       }
@@ -365,7 +367,7 @@
       selected: new Set(selection.paths), focus: view[sel]?.path,
       anchor: view[selectionAnchor]?.path, index: sel,
     };
-    const loadedCount = frames.length;
+    const loadedCount = library.frames.length;
     const descending = sortDesc;
     applePhotosBusy = true;
     dismiss();
@@ -393,9 +395,9 @@
       applePhotosActive = true;
       applePhotosTotal = page.total;
       applePhotosOffset = page.next;
-      curDir = null;
-      folder = null;
-      frames = page.frames;
+      const open = beginOpen({});
+      open.commit(page.frames);
+      open.finish();
       if (preserve) {
         const restored = restorePhotoSelection(view, previous);
         setSelection(restored.selected, view[restored.anchor]?.path ?? null);
@@ -429,8 +431,8 @@
         album: applePhotosAlbum || null, offset: applePhotosOffset, descending: sortDesc,
       });
       if (request !== applePhotosRequest) return;
-      const known = new Set(frames.map((frame) => frame.path));
-      frames = [...frames, ...page.frames.filter((/** @type {Frame} */ frame) => !known.has(frame.path))];
+      const known = new Set(library.frames.map((frame) => frame.path));
+      appendFrames(page.frames);
       applePhotosOffset = page.next;
       applePhotosTotal = page.total;
     } catch (error) {
@@ -453,14 +455,9 @@
       hold(`Could not cancel photo download: ${error}`);
     }
   }
-  let loading = $state(false); // a folder open is in flight — suppresses the empty-state splash so switching folders doesn't flash "REVEAL"
 
   /** @type {Recipe | null} */ let copiedRecipe = $state(null);
-  /** @type {string[]} */ let roots = $state([]); // every catalogue root — the library is a SET of them
-  /** @type {string | null} */ let root = $derived(roots[0] ?? null); // primary root, for legacy single-root paths
   /** @type {string | null} */ let importDir = $state(null); // chosen import folder (null → fall back to root)
-  /** @type {Dir[]} */ let dirs = $state([]);
-  /** @type {string | null} */ let curDir = $state(null);
 
   // Folder mood — the SAME story-theme tokens the Editorial/Garden preview
   // already reads from `<folder>/<folder-name>.md` frontmatter (the sidebar's
@@ -470,13 +467,13 @@
   // shifts mood while you're in them — reusing the existing per-folder file
   // rather than inventing a second theming mechanism.
   $effect(() => {
-    const dir = curDir;
+    const dir = library.curDir;
     if (!isTauri || !dir) {
       updateStoryTheme({ darkBackground: null, darkAccent: null, fontHeader: null, fontText: null });
       return;
     }
     invoke("story_load_theme", { dir }).then((t) => {
-      if (curDir !== dir) return; // folder changed again before this resolved
+      if (library.curDir !== dir) return; // folder changed again before this resolved
       updateStoryTheme({
         darkBackground: t.darkBackground,
         darkAccent: t.darkAccent,
@@ -645,7 +642,7 @@
 
   /** @type {string | null} */ let photoPath = $state(null);
   /** @type {string | null} */ let picked = $state(null);
-  const currentRating = $derived(frames.find((f) => f.path === photoPath)?.rating ?? 0);
+  const currentRating = $derived(library.frames.find((f) => f.path === photoPath)?.rating ?? 0);
   /** @type {string | null} */ let imgUrl = $state(null);
   /** @type {HTMLCanvasElement | null} */ let canvasEl = $state(null);
   let useCanvas = $state(false);
@@ -756,7 +753,7 @@
   /** @type {PhotoMenu | null} */ let photoMenu = $state(null);
 
   $effect(() => {
-    const d = gridDir();
+    const d = library.dir;
     if (d && folderSession?.dir === d && currentMode === "cull") {
       scrollOffsets[d] = currentScrollTop;
       folderSession.saveScroll(currentScrollTop);
@@ -844,7 +841,7 @@
       // take_open_file check below only overrides this for an actual
       // deep-link/"open with" target — it used to redo this exact fallback
       // itself, indexing the same directory twice on every launch.
-      const lastDir = session.lastDirectory() || dirs[dirs.length - 1]?.dir;
+      const lastDir = session.lastDirectory() || library.dirs[library.dirs.length - 1]?.dir;
       if (lastDir) {
         // restoreSession: land back in Develop on whichever photo was open
         // when the app last quit, instead of always resetting to Grid.
@@ -854,7 +851,7 @@
       }
       // A seeded root with an empty index (fresh install, or the library was
       // pointed elsewhere) indexes itself — no button hunt on first launch.
-      if (root && !dirs.length) rescan();
+      if (library.root && !library.dirs.length) rescan();
       const shellPrefs = await invoke("load_shell_prefs");
       layouts[currentMode].focus = !!shellPrefs.focus_mode;
       autoImport = !!shellPrefs.auto_import;
@@ -953,16 +950,16 @@
           if (now - lastImportRefresh > 250) {
             lastImportRefresh = now;
             await refreshDirs(true);
-            if (!curDir) {
+            if (!library.curDir) {
               lastImportedFolder = payload.destDir;
               openDir(payload.destDir);
-            } else if (curDir === payload.destDir) {
+            } else if (library.curDir === payload.destDir) {
               try {
-                const rawRows = await invoke("index_frames", { dir: curDir, minRating });
+                const rawRows = await invoke("index_frames", { dir: library.curDir, minRating });
                 const rows = (Array.isArray(rawRows) ? rawRows : []).filter(
                   (r) => r.name && !r.name.startsWith(".") && !r.name.startsWith("._")
                 );
-                frames = rows;
+                if (library.curDir === payload.destDir) refreshLoadedFrames(rows);
               } catch (err) {}
             }
           }
@@ -986,9 +983,9 @@
         // multi-day card doesn't hammer the vision API in parallel), only
         // for folders that actually received photos this run.
         if ((aiCullMarkStory || aiCullExportDesktop) && stats?.folders?.length) {
-          for (const folder of stats.folders) {
-            const folderPaths = importedByFolder.get(folder);
-            if (folderPaths?.length) await triggerAiCull(folder, folderPaths);
+          for (const imported of stats.folders) {
+            const folderPaths = importedByFolder.get(imported);
+            if (folderPaths?.length) await triggerAiCull(imported, folderPaths);
           }
         }
       });
@@ -1303,7 +1300,7 @@
     session.setLastMode(to);
     // Only through the open folder's session: a folder nothing has been read
     // for is a folder nothing may be written for.
-    if (folderSession?.dir === gridDir()) folderSession.saveMode(to);
+    if (folderSession?.dir === library.dir) folderSession.saveMode(to);
 
     // Sync focus state to Rust
     const currentFocus = layouts[currentMode].focus;
@@ -1337,7 +1334,7 @@
         hold("Editorial needs a filesystem folder. You can edit and export Apple Photos directly.");
         return;
       }
-      if (!curDir && !folder) return;
+      if (!library.curDir && !library.folder) return;
     }
     previewFilter = next;
   }
@@ -1448,7 +1445,7 @@
       emit("main-dev-state", {
         photoPath: photoPath,
         picked: picked,
-        rating: frames.find((f) => f.path === photoPath)?.rating ?? 0,
+        rating: library.frames.find((f) => f.path === photoPath)?.rating ?? 0,
         recipe: recipe ? { ...recipe } : null,
         developEngine,
         renderMs: renderMs,
@@ -1711,8 +1708,8 @@
   async function refreshDirs(light = false) {
     try {
       const [r, d] = await invoke("index_dirs");
-      roots = r; // index_dirs now returns the full root set
-      dirs = d;
+      setRoots(r); // index_dirs now returns the full root set
+      setDirs(d);
       if (!light) refreshStoryDirs();
       return true;
     } catch (error) {
@@ -1723,9 +1720,9 @@
 
   // The sidebar's red "this day has a story" dots.
   async function refreshStoryDirs() {
-    if (!isTauri || !dirs.length) return;
+    if (!isTauri || !library.dirs.length) return;
     try {
-      storyDirs = new Set(await invoke("story_dirs", { dirs: dirs.map((d) => d.dir) }));
+      storyDirs = new Set(await invoke("story_dirs", { dirs: library.dirs.map((d) => d.dir) }));
     } catch (e) {}
     // Refresh the story-notes lists too — pin/story changes flow through here.
     await refreshStoryNotes();
@@ -1735,7 +1732,7 @@
   // (sorted by pinned-at descending — newest/newest-pinned at top) and the
   // recent list (mtime desc, top 12). Pinned notes may also appear in recent.
   async function refreshStoryNotes() {
-    if (!isTauri || !dirs.length) {
+    if (!isTauri || !library.dirs.length) {
       pinnedStories = [];
       recentStories = [];
       return;
@@ -1743,7 +1740,7 @@
     /** @type {any[]} */
     let all = [];
     try {
-      all = await invoke("list_story_notes", { dirs: dirs.map((d) => d.dir) });
+      all = await invoke("list_story_notes", { dirs: library.dirs.map((d) => d.dir) });
     } catch (e) {
       pinnedStories = [];
       recentStories = [];
@@ -1765,7 +1762,7 @@
   // What the grid actually shows: the backend rows, optionally narrowed to
   // the story set (Collection Rapide), in the chosen name order.
   const view = $derived.by(() => {
-    let rows = frames;
+    let rows = library.frames;
     if (applePhotosActive && minRating) rows = rows.filter((frame) => frame.rating >= minRating);
     if (filterStory) rows = rows.filter((f) => storySet.has(stem(f.name)));
     // Ascending = the backend's ORDER BY capture_at, name. Descending flips
@@ -1927,7 +1924,7 @@
   /** @param {string} path */
   async function prepareFullscreenFrame(path) {
       const request = ++fullscreenRequest;
-      const frame = frames.find((item) => item.path === path);
+      const frame = library.frames.find((item) => item.path === path);
       const immediate =
         currentMode === "dev" && photoPath === path && imgUrl
           ? imgUrl
@@ -2086,7 +2083,7 @@
     try {
       await invoke("scan_root", { path });
       await refreshDirs();
-      if (dirs.length) openDir(dirs[dirs.length - 1].dir);
+      if (library.dirs.length) openDir(library.dirs[library.dirs.length - 1].dir);
     } finally {
       scanning = false;
     }
@@ -2115,9 +2112,8 @@
     // rather than leaving the grid pointed at a folder the index forgot.
     // `view` is derived from the frames of `curDir`, so clearing the folder
     // empties the grid on its own.
-    if (curDir === path || curDir?.startsWith(`${path}/`)) {
-      curDir = null;
-      frames = [];
+    if (library.curDir === path || library.curDir?.startsWith(`${path}/`)) {
+      leaveFolder();
     }
     await refreshDirs();
     notify(`Library removed · ${Number(pruned).toLocaleString("en-CA")} photos forgotten`, 4000);
@@ -2140,13 +2136,13 @@
       await refreshApplePhotos();
       return;
     }
-    if (!roots.length) return;
+    if (!library.roots.length) return;
     scanning = true;
     try {
-      for (const r of roots) await invoke("scan_root", { path: r });
+      for (const r of library.roots) await invoke("scan_root", { path: r });
       await refreshDirs();
-      if (curDir) openDir(curDir);
-      else if (dirs.length) openDir(dirs[dirs.length - 1].dir);
+      if (library.curDir) openDir(library.curDir);
+      else if (library.dirs.length) openDir(library.dirs[library.dirs.length - 1].dir);
     } finally {
       scanning = false;
     }
@@ -2158,9 +2154,9 @@
     scanning = true;
     hold(`Reindexing ${path.split("/").pop()}…`);
     try {
-      await invoke(roots.includes(path) ? "scan_root" : "scan_folder", { path });
+      await invoke(library.roots.includes(path) ? "scan_root" : "scan_folder", { path });
       await refreshDirs();
-      if (curDir?.startsWith(path)) await openDir(curDir);
+      if (library.curDir?.startsWith(path)) await openDir(library.curDir);
       hold(`Reindexed ${path.split("/").pop()}`);
     } catch (error) {
       hold(`Could not reindex folder: ${error}`);
@@ -2259,7 +2255,7 @@
       for (const d of srcDirs) await invoke("scan_folder", { path: d });
     } catch (_) {}
     await refreshDirs();
-    if (curDir) await openDir(curDir);
+    if (library.curDir) await openDir(library.curDir);
     clearSelection();
     progress = null;
     const destName = destDir.split("/").pop();
@@ -2297,9 +2293,9 @@
   // to still exist. Same cost as clicking "Force Reindex" — not a new class
   // of operation, just triggered automatically here.
   async function reconcileAfterFileOp() {
-    if (!root) return;
+    if (!library.root) return;
     try {
-      await invoke("scan_root", { path: root });
+      await invoke("scan_root", { path: library.root });
     } catch (_) {}
     await refreshDirs();
   }
@@ -2312,10 +2308,10 @@
     try {
       const newPath = await invoke("rename_dir", { path, newName });
       await reconcileAfterFileOp();
-      if (curDir === path) {
+      if (library.curDir === path) {
         await openDir(newPath);
-      } else if (curDir && curDir.startsWith(path + "/")) {
-        await openDir(newPath + curDir.slice(path.length));
+      } else if (library.curDir && library.curDir.startsWith(path + "/")) {
+        await openDir(newPath + library.curDir.slice(path.length));
       }
       notify(`Renamed → ${newName}`, 3000);
     } catch (e) {
@@ -2347,10 +2343,10 @@
     try {
       const newPath = await invoke("move_dir", { path, destParentDir });
       await reconcileAfterFileOp();
-      if (curDir === path) {
+      if (library.curDir === path) {
         await openDir(newPath);
-      } else if (curDir && curDir.startsWith(path + "/")) {
-        await openDir(newPath + curDir.slice(path.length));
+      } else if (library.curDir && library.curDir.startsWith(path + "/")) {
+        await openDir(newPath + library.curDir.slice(path.length));
       }
       notify(`${name} moved`, 3000);
     } catch (e) {
@@ -2391,14 +2387,16 @@
       return;
     }
     leaveApplePhotos();
-    const request = applePhotosRequest;
     // NOTE: the index stores dirs in the canonical firmlink form
     // (/System/Volumes/Data/mnt/…) — pass paths through verbatim; any
     // "normalization" to the short alias breaks the exact-match query.
-    curDir = dir;
-    folder = null;
-    loading = true; // suppress the empty-state splash until the new frames land
-    frames = []; // Immediately unmount previous grid cells to cancel pending thumbnail requests
+    //
+    // The token is what makes the commits below safe. This used to compare
+    // `request !== applePhotosRequest` — a counter belonging to the Apple
+    // Photos path, captured here and never incremented by openDir, so
+    // between two filesystem folders it compared N against N and let a
+    // stale load through.
+    const open = beginOpen({ curDir: dir });
     session.setLastDirectory(dir);
     // Folder switch always starts with the full contact sheet.
     minRating = 0;
@@ -2408,17 +2406,16 @@
     /** @type {RevealWindow} */ (window).__log?.(`openDir start dir=${dir} minRating=${JSON.stringify(minRating)}`);
     try {
       const rawRows = await invoke("index_frames", { dir, minRating });
-      if (request !== applePhotosRequest) return;
       const rows = (Array.isArray(rawRows) ? rawRows : []).filter(r => r.name && !r.name.startsWith('.') && !r.name.startsWith('._'));
       debug = `received ${rows.length}`;
-      frames = rows;
-      if (frames.length > 500 && layout === "masonry") {
+      if (!open.commit(rows)) return; // overtaken by another folder
+      if (library.frames.length > 500 && layout === "masonry") {
         layout = "uniform"; // Fallback to virtualized grid to prevent memory/CPU explosion
       }
       withPreviewVersions(rows).then((updated) => {
         // Fresh array ref: `updated` is the same array we mutated in place, and
         // a raw $state only reacts to an identity change.
-        if (request === applePhotosRequest && curDir === dir && Array.isArray(updated)) frames = [...updated];
+        if (Array.isArray(updated)) open.replace(updated);
       });
     } catch (e) {
       debug = `failed: ${e}`;
@@ -2466,41 +2463,32 @@
     }
     if (!restoredToDevelop) await switchMode("cull");
     refreshStory();
-    loading = false; // frames have settled — re-enable the empty-state for genuinely empty folders
+    setLoading(false); // frames have settled — re-enable the empty-state for genuinely empty folders
   }
 
-  /** @param {string} dir */
-  function dirLabel(dir) {
-    // Label relative to whichever root owns this dir (multi-root).
-    const owner = roots.find((r) => dir === r || dir.startsWith(r + "/"));
-    return owner
-      ? dir.slice(owner.length).replace(/^\//, "") || owner.split("/").pop()
-      : dir.split("/").pop();
-  }
 
   // ---- stories ---------------------------------------------------------------
-  const gridDir = () => curDir ?? folder;
   /** @param {string} name */
   const stem = (name) => name.replace(/\.[^.]+$/, "");
 
   async function loadCatalogNote() {
-    if (!root) return;
-    catalogContent = await invoke("load_catalog_note", { root });
+    if (!library.root) return;
+    catalogContent = await invoke("load_catalog_note", { root: library.root });
   }
 
   async function saveCatalogNote() {
-    if (!root) return;
-    await invoke("save_catalog_note", { root, content: catalogContent });
+    if (!library.root) return;
+    await invoke("save_catalog_note", { root: library.root, content: catalogContent });
   }
 
   $effect(() => {
-    if (root) {
+    if (library.root) {
       loadCatalogNote();
     }
   });
 
   async function loadStory() {
-    const d = gridDir();
+    const d = library.dir;
     if (!d) return;
     storyContent = await invoke("load_story_note", { dir: d });
   }
@@ -2511,7 +2499,7 @@
   // (which owns the blocks this session) never re-inits from its own output.
   /** @param {string} content */
   async function saveStoryContent(content) {
-    const d = gridDir();
+    const d = library.dir;
     if (!d) return;
     try {
       await invoke("save_story_note", { dir: d, content });
@@ -2571,7 +2559,7 @@
    * @param {string} [blockId] editing/deleting an existing paragraph instead of adding one
    */
   async function saveGridProse(row, text, blockId) {
-    if (!gridDir()) return;
+    if (!library.dir) return;
     const trimmed = (text ?? "").trim();
     const { frontmatter, blocks } = parseStory(storyContent);
 
@@ -2611,7 +2599,7 @@
   }
 
   async function refreshStory() {
-    const d = gridDir();
+    const d = library.dir;
     storySet = new Set(d ? await invoke("story_stems", { dir: d }) : []);
     if (d) {
       await loadStory();
@@ -2636,7 +2624,7 @@
   }
 
   function toggleLayout() {
-    if (layout === "uniform" && frames.length > 500) {
+    if (layout === "uniform" && library.frames.length > 500) {
       notify("Too many images for masonry mode (>500)", 4000);
       return;
     }
@@ -2657,7 +2645,7 @@
       hold("Apple Photos albums are read-only. Use ratings to select photos, then export.");
       return;
     }
-    const d = gridDir();
+    const d = library.dir;
     if (!path || !d) return;
     storySet = new Set(await invoke("story_toggle", { dir: d, path }));
     await loadStory();
@@ -2678,9 +2666,9 @@
    */
   async function setStoryPinned(notePath, pinned) {
     const pinnedAt = pinned ? new Date().toISOString() : null;
-    const folder = notePath.substring(0, notePath.lastIndexOf("/"));
+    const noteDir = notePath.substring(0, notePath.lastIndexOf("/"));
     try {
-      await invoke("story_set_pinned", { dir: folder, pinned, pinnedAt });
+      await invoke("story_set_pinned", { dir: noteDir, pinned, pinnedAt });
     } catch (e) {}
     await refreshStoryNotes();
   }
@@ -2699,19 +2687,19 @@
     const now = Date.now();
     for (let i = 0; i < reordered.length; i++) {
       const pinnedAt = new Date(now - i * 60_000).toISOString();
-      const folder = reordered[i].notePath.substring(
+      const noteDir = reordered[i].notePath.substring(
         0,
         reordered[i].notePath.lastIndexOf("/"),
       );
       try {
-        await invoke("story_set_pinned", { dir: folder, pinned: true, pinnedAt });
+        await invoke("story_set_pinned", { dir: noteDir, pinned: true, pinnedAt });
       } catch (e) {}
     }
     await refreshStoryNotes();
   }
 
   async function publishStory() {
-    const d = gridDir();
+    const d = library.dir;
     if (!d || !storySet.size || !gardenAccount?.signed_in || activity.anyRunning) return;
     liveUrl = null;
     progress = { verb: "publication", done: 0, total: storySet.size, current: "" };
@@ -2731,7 +2719,7 @@
   }
 
   async function exportLocalStory() {
-    const d = gridDir();
+    const d = library.dir;
     if (!d || !storySet.size || activity.anyRunning) return;
     const dest = await invoke("pick_folder");
     if (!dest) return;
@@ -2761,7 +2749,7 @@
   async function importCard(card) {
     // Prefer the explicitly-chosen import folder; fall back to the primary
     // catalogue root when none is set (preserves the pre-choice behavior).
-    let archive = importDir ?? root;
+    let archive = importDir ?? library.root;
     if (!archive) {
       archive = await invoke("pick_folder");
       if (!archive) return;
@@ -2812,7 +2800,7 @@
       await invoke("ai_cull", { dir, paths });
       // The Rust side wrote directly to this folder's story note — if it's
       // the one currently open, our in-memory copy is now stale.
-      if (dir === curDir) {
+      if (dir === library.curDir) {
         storySet = new Set(await invoke("story_stems", { dir }));
         await loadStory();
         refreshStoryDirs();
@@ -2835,7 +2823,7 @@
       hold("AI culling is available for filesystem folders, not Apple Photos.");
       return;
     }
-    const d = gridDir();
+    const d = library.dir;
     if (!d || !view.length || progress) return;
     progress = { verb: "cull", done: 0, total: view.length, current: "" };
     hold(`AI Culling · ${view.length} photos…`);
@@ -3069,13 +3057,16 @@
   /** @param {string} path */
   async function openFolder(path) {
     leaveApplePhotos();
-    folder = path;
-    curDir = null;
+    // This path had NO guard at all, so a slow listing could land long after
+    // you had moved on. Same transaction as openDir now.
+    const open = beginOpen({ folder: path });
     // Folder switch always starts with the full contact sheet.
     minRating = 0;
     filterStory = false;
     previewFilter = false;
-    frames = await withPreviewVersions(await invoke("list_dir", { path }));
+    const rows = await withPreviewVersions(await invoke("list_dir", { path }));
+    if (!open.commit(rows)) return; // overtaken by another folder
+    open.finish();
     focusAt(view, 0);
     selectOnly(view, 0);
     // The other way into a folder, and it has to remember as much as the
@@ -3145,7 +3136,7 @@
     } catch (error) {
       hold(`Could not save photo rating: ${error}`);
     } finally {
-      frames = [...frames];
+      refreshFrames();
     }
   }
 
@@ -3282,7 +3273,7 @@
           }
           sendDevStateToPanel();
         }
-        frames = [...frames]; // reassign per photo so grid thumbs update live as each frame develops
+        refreshFrames(); // per photo, so grid thumbs update live as each frame develops
       }
       notify(`Settings applied to ${targetFrames.length} photo${targetFrames.length === 1 ? "" : "s"}`, 2500);
       updateActivity(jobId, { phase: "Complete", status: "completed" });
@@ -3713,7 +3704,7 @@
     // Step one of three: the grid-size copy, which the local cache almost
     // always holds already. Step two swaps in the 2048 sidecar below; step
     // three is the RAW render from `pump()`.
-    const openVersion = frames.find((f) => f.path === path)?.previewVersion ?? 0;
+    const openVersion = library.frames.find((f) => f.path === path)?.previewVersion ?? 0;
     imgUrl = openingUrl(path, openVersion);
     useCanvas = false; // start on the <img> thumb; pump() flips this back on
     // only if the photo develops with a canvas (Rapid) engine.
@@ -3892,10 +3883,10 @@
           }
           imgFailed = false;
           status = "";
-          const frame = frames.find((item) => item.path === path);
+          const frame = library.frames.find((item) => item.path === path);
           if (frame && px >= PREVIEW_PX) {
             frame.previewVersion = await freshPreviewVersion(frame.path);
-            frames = [...frames];
+            refreshFrames();
           }
         }
       } else {
@@ -3919,10 +3910,10 @@
           // Swap the surface only now, with the new pixels decoded and ready.
           useCanvas = false;
           imgFailed = false;
-          const frame = frames.find((item) => item.path === path);
+          const frame = library.frames.find((item) => item.path === path);
           if (frame) {
             frame.previewVersion = await freshPreviewVersion(frame.path);
-            frames = [...frames]; // raw array — reassign so the grid thumb refreshes
+            refreshFrames();
           }
           status = "";
         } else {
@@ -3999,9 +3990,9 @@
     await invoke("clear_recipe", { path });
     if (path !== photoPath) return;
     developEngine = null;
-    const frame = frames.find((item) => item.path === path);
+    const frame = library.frames.find((item) => item.path === path);
     if (frame) frame.previewVersion = await freshPreviewVersion(frame.path);
-    frames = [...frames]; // raw array — reassign so the grid thumb refreshes
+    refreshFrames();
 
     // Decode the as-shot preview BEFORE swapping surfaces. Flipping
     // `useCanvas` first would hide a good Rapid render and show an empty
@@ -4160,7 +4151,7 @@
   /** @param {number} n */
   function setMinRating(n) {
     minRating = n;
-    if (curDir) openDir(curDir);
+    if (library.curDir) openDir(library.curDir);
   }
 
   /** @type {[string, number][]} */
@@ -4186,7 +4177,7 @@
   /** @type {ReturnType<typeof setTimeout> | undefined} */
   let sidebarPeekTimer = undefined;
   function openSidebarPeek() {
-    if ((!root && !applePhotosSupported) || layouts[currentMode].sidebar) return;
+    if ((!library.root && !applePhotosSupported) || layouts[currentMode].sidebar) return;
     clearTimeout(sidebarPeekTimer);
     sidebarPeek = true;
   }
@@ -4199,7 +4190,7 @@
     sidebarPeek = false;
   }
 
-  const sidebarVisible = $derived((!!root || applePhotosSupported) && layouts[currentMode].sidebar);
+  const sidebarVisible = $derived((!!library.root || applePhotosSupported) && layouts[currentMode].sidebar);
 </script>
 
 {#if applePhotosTransfer?.phase === "loading"}
@@ -4258,10 +4249,10 @@
           applePhotos={applePhotosLibrary}
           onConnectApplePhotos={connectApplePhotos}
           onRefreshApplePhotos={refreshApplePhotos}
-          {root}
-          {roots}
-          {dirs}
-          {curDir}
+          root={library.root}
+          roots={library.roots}
+          dirs={library.dirs}
+          curDir={library.curDir}
           {scanning}
           {indexProgress}
           {previewFilter}
@@ -4270,7 +4261,7 @@
           {catalogContent}
           {importDir}
           onOpenDir={openDir}
-          onOpenLibrary={() => openDir(root)}
+          onOpenLibrary={() => openDir(library.root)}
           onRescan={rescan}
           onRescanDir={rescanDir}
           onRevealDir={revealDir}
@@ -4314,10 +4305,10 @@
             applePhotos={applePhotosLibrary}
             onConnectApplePhotos={connectApplePhotos}
             onRefreshApplePhotos={refreshApplePhotos}
-            {root}
-            {roots}
-            {dirs}
-            {curDir}
+            root={library.root}
+            roots={library.roots}
+            dirs={library.dirs}
+            curDir={library.curDir}
             {scanning}
             {indexProgress}
             {previewFilter}
@@ -4331,7 +4322,7 @@
               closeSidebarPeek();
             }}
             onOpenLibrary={() => {
-              openDir(root);
+              openDir(library.root);
               closeSidebarPeek();
             }}
             onRescan={rescan}
@@ -4394,7 +4385,7 @@
                 <Icon name="circle-half" size="12px" />
               </button>
               <button class="wordmark" onclick={() => (shortcutsOpen = true)} title="Keyboard shortcuts">
-                {curDir && curDir !== root ? (dirLabel(curDir) ?? "").toUpperCase() : "REVEAL"}
+                {library.curDir && library.curDir !== library.root ? (dirLabel(library.curDir) ?? "").toUpperCase() : "REVEAL"}
               </button>
             </div>
           {/if}
@@ -4475,7 +4466,7 @@
             {/if}
           {/if}
 
-          {#if !root && !applePhotosActive}
+          {#if !library.root && !applePhotosActive}
             <button class="rail-action" onclick={indexRoot} disabled={!isTauri || scanning}>
               {scanning ? "indexing…" : "Index a library"}
             </button>
@@ -4541,7 +4532,7 @@
             </span>
           {/if}
 
-          {#if (curDir || folder) && view.length}
+          {#if (library.curDir || library.folder) && view.length}
             <button
               class="rail-btn"
               onclick={exportSelection}
@@ -4591,7 +4582,7 @@
                     <Icon name="lightning" size="10px" />
                   </button>
                 {/if}
-                {#if (curDir || folder) && view.length}
+                {#if (library.curDir || library.folder) && view.length}
                   <button
                     class="std-menu-item"
                     class:disabled={!!progress}
@@ -4605,7 +4596,7 @@
                     <Icon name="lightning" size="10px" />
                   </button>
                 {/if}
-                {#if gardenUrl || storySet.size || ((curDir || folder) && view.length)}
+                {#if gardenUrl || storySet.size || ((library.curDir || library.folder) && view.length)}
                   <div class="std-menu-separator"></div>
                 {/if}
                 <span class="pop-label">Colonnes</span>
@@ -4681,7 +4672,7 @@
       {:else}
         <CullView
           {view}
-          {loading}
+          loading={library.loading}
           {sel}
           selectedPaths={selection.paths}
           {storySet}
@@ -4692,7 +4683,7 @@
           {fillCells}
           {progress}
           bind:currentScrollTop={currentScrollTop}
-          {curDir}
+          curDir={library.curDir}
           {minRating}
           {isTauri}
           {debug}
@@ -4702,7 +4693,7 @@
           {toggleStoryWithPath}
           {onPhotoDragStart}
           {closePhotoMenu}
-          hasRoot={!!root || applePhotosActive}
+          hasRoot={!!library.root || applePhotosActive}
           {applePhotosActive}
           {scanning}
           onAddLibraryFolder={indexRoot}
@@ -5163,9 +5154,9 @@
   /* Folder mood (.cull and .app, dev mode further below) — re-derives the
      surface/border scale from the SAME --color-background/--color-foreground
      the framework's own dark-mode block computes them from
-     (packages/styles/_standard-02-color.scss), just off our per-folder
+     (packages/styles/_standard-02-color.scss), just off our per-library.folder
      override instead of the theme default. Gated behind .themed so an
-     unthemed folder's surfaces stay byte-identical to before this existed —
+     unthemed library.folder's surfaces stay byte-identical to before this existed —
      only folders with an actual story-theme note shift.
      `background`/`color` are painted here explicitly: nothing under .cull/
      .app actually draws with --color-background itself (only the outer
