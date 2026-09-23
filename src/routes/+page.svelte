@@ -5775,8 +5775,8 @@
   .open {
     align-self: flex-start;
   }
-  /* Same floating-pane treatment as the real sidebar (modules/sidebar/
-     Sidebar.svelte's `nav`: the same four window-chrome tokens) —
+  /* Same floating-card treatment as the real sidebar (modules/sidebar/
+     Sidebar.svelte's `nav`: margin 8px, --radius-lg, that exact shadow) —
      DevelopPanel's own .panel is edge-to-edge on purpose (it also fills a
      whole DETACHED OS window, where the window chrome itself already
      supplies the rounding), so docking it inline needs this wrapper to
@@ -5787,10 +5787,10 @@
        resolve against the full track and then ADD them, pushing the panel
        16px past the bottom of the window (Francis, 2026-09-22: "il descend
        plus bas que l'app"). */
-    margin: var(--window-inset);
-    border: var(--border);
-    border-radius: var(--pane-radius);
-    box-shadow: var(--shadow-raised);
+    margin: 8px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
     overflow: hidden;
     min-height: 0;
     /* Matches nav's own self-painted background (Sidebar.svelte) exactly —

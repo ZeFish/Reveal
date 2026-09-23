@@ -1285,15 +1285,11 @@
   nav {
     width: 224px;
     flex-shrink: 0;
-    /* A pane floating in the window: inset, concentric corner, raised.
-       --shadow-raised already draws the hairline ring, so the border is
-       the theme's own --border (zero width in many themes), not a second
-       hardcoded 1px on top of it. */
-    margin: var(--window-inset);
+    margin: 8px;
     background: var(--color-surface-high);
-    border: var(--border);
-    border-radius: var(--pane-radius);
-    box-shadow: var(--shadow-raised);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
     display: flex;
     flex-direction: column;
     min-height: 0;
