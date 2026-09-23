@@ -9,9 +9,10 @@
       "fontHeader": "Avant Garde Pro",
       "fontText": "Berkeley Mono",
       "fontPackages": [
-        "inter",
+        "avant-garde-pro",
+        "berkeley-mono",
         "cargo-diatype",
-        "berkeley-mono"
+        "inter"
       ]
     },
     {
@@ -22,8 +23,8 @@
       "fontHeader": "Source Serif 4",
       "fontText": "Source Serif 4",
       "fontPackages": [
-        "source-serif-4",
-        "ibm-plex"
+        "ibm-plex",
+        "source-serif-4"
       ]
     },
     {
@@ -35,7 +36,8 @@
       "fontText": "Herbus",
       "fontPackages": [
         "herbus",
-        "monolisa"
+        "monolisa",
+        "sohne"
       ]
     },
     {
@@ -69,10 +71,12 @@
       "fontHeader": "Fern",
       "fontText": "Fern",
       "fontPackages": [
+        "bookerly",
         "fern",
-        "source-serif-4",
+        "graveur",
+        "monolisa",
         "sohne",
-        "graveur"
+        "source-serif-4"
       ]
     },
     {
@@ -95,8 +99,10 @@
       "fontHeader": "Fern",
       "fontText": "Jimmy Serif Pro",
       "fontPackages": [
+        "brixton",
+        "fern",
         "jimmy",
-        "brixton"
+        "monaspace-xenon"
       ]
     },
     {
@@ -119,7 +125,9 @@
       "fontText": "Sohne",
       "fontPackages": [
         "atkinson-hyperlegible-next",
-        "oktah"
+        "inter",
+        "oktah",
+        "sohne"
       ]
     },
     {
@@ -130,8 +138,8 @@
       "fontHeader": null,
       "fontText": null,
       "fontPackages": [
-        "inter",
         "berkeley-mono",
+        "inter",
         "monolisa"
       ]
     },
@@ -143,9 +151,9 @@
       "fontHeader": "IBM Plex Serif",
       "fontText": "iA Writer Quattro",
       "fontPackages": [
+        "berkeley-mono",
         "ia-writer",
-        "ibm-plex",
-        "berkeley-mono"
+        "ibm-plex"
       ]
     },
     {
@@ -156,8 +164,8 @@
       "fontHeader": "Atkinson Hyperlegible Next",
       "fontText": "Atkinson Hyperlegible Next",
       "fontPackages": [
-        "atkinson-hyperlegible-next",
-        "atkinson-hyperlegible-mono"
+        "atkinson-hyperlegible-mono",
+        "atkinson-hyperlegible-next"
       ]
     },
     {
@@ -168,9 +176,9 @@
       "fontHeader": "Tiempos Headline",
       "fontText": "Literata",
       "fontPackages": [
-        "tiempos-headline",
+        "instrument-sans",
         "literata",
-        "instrument-sans"
+        "tiempos-headline"
       ]
     },
     {
@@ -182,7 +190,7 @@
       "fontText": "IBM Plex Sans",
       "fontPackages": [
         "helvetica-now",
-        "IBM Plex"
+        "ibm-plex"
       ]
     },
     {
@@ -195,6 +203,7 @@
       "fontPackages": [
         "forrest",
         "monaspace-xenon",
+        "monosten",
         "national-park"
       ]
     },
@@ -206,8 +215,8 @@
       "fontHeader": "Inter",
       "fontText": "Cargo Diatype",
       "fontPackages": [
-        "inter",
-        "cargo-diatype"
+        "cargo-diatype",
+        "inter"
       ]
     },
     {
@@ -229,9 +238,12 @@
       "fontHeader": "Kalice",
       "fontText": "National Park",
       "fontPackages": [
-        "Kalice",
+        "instrument-sans",
         "inter",
-        "instrument-sans"
+        "kalice",
+        "monolisa",
+        "national-park",
+        "newsreader"
       ]
     },
     {
@@ -242,7 +254,9 @@
       "fontHeader": "Inter",
       "fontText": "Cargo Diatype",
       "fontPackages": [
-        "cargo-diatype"
+        "cargo-diatype",
+        "inter",
+        "sohne"
       ]
     },
     {
@@ -253,8 +267,8 @@
       "fontHeader": "Fraunces",
       "fontText": "MonoLisa",
       "fontPackages": [
-        "monolisa",
-        "fraunces"
+        "fraunces",
+        "monolisa"
       ]
     },
     {
@@ -265,10 +279,11 @@
       "fontHeader": "Tiempos Headline",
       "fontText": "Fern",
       "fontPackages": [
-        "tiempos-headline",
-        "joly",
+        "fern",
         "futura-now",
-        "sohne"
+        "joly",
+        "sohne",
+        "tiempos-headline"
       ]
     },
     {
@@ -303,8 +318,8 @@
       "fontText": "Inter",
       "fontPackages": [
         "din-condensed",
-        "inter",
-        "ibm-plex"
+        "ibm-plex",
+        "inter"
       ]
     },
     {
@@ -315,11 +330,13 @@
       "fontHeader": "Monosten",
       "fontText": "Courier Prime",
       "fontPackages": [
+        "berkeley-mono",
         "courier-prime",
         "futura-now",
-        "monosten",
         "gorton-perfected",
-        "berkeley-mono"
+        "ibm-plex",
+        "jetbrains-mono",
+        "monosten"
       ]
     },
     {

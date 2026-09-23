@@ -162,6 +162,49 @@ function schemeColor(tokens, name, scheme) {
   return lookupColorName(tokens, name, scheme);
 }
 
+// Which font package declares which family — read from each package's own
+// @font-face rules, the only place a family name is actually defined. Keys
+// are lowercased: CSS matches family names case-insensitively.
+const fontsDir = path.resolve(__dirname, "../../../packages/fonts");
+/** @type {Map<string, string>} family (lowercase) → package slug */
+const familyToPackage = new Map();
+const fontPackageSlugs = new Set();
+for (const slug of fs.readdirSync(fontsDir)) {
+  const css = path.join(fontsDir, slug, `${slug}.css`);
+  if (!fs.existsSync(css)) continue;
+  fontPackageSlugs.add(slug);
+  for (const m of fs.readFileSync(css, "utf8").matchAll(/font-family:\s*["']?([^"';]+?)["']?\s*;/g)) {
+    familyToPackage.set(m[1].toLowerCase(), slug);
+  }
+}
+
+// Families a browser or macOS supplies on its own — no package expected.
+const BUILT_IN = new Set(
+  ("serif sans-serif monospace system-ui cursive fantasy ui-monospace ui-sans-serif ui-serif " +
+    "-apple-system blinkmacsystemfont inherit initial")
+    .split(" ")
+    .concat(["helvetica", "helvetica neue", "arial", "georgia", "times", "times new roman", "menlo",
+      "monaco", "courier", "courier new", "consolas", "sf mono", "new york", "avenir", "avenir next",
+      "futura", "palatino", "optima", "gill sans", "baskerville", "didot", "charter", "segoe ui",
+      "roboto", "iowan old style", "hoefler text", "american typewriter", "verdana", "impact",
+      "arial narrow", "sfmono-regular"]),
+);
+
+/**
+ * Every family named in a font stack: `"Fern", "Graveur Variable", Bookerly`
+ * → ["Fern", "Graveur Variable", "Bookerly"]. var(...) references are skipped.
+ * @param {string} stack
+ */
+function families(stack) {
+  return stack
+    .split(",")
+    .map((f) => f.trim().replace(/^["']|["']$/g, "").trim())
+    .filter((f) => f && !f.startsWith("var("));
+}
+
+/** @type {string[]} */
+const fontWarnings = [];
+
 const entries = [];
 for (const dirName of fs.readdirSync(themesDir).sort()) {
   const themeDir = path.join(themesDir, dirName);
@@ -183,13 +226,42 @@ for (const dirName of fs.readdirSync(themesDir).sort()) {
     continue;
   }
 
-  // meta.fonts lists this theme's font packages as "@stnd/fonts/<slug>" —
-  // the actual package to @font-face-load, sidestepping any mismatch
-  // between a theme's font-header/font-text DISPLAY name (e.g. "Jimmy Serif
-  // Pro") and that package's own folder/label (jimmy/"Jimmy Sans Pro").
-  const fontPackages = Array.isArray(meta.fonts)
-    ? meta.fonts.map((f) => String(f).split("/").pop()).filter(Boolean)
-    : [];
+  // The font packages to load. Hand-maintained meta.fonts drifted: on
+  // 2026-09-23, 12 of 28 themes used a family whose package was missing from
+  // it or misnamed ("IBM Plex", "Kalice"), so the app silently fell back.
+  // Now DERIVED from what the theme actually uses — every family in every
+  // font token of its .scss (hand-written overrides included, which is what
+  // the app applies) and of tokens.yaml — resolved through the packages' own
+  // @font-face names. meta.fonts still counts, normalised to a slug, for
+  // packages a theme wants loaded that no token names.
+  const themeScss = path.join(themeDir, `${dirName}.scss`);
+  const stacks = [
+    ...Object.entries(tokens)
+      .filter(([k]) => /^font-(text|header|interface|monospace)$/.test(k))
+      .map(([, v]) => String(v)),
+    ...(fs.existsSync(themeScss)
+      ? [...fs.readFileSync(themeScss, "utf8").matchAll(/--font-(?:text|header|interface|monospace):\s*([^;]+);/g)].map((m) => m[1])
+      : []),
+  ];
+  const packages = new Set();
+  for (const f of Array.isArray(meta.fonts) ? meta.fonts : []) {
+    const slug = String(f).split("/").pop()?.toLowerCase().replace(/\s+/g, "-");
+    if (slug && fontPackageSlugs.has(slug)) packages.add(slug);
+    else fontWarnings.push(`${id}: meta.fonts names "${f}", which is no package in packages/fonts`);
+  }
+  const unresolved = new Set();
+  for (const stack of stacks) {
+    for (const family of families(stack)) {
+      const key = family.toLowerCase();
+      const pkg = familyToPackage.get(key);
+      if (pkg) packages.add(pkg);
+      else if (!BUILT_IN.has(key)) unresolved.add(family);
+    }
+  }
+  for (const family of unresolved) {
+    fontWarnings.push(`${id}: "${family}" is declared by no font package — falls back to the next font in its stack`);
+  }
+  const fontPackages = [...packages].sort();
 
   entries.push({
     id,
@@ -220,3 +292,7 @@ fs.writeFileSync(
 );
 
 console.log(`Wrote ${entries.length} garden themes to ${path.relative(process.cwd(), outPath)}`);
+if (fontWarnings.length) {
+  console.warn(`\n⚠️  ${fontWarnings.length} font reference(s) nothing can load:`);
+  for (const w of fontWarnings) console.warn(`   ${w}`);
+}
