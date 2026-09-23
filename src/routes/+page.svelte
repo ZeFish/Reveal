@@ -2249,28 +2249,34 @@
       }
     }
     // Reconcile the index — the destination gains frames, each source loses them.
-    try {
-      await invoke("scan_folder", { path: destDir });
-      for (const d of srcDirs) await invoke("scan_folder", { path: d });
-    } catch (_) {}
-    await refreshDirs();
-    if (library.curDir) await openDir(library.curDir);
-    clearSelection();
-    setProgress(null);
+    // In a `finally` because reopening the folder can throw, and it used to be
+    // the last thing standing between a failure and a progress bar left
+    // spinning for the rest of the session: nine of the app's eleven long jobs
+    // already cleaned up this way, this one did not.
     const destName = destDir.split("/").pop();
-    hold(
-      errors.length
-        ? `${moved} moved · ${errors.length} failed`
-        : `${moved} photo${moved > 1 ? "s" : ""} moved → ${destName}`,
-    );
-    updateActivity(jobId, {
-      current: destName,
-      phase: errors.length ? `${errors.length} failed` : "Complete",
-      status: errors.length ? "failed" : "completed",
-    });
-    releaseActive(jobId);
+    try {
+      try {
+        await invoke("scan_folder", { path: destDir });
+        for (const d of srcDirs) await invoke("scan_folder", { path: d });
+      } catch (_) {}
+      await refreshDirs();
+      if (library.curDir) await openDir(library.curDir);
+      clearSelection();
+    } finally {
+      setProgress(null);
+      hold(
+        errors.length
+          ? `${moved} moved · ${errors.length} failed`
+          : `${moved} photo${moved > 1 ? "s" : ""} moved → ${destName}`,
+      );
+      updateActivity(jobId, {
+        current: destName,
+        phase: errors.length ? `${errors.length} failed` : "Complete",
+        status: errors.length ? "failed" : "completed",
+      });
+      releaseActive(jobId);
+    }
     if (errors.length) console.warn("move errors:", errors);
-    return;
   }
 
   /** @param {string} destDir */
