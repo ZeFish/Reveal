@@ -1,6 +1,7 @@
 <script>
   import { tick, untrack } from "svelte";
   import { thumbUrl } from "$lib/thumbUrl.js";
+  import { session, openFolderSession } from "$lib/session.js";
   import { invoke } from "@tauri-apps/api/core";
   import { listen as tauriListen, emit } from "@tauri-apps/api/event";
   import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -199,14 +200,7 @@
   // finds no photo to reopen, `openDir` falls back to the grid anyway.
   // Validated, not cast: localStorage is arbitrary text, and an unknown mode
   // would mount neither surface and leave an empty window with no way out.
-  let currentMode = $state(
-    /** @type {"dev" | "cull"} */ (
-      (typeof localStorage !== "undefined" &&
-        ["dev", "cull"].includes(localStorage.getItem("reveal.currentMode") ?? "")
-        ? localStorage.getItem("reveal.currentMode")
-        : "cull") ?? "cull"
-    )
-  );
+  let currentMode = $state(/** @type {"dev" | "cull"} */ (session.lastMode() ?? "cull"));
   // Editorial is a display filter on the grid, not a destination — flipping it
   // never changes `currentMode`. On, the grid's WYSIWYG rendering (StoryView)
   // replaces the dense grid: same photos, same interactions, laid out and
@@ -409,7 +403,7 @@
         selectOnly(0);
         currentScrollTop = 0;
       }
-      localStorage.setItem("reveal.lastDirectory", APPLE_PHOTOS_ROOT + album);
+      session.setLastDirectory(APPLE_PHOTOS_ROOT + album);
       if (!preserve) await switchMode("cull");
     } catch (error) {
       if (request === applePhotosRequest) appMessage = `Could not open Apple Photos: ${error}`;
@@ -759,74 +753,63 @@
   let queueOpen = $state(false);
   let currentScrollTop = $state(0);
   /**
-   * The folder whose stored scroll has actually been read into
-   * `currentScrollTop`. Until that has happened the value is the initial 0,
-   * which means nothing — and the effect below used to persist it anyway,
-   * wiping the real offset before `openDir` ever got to read it back. The
-   * logs said it plainly: `SCROLL save 0` before `SCROLL restore`.
-   * @type {string | null}
+   * The open folder's remembered session — its scroll offset, its workflow
+   * mode, and the only functions allowed to write them back.
+   *
+   * Holding it is what proves the folder's stored values have been READ.
+   * Before, a boot-time `$effect` persisted `currentScrollTop`'s initial 0
+   * over the real offset, which the loader then read back as 0: the grid
+   * always reopened at the top however far you had scrolled. Nothing stated
+   * an order between saving and loading, so it fell out of the reactivity
+   * graph. Now there is nothing to write through until the read has happened.
+   * @type {import("$lib/session.js").FolderSession | null}
    */
-  let scrollRestoredFor = $state(null);
+  let folderSession = $state(null);
   /** @type {PhotoMenu | null} */ let photoMenu = $state(null);
 
   $effect(() => {
     const d = gridDir();
-    if (d && d === scrollRestoredFor && currentMode === "cull") {
+    if (d && folderSession?.dir === d && currentMode === "cull") {
       scrollOffsets[d] = currentScrollTop;
-      if (typeof localStorage !== "undefined") {
-        localStorage.setItem(`reveal.scroll.${d}`, String(currentScrollTop));
-      }
+      folderSession.saveScroll(currentScrollTop);
     }
   });
 
   // Session restore (openDir's restoreSession) reopens whichever photo was
   // in Develop last time the app quit — this is the write half.
   $effect(() => {
-    if (typeof localStorage !== "undefined" && currentMode === "dev" && photoPath) {
-      localStorage.setItem("reveal.lastPhotoPath", photoPath);
-    }
+    if (currentMode === "dev" && photoPath) session.setLastPhoto(photoPath);
   });
 
   // ---- boot -------------------------------------------------------------
   $effect(() => {
-    if (typeof localStorage !== "undefined") {
-      const savedLayouts = localStorage.getItem("reveal.modeLayouts");
-      if (savedLayouts) {
-        try {
-          const parsed = JSON.parse(savedLayouts);
-          if (parsed && typeof parsed === "object") {
-            // Backfill palette flags on the PLAIN parsed object, before the
-            // assign. Reading them off `layouts` here would make this boot
-            // effect depend on state it also writes (the assign replaces
-            // layouts.dev each run) — a self-invalidating effect that re-ran
-            // forever, hammering openDir/refreshDirs in a loop.
-            if (parsed.dev && typeof parsed.dev === "object") {
-              // (Legacy presetPanel/lutPanel ignored)
-            }
-            Object.assign(layouts, parsed);
-          }
-        } catch (e) {}
+    {
+      const parsed = session.modeLayouts();
+      if (parsed) {
+        // Assign onto the PLAIN parsed object's values, not by reading
+        // `layouts` here: that would make this boot effect depend on state it
+        // also writes, a self-invalidating effect that re-ran forever and
+        // hammered openDir/refreshDirs in a loop.
+        Object.assign(layouts, parsed);
       }
 
       // Reveal always reopens into the contact sheet. The last workflow mode
       // remains available per folder, but never hijacks startup.
       currentMode = "cull";
 
-      const saved = localStorage.getItem("reveal.layout");
-      if (saved === "uniform" || saved === "masonry") {
-        layout = saved;
-      }
-      try {
-        const x = JSON.parse(localStorage.getItem("reveal.export") ?? "null");
-        if (x && typeof x === "object") {
+      const saved = session.gridLayout();
+      if (saved) layout = saved;
+      {
+        const x = session.exportPrefs();
+        if (x) {
           if ([0, 4096, 2048, 1600, 1024].includes(x.edge)) exportEdge = x.edge;
           if (typeof x.border === "boolean") exportBorder = x.border;
           if (typeof x.folder === "string") exportFolder = x.folder;
         }
-      } catch (e) {}
-      try {
-        const g = JSON.parse(localStorage.getItem("reveal.grid") ?? "null");
-        if (g && typeof g === "object") {
+      }
+      {
+        const g = session.gridPrefs();
+        if (g) {
           // Any 1–12 count is valid — the keyboard zoom (+/−) steps through
           // every integer, not just the popover's presets.
           const savedCols = Math.trunc(Number(g.cols));
@@ -844,7 +827,7 @@
           if (typeof g.fillCells === "boolean") fillCells = g.fillCells;
           if (typeof g.sortDesc === "boolean") sortDesc = g.sortDesc;
         }
-      } catch (e) {}
+      }
     }
     if (!isTauri) return;
     (async () => {
@@ -873,7 +856,7 @@
       // take_open_file check below only overrides this for an actual
       // deep-link/"open with" target — it used to redo this exact fallback
       // itself, indexing the same directory twice on every launch.
-      const lastDir = localStorage.getItem("reveal.lastDirectory") || dirs[dirs.length - 1]?.dir;
+      const lastDir = session.lastDirectory() || dirs[dirs.length - 1]?.dir;
       if (lastDir) {
         // restoreSession: land back in Develop on whichever photo was open
         // when the app last quit, instead of always resetting to Grid.
@@ -1311,9 +1294,7 @@
   }
 
   function saveLayouts() {
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem("reveal.modeLayouts", JSON.stringify(layouts));
-    }
+    session.setModeLayouts(layouts);
   }
 
   /**
@@ -1338,14 +1319,10 @@
       }
     }
     currentMode = to;
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem("reveal.currentMode", to);
-      if (curDir) {
-        localStorage.setItem(`reveal.mode.${curDir}`, to);
-      } else if (folder) {
-        localStorage.setItem(`reveal.mode.${folder}`, to);
-      }
-    }
+    session.setLastMode(to);
+    // Only through the open folder's session: a folder nothing has been read
+    // for is a folder nothing may be written for.
+    if (folderSession?.dir === gridDir()) folderSession.saveMode(to);
 
     // Sync focus state to Rust
     const currentFocus = layouts[currentMode].focus;
@@ -1802,12 +1779,7 @@
   }
 
   function saveGridPrefs() {
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem(
-        "reveal.grid",
-        JSON.stringify({ cols, marginScale, cellAspect, fillCells, sortDesc }),
-      );
-    }
+    session.setGridPrefs({ cols, marginScale, cellAspect, fillCells, sortDesc });
   }
 
   // What the grid actually shows: the backend rows, optionally narrowed to
@@ -2490,9 +2462,7 @@
     folder = null;
     loading = true; // suppress the empty-state splash until the new frames land
     frames = []; // Immediately unmount previous grid cells to cancel pending thumbnail requests
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem("reveal.lastDirectory", dir);
-    }
+    session.setLastDirectory(dir);
     // Folder switch always starts with the full contact sheet.
     minRating = 0;
     filterStory = false;
@@ -2529,16 +2499,13 @@
     // So the stored offset was saved correctly every time and destroyed on
     // the way back in. A provisional value plus an observer that writes what
     // it observes makes the provisional value permanent.
-    currentScrollTop =
-      (typeof localStorage !== "undefined" && Number(localStorage.getItem(`reveal.scroll.${dir}`))) ||
-      scrollOffsets[dir] ||
-      0;
-    scrollRestoredFor = dir; // only now may this folder's offset be persisted
+    folderSession = openFolderSession(dir);
+    currentScrollTop = folderSession.scroll || scrollOffsets[dir] || 0;
     sel = 0;
     selectOnly(0);
     let restoredToDevelop = false;
-    if (restoreSession && typeof localStorage !== "undefined") {
-      const savedPhoto = localStorage.getItem("reveal.lastPhotoPath");
+    if (restoreSession) {
+      const savedPhoto = session.lastPhoto();
       // `view`, not `frames`: `sel` indexes the VIEW, which filters by rating
       // or story and reverses under `sortDesc`. Looking the photo up in
       // `frames` produced an index that was valid for the wrong list — with
@@ -2553,7 +2520,7 @@
       // each cold start paying 3.4s of NAS read the parked frame existed to
       // avoid.
       const savedIdx = savedPhoto ? view.findIndex((f) => f.path === savedPhoto) : -1;
-      if (savedPhoto && localStorage.getItem(`reveal.mode.${dir}`) === "dev" && savedIdx !== -1) {
+      if (savedPhoto && folderSession.mode === "dev" && savedIdx !== -1) {
         sel = savedIdx;
         selectOnly(sel);
         await openPhoto(savedPhoto, { openDevPanel: layouts.dev.devPanel });
@@ -2739,9 +2706,7 @@
       return;
     }
     layout = layout === "uniform" ? "masonry" : "uniform";
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem("reveal.layout", layout);
-    }
+    session.setGridLayout(layout);
   }
 
   /**
@@ -2992,12 +2957,7 @@
 
   // ---- export ---------------------------------------------------------------
   function saveExportPrefs() {
-    if (typeof localStorage !== "undefined") {
-      localStorage.setItem(
-        "reveal.export",
-        JSON.stringify({ edge: exportEdge, border: exportBorder, folder: exportFolder }),
-      );
-    }
+    session.setExportPrefs({ edge: exportEdge, border: exportBorder, folder: exportFolder });
   }
 
   // The Swift "DOSSIER" picker — chosen once, remembered; "" = the Desktop.
@@ -3224,17 +3184,22 @@
     frames = await withPreviewVersions(await invoke("list_dir", { path }));
     sel = 0;
     selectOnly(0);
-    if (typeof localStorage !== "undefined") {
-      // A stale "story" value from before Editorial became a filter just falls
-      // through to "cull" here — the grid, with Editorial off, is correct either way.
-      const savedMode = localStorage.getItem(`reveal.mode.${path}`);
-      if (savedMode === "cull" || savedMode === "dev") {
-        await switchMode(savedMode);
+    // The other way into a folder, and it has to remember as much as the
+    // first: without its own session this folder's mode would silently stop
+    // being saved. That asymmetry was invisible while both paths wrote to a
+    // shared `localStorage` by hand.
+    folderSession = openFolderSession(path);
+    currentScrollTop = folderSession.scroll || scrollOffsets[path] || 0;
+    {
+      // A stale "story" value from before Editorial became a filter is
+      // rejected by the session's own validation and falls through to "cull"
+      // — the grid, with Editorial off, is correct either way.
+      const savedMode = folderSession.mode;
+      if (savedMode) {
+        await switchMode(/** @type {"dev" | "cull"} */ (savedMode));
       } else {
         await switchMode("cull");
       }
-    } else {
-      await switchMode("cull");
     }
     refreshStory();
   }
