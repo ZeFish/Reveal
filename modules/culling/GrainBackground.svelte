@@ -11,7 +11,7 @@
   .grain-bg {
     position: absolute;
     inset: 0;
-    background-color: var(--color-background, #1f1f1e);
+    background-color: var(--color-surface-lowest);
     overflow: hidden;
     pointer-events: none;
     z-index: -1;

@@ -830,7 +830,7 @@
     justify-content: center;
     position: relative;
     overflow: hidden;
-    background: var(--color-background, #121212);
+    background: var(--color-surface-lowest);
   }
   /* With a caption, the photo and its plate stack as two ordinary flex
      items in a column — the photo shrinks to leave the caption room below

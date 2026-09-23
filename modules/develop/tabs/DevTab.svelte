@@ -50,8 +50,7 @@
       <span class="val mono">{photoScale}%</span>
     </div>
     <div class="engine-row">
-      <span class="din engine-row-label">Engine</span>
-      <div class="seg">
+      <div class="seg" role="group" aria-label="Engine">
         <button
           type="button"
           class="seg-btn"
@@ -148,16 +147,11 @@
 
   /* Segmented control for the engine switch */
   .engine-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
     padding-bottom: 6px;
     border-bottom: 1px solid color-mix(in srgb, var(--color-foreground) 8%, transparent);
   }
-  .engine-row-label {
-    font-weight: 600;
-  }
+  /* No label: the three names say what the row is. The control takes the
+     full width and each engine gets an equal share of it. */
   .seg {
     display: flex;
     background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
@@ -186,6 +180,8 @@
     font-weight: 600;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+    flex: 1;
+    justify-content: center;
     padding: 0 9px;
     border-radius: 3px;
     color: color-mix(in srgb, var(--color-foreground) 50%, transparent);

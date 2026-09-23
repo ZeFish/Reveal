@@ -5228,9 +5228,11 @@
     --color-border: color-mix(in srgb, var(--color-foreground) 14%, transparent);
     --color-surface-low: color-mix(in srgb, black 3%, var(--color-surface));
     --color-surface-lowest: color-mix(in srgb, black 7%, var(--color-surface-low));
-    --color-surface-high: color-mix(in srgb, var(--color-foreground) 3%, var(--color-surface));
-    --color-surface-highest: color-mix(in srgb, var(--color-foreground) 3%, var(--color-surface-high));
-    background: var(--color-background);
+    /* Toward white, not toward --color-foreground: a light story theme has a
+       dark foreground, and "elevated" must still mean lighter. */
+    --color-surface-high: color-mix(in srgb, white 4%, var(--color-surface));
+    --color-surface-highest: color-mix(in srgb, white 4%, var(--color-surface-high));
+    background: var(--color-surface-lowest);
     color: var(--color-foreground);
   }
   .window-controls-zone {
@@ -5664,8 +5666,12 @@
        +layout.svelte) is lighter than DevelopView's <main>, which paints
        --color-background over its own column — leaving the docked panel's
        margin gutter, uncovered by either, showing that lighter body tone.
-       Paint the whole grid one flat shade so both columns' gutters match. */
-    background: var(--color-background);
+       Paint the whole grid one flat shade so both columns' gutters match.
+       surface-lowest, not --color-background: the canvas is the recessed
+       level in BOTH themes. --color-background is the darkest pole in dark
+       mode but the lightest in light mode, which left the photo area
+       brighter than the sidebar and the panels in light. */
+    background: var(--color-surface-lowest);
   }
   .photo-mat {
     box-sizing: border-box;
