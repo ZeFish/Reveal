@@ -1,6 +1,9 @@
 <script>
   import Icon from "$lib/components/Icon.svelte";
   import CurveEditor from "./CurveEditor.svelte";
+  import { invoke } from "@tauri-apps/api/core";
+  import { isTauri } from "$lib/api.js";
+  import { toPosition, fromPosition } from "$lib/sliderScale.js";
 
   let {
     engine,
@@ -46,6 +49,20 @@
 
   /** @type {(v: number | undefined, min: number, max: number) => string} */
   const pct = (v, min, max) => `${((Number(v ?? 0) - min) / (max - min)) * 100}%`;
+
+  // Each slider's neutral point, from the engine's own default recipe (the
+  // single source of truth, lib.rs `default_recipe`) — not restated here.
+  // The rail is laid out around it (src/lib/sliderScale.js) so every slider
+  // at its default sits at the same spot. Until it arrives, rails are linear.
+  /** @type {any} */
+  let defaults = $state(null);
+  if (isTauri) invoke("default_recipe").then((d) => (defaults = d)).catch(() => {});
+
+  /** @param {string} id @param {number | null | undefined} [index] @returns {number | undefined} */
+  function neutralOf(id, index) {
+    const v = index == null ? defaults?.[id] : defaults?.[id]?.[index];
+    return typeof v === "number" ? toDisplay(id, v) : undefined;
+  }
 
   // Francis: "le curseur tirage, on pourrait l'inverser?" — print_exposure_ev
   // runs -3..3 in the engine (more EV = more exposure = a darker print, the
@@ -255,17 +272,17 @@
                   type="range"
                   aria-label={control.label}
                   disabled={isControlDisabled(group, control) || isSubParamDisabled(control.id)}
-                  min={control.min}
-                  max={control.max}
-                  step={control.step}
-                  value={toDisplay(control.id, recipe[control.id])}
-                  style="--f: {pct(toDisplay(control.id, recipe[control.id]), control.min, control.max)}"
+                  min="0"
+                  max="1"
+                  step="any"
+                  value={toPosition(toDisplay(control.id, recipe[control.id]), control.min, control.max, neutralOf(control.id))}
+                  style="--f: {toPosition(toDisplay(control.id, recipe[control.id]), control.min, control.max, neutralOf(control.id)) * 100}%"
                   oninput={(e) => {
-                    recipe[control.id] = fromDisplay(control.id, parseFloat(e.currentTarget.value));
+                    recipe[control.id] = fromDisplay(control.id, fromPosition(parseFloat(e.currentTarget.value), control.min, control.max, neutralOf(control.id), control.step));
                     edited(true); // live proxy
                   }}
                   onchange={(e) => {
-                    recipe[control.id] = fromDisplay(control.id, parseFloat(e.currentTarget.value));
+                    recipe[control.id] = fromDisplay(control.id, fromPosition(parseFloat(e.currentTarget.value), control.min, control.max, neutralOf(control.id), control.step));
                     edited(false); // full render
                   }}
                   ondblclick={() => resetControl(control.id)}
@@ -288,19 +305,19 @@
                   type="range"
                   aria-label={control.label}
                   disabled={isControlDisabled(group, control)}
-                  min={control.min}
-                  max={control.max}
-                  step={control.step}
-                  value={recipe[control.id]?.[control.index] ?? 0}
-                  style="--f: {pct(recipe[control.id]?.[control.index], control.min, control.max)}"
+                  min="0"
+                  max="1"
+                  step="any"
+                  value={toPosition(recipe[control.id]?.[control.index] ?? 0, control.min, control.max, neutralOf(control.id, control.index))}
+                  style="--f: {toPosition(recipe[control.id]?.[control.index] ?? 0, control.min, control.max, neutralOf(control.id, control.index)) * 100}%"
                   oninput={(e) => {
                     if (!Array.isArray(recipe[control.id])) recipe[control.id] = [];
-                    recipe[control.id][control.index] = parseFloat(e.currentTarget.value);
+                    recipe[control.id][control.index] = fromPosition(parseFloat(e.currentTarget.value), control.min, control.max, neutralOf(control.id, control.index), control.step);
                     edited(true);
                   }}
                   onchange={(e) => {
                     if (!Array.isArray(recipe[control.id])) recipe[control.id] = [];
-                    recipe[control.id][control.index] = parseFloat(e.currentTarget.value);
+                    recipe[control.id][control.index] = fromPosition(parseFloat(e.currentTarget.value), control.min, control.max, neutralOf(control.id, control.index), control.step);
                     edited(false);
                   }}
                   ondblclick={() => resetControl(control.id, control.index)}
@@ -375,17 +392,17 @@
                       <input
                         type="range"
                         aria-label={`${band.label} ${ch.label}`}
-                        min={ch.min}
-                        max={ch.max}
-                        step={ch.step}
-                        value={readField(field)}
-                        style="--f: {pct(readField(field), ch.min, ch.max)}"
+                        min="0"
+                        max="1"
+                        step="any"
+                        value={toPosition(readField(field), ch.min, ch.max, neutralOf(field.id, field.index))}
+                        style="--f: {toPosition(readField(field), ch.min, ch.max, neutralOf(field.id, field.index)) * 100}%"
                         oninput={(e) => {
-                          writeField(field, parseFloat(e.currentTarget.value));
+                          writeField(field, fromPosition(parseFloat(e.currentTarget.value), ch.min, ch.max, neutralOf(field.id, field.index), ch.step));
                           edited(true);
                         }}
                         onchange={(e) => {
-                          writeField(field, parseFloat(e.currentTarget.value));
+                          writeField(field, fromPosition(parseFloat(e.currentTarget.value), ch.min, ch.max, neutralOf(field.id, field.index), ch.step));
                           edited(false);
                         }}
                         ondblclick={() => resetControl(field.id, field.index ?? undefined)}

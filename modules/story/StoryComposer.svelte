@@ -802,19 +802,22 @@
   }
 
   /* Film roll — docked tray at bottom */
+  /* The same floating pane as the sidebar (Sidebar.svelte's nav): inset
+     from the window, concentric corner, raised — not a bar welded to the
+     bottom edge. overflow: hidden keeps the scrolling strip inside the
+     rounded corners. */
   .roll {
     flex-shrink: 0;
     display: flex;
     align-items: center;
     gap: 1rem;
+    margin: 0 var(--window-inset) var(--window-inset);
     padding: 0.65rem 1.25rem;
-    background: color-mix(in srgb, var(--theme-bg, var(--color-surface-low)) 92%, transparent);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border-top: 1px solid var(--color-border);
-    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.2);
+    background: var(--color-surface-high);
+    border-radius: var(--pane-radius);
+    box-shadow: var(--shadow-raised), var(--shadow-lift);
+    overflow: hidden;
     z-index: 10;
-    transition: background 0.3s var(--ease-standard);
   }
   .roll-header {
     display: flex;
@@ -847,12 +850,14 @@
     border-radius: var(--theme-radius, var(--radius-sm));
     overflow: hidden;
     cursor: pointer;
-    box-shadow: 0 0 0 1px var(--color-border);
-    transition: transform 0.12s var(--ease-soft), box-shadow 0.12s var(--ease-soft);
+    box-shadow: var(--shadow-raised);
+    transition:
+      transform var(--duration-instant) var(--ease-soft),
+      box-shadow var(--duration-instant) var(--ease-soft);
   }
   .roll-cell:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45), 0 0 0 1px color-mix(in srgb, var(--color-foreground) 50%, transparent);
+    box-shadow: var(--shadow-raised), var(--shadow-lift);
   }
   .roll-cell.in-story {
     box-shadow: 0 0 0 2px var(--theme-accent, var(--color-accent));
