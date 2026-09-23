@@ -1051,7 +1051,7 @@
     padding: 0 1.5rem;
   }
 
-  .cache-actions { flex-wrap: wrap; gap: var(--space-xs); }
+  .cache-actions { flex-wrap: wrap; gap: var(--space-half); }
 
   .section-group {
     display: flex;

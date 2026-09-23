@@ -517,7 +517,7 @@
 </Dialog>
 
 <style>
-  .cache-actions { flex-wrap: wrap; gap: var(--space-xs); }
+  .cache-actions { flex-wrap: wrap; gap: var(--space-half); }
   /* Header */
   .settings-header {
     display: flex;

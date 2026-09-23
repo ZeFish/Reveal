@@ -5546,7 +5546,7 @@
     pointer-events: auto; /* keep the title tooltip reachable */
   }
   .item-note {
-    font-family: var(--font-mono, monospace);
+    font-family: var(--font-monospace, monospace);
     font-size: 9px;
     color: color-mix(in srgb, var(--color-foreground) 50%, transparent);
     white-space: nowrap;
@@ -5676,7 +5676,7 @@
     max-width: calc(100% - (var(--space) * 2));
     max-height: calc(100% - (var(--space) * 2));
     padding: var(--space);
-    background: var(--color-photo-frame, var(--color-surface-high));
+    background: var(--color-surface-high);
     border-radius: var(--radius);
     box-shadow: var(--shadow-raised);
   }
