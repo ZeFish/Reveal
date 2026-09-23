@@ -244,7 +244,7 @@
   .cell.selected .matte {
     box-shadow: var(--shadow-hover), var(--shadow-glow);
     transform: translateY(-1px) translateZ(0);
-    background: var(--color-surface-high);
+    background: var(--color-surface-higher);
   }
 
   /* Mid-export — a soft accent aura breathing BEHIND the print, not a mark on it. */
@@ -270,8 +270,8 @@
        the hairline edge comes from the shadow. */
     --mat: 6px;
     padding: var(--mat);
-    background: var(--color-surface);
-    border-radius: var(--radius);
+    background: var(--color-surface-high);
+    border-radius: max(1px, var(--radius));
     /* The quiet print-on-a-table depth. */
     box-shadow: var(--shadow);
     transition:
@@ -311,13 +311,13 @@
     display: block;
     opacity: 0;
     border:0;
-    box-shadow:none;
-    transition: opacity var(--duration-instant) var(--ease-soft);
+    box-shadow: var(--shadow-inset);
+    transition: all vavr(--transition-fast);
     pointer-events: none;
     -webkit-user-drag: none;
     -webkit-user-select: none;
     user-select: none;
-    border-radius: 0;
+    border-radius: 2px;
   }
   .matte img.visible,
   .matte.loaded img {
@@ -337,6 +337,7 @@
   }
   .matte:not(.loaded) {
     background: var(--color-surface-low);
+    box-shadow: var(--shadow-inset);
   }
   .placeholder.failed {
     opacity: 0.32;

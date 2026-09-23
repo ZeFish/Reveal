@@ -838,7 +838,7 @@
     display: flex;
     gap: 0.5rem;
     overflow-x: auto;
-    padding: 2px 0 4px;
+    padding: 6px;
     scrollbar-width: thin;
   }
   .roll-cell {
@@ -847,17 +847,16 @@
     flex-shrink: 0;
     width: 60px;
     height: 60px;
-    border-radius: var(--theme-radius, var(--radius-sm));
-    overflow: hidden;
+    border:none;
+    border-radius: var(--radius);
+    overflow: visible;
     cursor: pointer;
     box-shadow: var(--shadow);
-    transition:
-      transform var(--duration-instant) var(--ease-soft),
-      box-shadow var(--duration-instant) var(--ease-soft);
+    transition: all var(--transition-fast);
   }
   .roll-cell:hover {
     transform: translateY(-2px);
-    box-shadow: var(--shadow-raised), var(--shadow-lift);
+    box-shadow: var(--shadow-hover);
   }
   .roll-cell.in-story {
     box-shadow: 0 0 0 2px var(--theme-accent, var(--color-accent));
@@ -879,12 +878,12 @@
     width: 15px;
     height: 15px;
     border-radius: 50%;
-    background: var(--theme-accent, var(--color-accent));
+    background: var(--color-accent);
     color: #fff;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+    box-shadow: var(--shadow);
   }
 
   /* The composition surface — the story as it will read. */
@@ -900,8 +899,8 @@
     width: 100%;
     margin: 0 auto;
     box-sizing: border-box;
-    color: var(--theme-text-color, var(--color-foreground));
-    transition: color 0.3s var(--ease-standard);
+    color: var(--color-foreground);
+    transition: all var(--transition-fast);
   }
   .empty {
     display: flex;

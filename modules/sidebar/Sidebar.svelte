@@ -1414,17 +1414,16 @@
     flex-shrink: 0;
   }
   .lib-row.current {
-    background: color-mix(in srgb, var(--color-foreground) 10%, transparent);
+    background: var(--color-surface);
   }
   .lib-row:hover:not(.current) {
-    background: color-mix(in srgb, var(--color-foreground) 5%, transparent);
+    background: transparent;
   }
   .lib-label {
     font-family: var(--font-header, sans-serif);
     font-size: var(--size-xs);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-foreground);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1477,7 +1476,7 @@
     align-items: center;
     gap: var(--row-gap);
     padding: 4px 8px;
-    margin-top: 4px;
+    margin-top: 0px;
   }
   .cat-disc {
     all: unset;
@@ -1496,15 +1495,15 @@
   }
   .section-main {
     all: unset;
+    text-box: cap alphabetic;
     min-width: 0;
     cursor: pointer;
   }
   .section-name {
     font-family: var(--font-header, sans-serif);
     font-size: var(--size-xs);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--color-foreground) 45%, transparent);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-foreground);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1523,12 +1522,13 @@
     /* 6px, not 4: a taller target, easier to hit the folder you meant. */
     padding: 6px 8px 6px calc(8px + (var(--depth) + 1) * var(--indent));
     position: relative;
+    transition: all var(--transition-fast);
   }
   .dir-row.current {
     background: var(--color-surface-low);
   }
   .dir-row:hover:not(.current) {
-    background: var(--color-surface);
+    background: var(--color-surface-lower);
   }
   /* A photo (or another folder) is being dragged over this folder — it will
      land here on drop. */
@@ -1576,14 +1576,18 @@
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    color: color-mix(in srgb, var(--color-foreground) 28%, transparent);
+    color: var(--color-muted);
   }
   .disc:hover,
   .disc.open {
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
+    color: var(--color-foreground);
+  }
+  .disc.open + .dir-name {
+    color: var(--color-foreground);
+    font-weight: var(--font-weight-bold);
   }
   .disc :global(.icon) {
-    transition: transform var(--duration-instant) var(--ease-standard);
+    transition: all var(--transition-fast);
   }
   .disc.open :global(.icon) {
     transform: rotate(90deg);
@@ -1655,9 +1659,8 @@
     justify-content: space-between;
     font-family: var(--font-header, sans-serif);
     font-size: var(--size-xs);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-foreground);
   }
   .lib-toggle:hover {
     color: var(--color-foreground);
