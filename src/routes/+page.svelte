@@ -767,6 +767,16 @@
 
   // ---- boot -------------------------------------------------------------
   $effect(() => {
+    // Every backend listener registered here, so they can all be dropped
+    // again. The effect runs once today — measured, not assumed — but 61
+    // listeners with no teardown is a trap rather than a bug: the day a
+    // reactive read appears at the top of this block, the effect re-runs and
+    // every Rust event fires twice, then three times. The comment below
+    // records that such a loop already happened here once.
+    /** @type {Promise<() => void>[]} */
+    const wired = [];
+    /** @param {string} event @param {(payload: any) => void} handler */
+    const on = (event, handler) => void wired.push(listen(event, handler));
     {
       const parsed = session.modeLayouts();
       if (parsed) {
@@ -865,14 +875,14 @@
         gardenAccount = { signed_in: true, username: shellPrefs.garden_username, tier: shellPrefs.garden_tier, notes_count: 0, total_views: 0 };
       }
       invoke("garden_refresh").then((info) => (gardenAccount = info)).catch(() => {});
-      listen("garden-account-changed", (e) => (gardenAccount = e.payload));
-      listen("open-file-requested", (e) => openPhoto(e.payload));
-      listen("dock-reopen-requested", () => switchMode("cull"));
-      listen("focus-mode-changed", (e) => {
+      on("garden-account-changed", (e) => (gardenAccount = e.payload));
+      on("open-file-requested", (e) => openPhoto(e.payload));
+      on("dock-reopen-requested", () => switchMode("cull"));
+      on("focus-mode-changed", (e) => {
         layouts[currentMode].focus = !!e.payload.enabled;
         saveLayouts();
       });
-      listen("shell-prefs-changed", (e) => {
+      on("shell-prefs-changed", (e) => {
         autoImport = !!e.payload.auto_import;
         importDir = e.payload.import_dir ?? null;
         layouts[currentMode].focus = !!e.payload.focus_mode;
@@ -881,7 +891,7 @@
       // The scan commits per directory now — refresh the sidebar tree on a
       // slow cadence while it walks, so folders appear as they're indexed.
       let lastTreeRefresh = 0;
-      listen("index-progress", (e) => {
+      on("index-progress", (e) => {
         if (e.payload.done) {
           indexProgress = null;
           refreshDirs();
@@ -894,32 +904,32 @@
           refreshDirs(true);
         }
       });
-      listen("cards-changed", (e) => (cards = e.payload));
-      listen("card-mounted", (e) => {
+      on("cards-changed", (e) => (cards = e.payload));
+      on("card-mounted", (e) => {
         const card = e.payload;
         notify(`card detected · ${card.name} (${card.raw_count})`, 4000);
         if (autoImport && !activity.progress) importCard(card);
       });
-      listen("card-unmounted", (e) => {
+      on("card-unmounted", (e) => {
         // Card physically pulled (or ejected): drop any stale eject affordance.
         const dcim = e.payload?.dcim;
         if (ejectableCard && dcim && ejectableCard.dcim === dcim) ejectableCard = null;
       });
-      listen("import-first-card-requested", async () => {
+      on("import-first-card-requested", async () => {
         const available = await invoke("find_cards");
         cards = available;
         if (available.length) importCard(available[0]);
       });
-      listen("toggle-auto-import-requested", () => toggleAutoImport());
-      listen("add-library-folder-requested", () => indexRoot());
+      on("toggle-auto-import-requested", () => toggleAutoImport());
+      on("add-library-folder-requested", () => indexRoot());
       // Settings lives in its own window and shares no memory with this one;
       // a library added or removed there must still reach the folder tree.
-      listen("libraries-changed", () => refreshDirs());
+      on("libraries-changed", () => refreshDirs());
       // The archive is a NAS mount; it can vanish mid-session or not be up
       // yet at launch. Reveal keeps working from its local cache, but the
       // photographer should know they are looking at what this machine
       // remembers rather than at the archive itself.
-      listen("source-offline", () => {
+      on("source-offline", () => {
         if (sourceOffline) return;
         sourceOffline = true;
         clearInterval(sourceWatch);
@@ -932,11 +942,11 @@
           }
         }, 4000);
       });
-      listen("app-error", (e) => {
+      on("app-error", (e) => {
         notify(e.payload.message ?? String(e.payload), 5000);
       });
       let lastImportRefresh = 0;
-      listen("import-progress", async (e) => {
+      on("import-progress", async (e) => {
         const payload = e.payload;
         setProgress({ verb: "import", ...payload });
         if (payload?.destDir && payload?.dest) {
@@ -964,11 +974,11 @@
           }
         }
       });
-      listen("import-started", (e) => {
+      on("import-started", (e) => {
         setProgress({ verb: "import", done: 0, total: 1, current: "Starting..." });
         importedByFolder = new Map();
       });
-      listen("import-finished", async (e) => {
+      on("import-finished", async (e) => {
         setProgress(null);
         notify(`Import complete ✓`, 4000);
         const stats = e.payload;
@@ -988,17 +998,17 @@
           }
         }
       });
-      listen("import-failed", (e) => {
+      on("import-failed", (e) => {
         setProgress(null);
         notify(`Import failed: ${e.payload.message}`, 6000);
       });
       // AI cull toasts — same notify() path as import/export
       // rather than a dedicated chip/modal (the flow is walk-away, no review
       // step to build UI for).
-      listen("cull-started", (e) => {
+      on("cull-started", (e) => {
         cullTaskId = startActivity("cull", `AI Culling · ${e.payload?.total ?? "?"} photos`, e.payload?.total ?? 1);
       });
-      listen("cull-progress", (e) => {
+      on("cull-progress", (e) => {
         const p = e.payload;
         const phaseLabel = p.phase === "cloud" ? "visual analysis" : "local sort";
         // The bottom-center activity indicator already shows this live, no
@@ -1007,7 +1017,7 @@
         setProgress({ verb: "cull", done: p.done, total: p.total, current: phaseLabel });
         if (cullTaskId) updateActivity(cullTaskId, { current: phaseLabel, done: p.done, total: p.total });
       });
-      listen("cull-finished", (e) => {
+      on("cull-finished", (e) => {
         const stats = e.payload;
         const outcome = stats.exported_to
           ? (stats.marked > 0 ? `added to story, exported → ${stats.exported_to}` : `exported → ${stats.exported_to}`)
@@ -1020,7 +1030,7 @@
           cullTaskId = null;
         }
       });
-      listen("cull-failed", (e) => {
+      on("cull-failed", (e) => {
         notify(`AI Culling : ${e.payload.message}`, 6000);
         if (activity.progress?.verb === "cull") setProgress(null);
         if (cullTaskId) {
@@ -1029,7 +1039,7 @@
           cullTaskId = null;
         }
       });
-      listen("export-progress", (e) => {
+      on("export-progress", (e) => {
         setProgress({ verb: "export", ...e.payload });
         if (activity.activeId) {
           updateActivity(activity.activeId, {
@@ -1048,7 +1058,7 @@
           setTimeout(() => { setProgress(null); }, 3000);
         }
       });
-      listen("publish-progress", (e) => {
+      on("publish-progress", (e) => {
         setProgress({ verb: e.payload.phase || "publication", ...e.payload });
         if (publishTaskId) {
           updateActivity(publishTaskId, {
@@ -1063,10 +1073,10 @@
       setInterval(pollCards, 5000);
 
       if (isTauri) {
-        listen("dev-panel-ready", () => {
+        on("dev-panel-ready", () => {
           sendDevStateToPanel();
         });
-        listen("dev-panel-recipe-updated", (e) => {
+        on("dev-panel-recipe-updated", (e) => {
           if (recipe) {
             if (e.payload && e.payload.key) {
               lastEditedKey = e.payload.key;
@@ -1082,54 +1092,54 @@
             edited(e.payload.transient);
           }
         });
-        listen("dev-panel-engine-updated", (e) => {
+        on("dev-panel-engine-updated", (e) => {
           applyEngineChange(e.payload.engine);
         });
-        listen("dev-panel-caption-updated", (e) => {
+        on("dev-panel-caption-updated", (e) => {
           caption = e.payload.caption;
           captionEdited();
         });
-        listen("dev-panel-tags-updated", (e) => {
+        on("dev-panel-tags-updated", (e) => {
           tags = e.payload.tags;
           tagsEdited();
         });
-        listen("dev-panel-export", () => {
+        on("dev-panel-export", () => {
           exportCurrent();
         });
-        listen("dev-panel-export-desktop", () => {
+        on("dev-panel-export-desktop", () => {
           exportCurrent(""); // "" = the Desktop, regardless of the configured export folder
         });
-        listen("dev-panel-export-vault", () => {
+        on("dev-panel-export-vault", () => {
           exportToDailyNote();
         });
-        listen("dev-panel-export-daily", () => {
+        on("dev-panel-export-daily", () => {
           exportToDailyNote();
         });
         // RESET — back to the engine defaults, like Swift's
         // resetSettings; the sidecar re-saves through the normal edit path.
-        listen("dev-panel-reset", applyResetRecipe);
-        listen("dev-panel-export-settings-changed", (e) => {
+        on("dev-panel-reset", applyResetRecipe);
+        on("dev-panel-export-settings-changed", (e) => {
           exportEdge = e.payload.exportEdge;
           exportBorder = e.payload.exportBorder;
           saveExportPrefs();
         });
-        listen("dev-panel-photo-scale-changed", (e) => {
+        on("dev-panel-photo-scale-changed", (e) => {
           developPhotoPercent = e.payload.photoScale;
         });
-        listen("dev-panel-choose-export-folder", () => {
+        on("dev-panel-choose-export-folder", () => {
           chooseExportFolder();
         });
-        listen("dev-panel-open-in-editor", (e) => {
+        on("dev-panel-open-in-editor", (e) => {
           openInEditor(e.payload.appPath);
         });
-        listen("dev-panel-switch-mode", (e) => {
+        on("dev-panel-switch-mode", (e) => {
           switchMode(e.payload.mode);
         });
         // The dev panel is a separate OS window, so it steals keyboard focus:
         // shortcuts pressed there never reached the main window (g, arrows, …
         // did nothing until you clicked back). It forwards them here and we
         // replay them through the same onKey with a synthetic event.
-        listen("dev-panel-key", (e) => {
+        on("dev-panel-key", (e) => {
           const p = e.payload || {};
           onKey(/** @type {any} */ ({
             key: p.key,
@@ -1141,35 +1151,35 @@
             stopPropagation() {},
           }));
         });
-        listen("dev-panel-zoom", (e) => {
+        on("dev-panel-zoom", (e) => {
           cycleZoom(e.payload?.reverse);
         });
-        listen("dev-panel-close", () => {
+        on("dev-panel-close", () => {
           layouts.dev.devPanel = false;
           saveLayouts();
         });
         // The detached panel's own "dock" button asks to come back inline —
         // dropping the flag hides the external window (reactive effect below)
         // and the docked <DevelopPanel> takes over.
-        listen("dev-panel-dock-requested", () => {
+        on("dev-panel-dock-requested", () => {
           layouts.dev.detached = false;
           saveLayouts();
         });
-        listen("settings-panel-ready", () => sendSettingsToPanel());
-        listen("settings-panel-choose-folder", (e) => {
+        on("settings-panel-ready", () => sendSettingsToPanel());
+        on("settings-panel-choose-folder", (e) => {
           choosePreferenceFolder(/** @type {any} */ (e.payload)?.key);
         });
-        listen("settings-panel-save", (e) => {
+        on("settings-panel-save", (e) => {
           saveSettingsFromPanel(/** @type {any} */ (e.payload)?.preferences);
         });
-        listen("open-settings-requested", openSettings);
-        listen("toggle-dev-panel-requested", toggleDevPanel);
-        listen("toggle-preset-panel-requested", togglePresetPanel);
-        listen("toggle-lut-panel-requested", toggleLutPanel);
+        on("open-settings-requested", openSettings);
+        on("toggle-dev-panel-requested", toggleDevPanel);
+        on("toggle-preset-panel-requested", togglePresetPanel);
+        on("toggle-lut-panel-requested", toggleLutPanel);
         /** @type {Recipe | null} */ let savedRecipeBeforeHover = null;
         /** @type {string | null} */ let savedEngineBeforeHover = null;
 
-        listen("preset-preview", (e) => {
+        on("preset-preview", (e) => {
           const payload = e.payload || {};
           const previewRecipe = payload.recipe;
           if (previewRecipe) {
@@ -1195,7 +1205,7 @@
           }
         });
 
-        listen("dev-panel-toggle-clipping", (e) => {
+        on("dev-panel-toggle-clipping", (e) => {
           const payload = e.payload || {};
           if (typeof payload.showClipping === "boolean") {
             showClipping = payload.showClipping;
@@ -1204,7 +1214,7 @@
           }
           sendDevStateToPanel();
         });
-        listen("dev-panel-toggle-caption", (e) => {
+        on("dev-panel-toggle-caption", (e) => {
           const payload = e.payload || {};
           if (typeof payload.showCaption === "boolean") {
             showCaption = payload.showCaption;
@@ -1218,7 +1228,7 @@
         // main window owns the selection, so it resolves the target set here:
         // "selected" (modifier held) → all selected; "auto" → all selected when
         // several are, else just the current photo.
-        listen("preset-apply", (e) => {
+        on("preset-apply", (e) => {
           savedRecipeBeforeHover = null;
           savedEngineBeforeHover = null;
           const payload = e.payload || {};
@@ -1232,23 +1242,23 @@
               : (selected.length > 1 ? selected : current);
           applyRecipeToFrames(presetRecipe, targets);
         });
-        listen("toggle-render-queue-requested", () => setQueueOpen());
-        listen("menu-export-requested", () => {
+        on("toggle-render-queue-requested", () => setQueueOpen());
+        on("menu-export-requested", () => {
           if (currentMode === "dev" && photoPath && recipe) exportCurrent();
           else exportSelection();
         });
-        listen("menu-reset-develop-requested", async () => {
+        on("menu-reset-develop-requested", async () => {
           if (recipe) {
             recipe = await invoke("default_recipe");
             edited();
           }
         });
-        listen("menu-clear-develop-requested", clearDevelopment);
-        listen("menu-enable-develop-requested", () => {
+        on("menu-clear-develop-requested", clearDevelopment);
+        on("menu-enable-develop-requested", () => {
           if (currentMode !== "dev") switchMode("dev");
           else edited(false);
         });
-        listen("menu-publish-requested", () => {
+        on("menu-publish-requested", () => {
           if (preferences.obsidian_enabled && view[sel]) developFromMenu(view[sel].path, true);
         });
       }
@@ -1262,6 +1272,9 @@
         else openPhoto(auto);
       }
     })();
+    return () => {
+      for (const pending of wired) pending.then((stop) => stop()).catch(() => {});
+    };
   });
 
   async function toggleAutoImport() {
