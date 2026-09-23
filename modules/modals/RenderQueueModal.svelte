@@ -67,14 +67,13 @@
     bottom: 1rem;
     z-index: 10000;
     background: var(--color-surface-low, #18181b);
-    border: var(--border, 1px solid rgba(255, 255, 255, 0.15));
     border-radius: var(--radius-lg);
     width: min(90vw, 380px);
     max-height: min(60vh, 420px);
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+    box-shadow: var(--shadow-raised), var(--shadow-lift);
     color: var(--color-foreground, #f4f4f5);
   }
   .modal-header {

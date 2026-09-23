@@ -1008,7 +1008,6 @@
     margin: var(--window-inset);
     padding: 0 8px 8px;
     background: var(--color-surface-high);
-    border: var(--border);
     border-radius: var(--pane-radius);
     box-shadow: var(--shadow-raised);
     overflow-y: auto;

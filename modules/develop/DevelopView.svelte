@@ -848,10 +848,13 @@
     width: auto;
     height: auto;
     object-fit: contain;
-    border: 12px solid var(--color-surface-high, #1e1e1e);
-    background: transparent;
+    /* The mat around the print: padding in the mat colour (an <img> paints
+       its background under its padding), not a border — the hairline edge
+       comes from the shadow. */
+    padding: 12px;
+    background: var(--color-surface-high);
     border-radius: 18px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    box-shadow: var(--shadow-raised), var(--shadow-lift);
     transition: opacity var(--duration-instant);
     -webkit-user-drag: none;
     -webkit-user-select: none;
@@ -859,15 +862,15 @@
   }
   @media (prefers-color-scheme: dark) {
     .photo-mat {
-      border: none;
+      padding: 0;
       border-radius: var(--radius);
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+      box-shadow: var(--shadow-raised), var(--shadow-lift);
     }
   }
   :global([data-color-mode="dark"]) .photo-mat {
-    border: none;
+    padding: 0;
     border-radius: var(--radius);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    box-shadow: var(--shadow-raised), var(--shadow-lift);
   }
   .photo-mat.dimmed {
     opacity: 0.75;

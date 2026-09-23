@@ -228,25 +228,16 @@
     isolation: isolate;
   }
 
-  /* Selected, light mode: deep soft elevation lift without a harsh dark stroke. */
+  /* Selected: the print lifts — the ring of --shadow-raised plus the
+     framework's lift, both themes (the tokens already know the scheme).
+     On the card, never on .cell: the cell is the invisible slot, and a
+     shadow there outlined empty space once the card hugged the photo. */
   .cell.selected {
     z-index: 5;
   }
   .cell.selected .matte {
-    box-shadow:
-      0 0 0 1px rgba(0, 0, 0, 0.12),
-      0 6px 20px rgba(0, 0, 0, 0.4);
+    box-shadow: var(--shadow-raised), var(--shadow-lift);
     transform: translateY(-1px) translateZ(0);
-  }
-  /* Selected, dark mode: subtle luminous edge and deep shadow. */
-  @media (prefers-color-scheme: dark) {
-    .cell.selected {
-      border-color: var(--color-surface);
-      box-shadow:
-        0 0 0 1px rgba(255, 255, 255, 0.2),
-        0 6px 20px rgba(0, 0, 0, 0.6);
-      transform: translateY(-1px) translateZ(0);
-    }
   }
 
   /* Mid-export — a soft accent aura breathing BEHIND the print, not a mark on it. */
@@ -268,11 +259,14 @@
     position: relative;
     overflow: hidden;
     box-sizing: border-box;
-    border: 3px solid var(--color-surface);
+    /* The mat around the print: padding in the mat colour, not a border —
+       the hairline edge comes from the shadow. */
+    padding: 3px;
+    background: var(--color-surface);
     border-radius: var(--radius);
     background: var(--color-surface);
     /* The quiet print-on-a-table depth. */
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+    box-shadow: var(--shadow-raised);
     transition:
       box-shadow var(--duration-standard) var(--ease-soft),
       transform var(--duration-standard) var(--ease-soft);
@@ -375,11 +369,10 @@
     height: 14px;
     border-radius: 50%;
     background: var(--color-surface-high);
-    border: 1px solid var(--color-border);
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--shadow-raised);
     z-index: 10;
   }
   .badge-dot {

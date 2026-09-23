@@ -374,9 +374,8 @@
     background: rgba(30, 30, 30, 0.82);
     backdrop-filter: blur(24px) saturate(150%);
     -webkit-backdrop-filter: blur(24px) saturate(150%);
-    border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: var(--radius-lg);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    box-shadow: var(--shadow-raised), var(--shadow-lift);
     box-sizing: border-box;
     display: flex;
     flex-direction: column;

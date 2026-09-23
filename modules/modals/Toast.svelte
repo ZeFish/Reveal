@@ -22,8 +22,7 @@
     padding: 5px 12px;
     border-radius: 999px;
     background: color-mix(in srgb, var(--color-surface-high, #18181b) 92%, transparent);
-    border: 1px solid var(--color-border, color-mix(in srgb, #fff 10%, transparent));
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+    box-shadow: var(--shadow-raised), var(--shadow-lift);
     color: var(--color-foreground, #f4f4f5);
     font-family: var(--font-monospace, monospace);
     font-size: 10px;

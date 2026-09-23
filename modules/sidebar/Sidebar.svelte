@@ -1291,7 +1291,6 @@
        hardcoded 1px on top of it. */
     margin: var(--window-inset);
     background: var(--color-surface-high);
-    border: var(--border);
     border-radius: var(--pane-radius);
     box-shadow: var(--shadow-raised);
     display: flex;

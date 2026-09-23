@@ -454,14 +454,15 @@
     aspect-ratio: 1;
     border-radius: var(--radius);
     overflow: hidden;
-    border: 1px solid var(--color-border);
     background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-    transition: border-color var(--duration-fast) var(--ease-soft), box-shadow var(--duration-fast) var(--ease-soft);
+    box-shadow: var(--shadow-raised);
+    transition: box-shadow var(--duration-fast) var(--ease-soft);
   }
+  /* Hover: the accent ring the border used to carry, now in the shadow. */
   .preset-card:hover .thumb-wrap {
-    border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border));
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--color-accent) 45%, var(--color-border)),
+      var(--shadow-lift);
   }
   .thumb {
     display: block;

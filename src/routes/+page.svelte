@@ -5176,14 +5176,13 @@
     padding: 6px 14px;
     background: rgba(18, 18, 18, 0.85);
     backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 999px;
     color: rgba(255, 255, 255, 0.9);
     font-size: 11px;
     letter-spacing: 0.04em;
     z-index: 100;
     pointer-events: none;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    box-shadow: var(--shadow-raised);
   }
   .render-spinner {
     width: 10px;
@@ -5754,10 +5753,9 @@
     transform: translateX(-50%);
     margin: 0;
     padding: 0.45rem 0.7rem;
-    border: 1px solid var(--color-border);
     border-radius: 999px;
     background: var(--color-surface-high);
-    box-shadow: var(--shadow-lg);
+    box-shadow: var(--shadow-raised), var(--shadow-lift);
     color: var(--color-foreground);
     font-family: var(--font-monospace, monospace);
     font-size: 0.68rem;
@@ -5769,9 +5767,8 @@
     margin: 2.2rem 0.9rem 0.9rem 0;
     padding: 1.1rem 1rem;
     background: var(--color-surface-high);
-    border: 1px solid var(--color-border);
     border-radius: 10px;
-    box-shadow: var(--shadow-lg);
+    box-shadow: var(--shadow-raised), var(--shadow-lift);
     overflow-y: auto;
     display: flex;
     flex-direction: column;
@@ -5794,7 +5791,6 @@
        16px past the bottom of the window (Francis, 2026-09-22: "il descend
        plus bas que l'app"). */
     margin: var(--window-inset);
-    border: var(--border);
     border-radius: var(--pane-radius);
     box-shadow: var(--shadow-raised);
     overflow: hidden;

@@ -1264,7 +1264,6 @@
     padding: 4px 12px;
     border-radius: 999px;
     background: var(--color-surface-high);
-    border: 1px solid var(--color-border);
     color: var(--color-muted);
     font-family: var(--font-header, sans-serif);
     font-size: 10px;
@@ -1273,7 +1272,7 @@
     opacity: 0;
     transform: scale(0.96);
     transition: opacity var(--duration-fast) var(--ease-soft), transform var(--duration-fast) var(--ease-soft), color var(--duration-fast) var(--ease-soft), border-color var(--duration-fast) var(--ease-soft);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    box-shadow: var(--shadow-raised);
     z-index: 2;
   }
   .gap:hover .gap-add {
