@@ -2,6 +2,10 @@
   import { tick, untrack } from "svelte";
   import { thumbUrl } from "$lib/thumbUrl.js";
   import { session, openFolderSession } from "$lib/session.js";
+  import {
+    activity, notify, hold, dismiss,
+    startActivity, updateActivity, setActive, releaseActive, setQueueOpen,
+  } from "$lib/activity.svelte.js";
   import { invoke } from "@tauri-apps/api/core";
   import { listen as tauriListen, emit } from "@tauri-apps/api/event";
   import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -273,10 +277,10 @@
     if (!isTauri) return;
     invoke("apple_photos_status", { authorize: false })
       .then((result) => { applePhotosSupported = result.supported; })
-      .catch((error) => { appMessage = `Could not check Apple Photos availability: ${error}`; });
+      .catch((error) => { notify(`Could not check Apple Photos availability: ${error}`); });
     const unlisten = listen("apple-photos-transfer", ({ payload }) => {
       applePhotosTransfer = payload;
-      if (payload.phase === "error") appMessage = `Apple Photos: ${payload.error}`;
+      if (payload.phase === "error") hold(`Apple Photos: ${payload.error}`);
     });
     return () => { unlisten.then((stop) => stop()); };
   });
@@ -324,10 +328,10 @@
 
   async function connectApplePhotos() {
     try {
-      appMessage = "";
+      dismiss();
       await loadApplePhotosCollections();
     } catch (error) {
-      appMessage = `Could not connect Apple Photos: ${error}`;
+      hold(`Could not connect Apple Photos: ${error}`);
     }
   }
 
@@ -338,10 +342,10 @@
       return;
     }
     try {
-      appMessage = "";
+      dismiss();
       await loadApplePhotosCollections(true, true);
     } catch (error) {
-      appMessage = `Could not refresh Apple Photos: ${error}`;
+      hold(`Could not refresh Apple Photos: ${error}`);
     }
   }
 
@@ -359,7 +363,7 @@
     const loadedCount = frames.length;
     const descending = sortDesc;
     applePhotosBusy = true;
-    appMessage = "";
+    dismiss();
     try {
       if (!await loadApplePhotosCollections(authorize, refresh) || request !== applePhotosRequest) return;
       // A removed collection must not leave the active row/grid orphaned after
@@ -406,7 +410,7 @@
       session.setLastDirectory(APPLE_PHOTOS_ROOT + album);
       if (!preserve) await switchMode("cull");
     } catch (error) {
-      if (request === applePhotosRequest) appMessage = `Could not open Apple Photos: ${error}`;
+      if (request === applePhotosRequest) hold(`Could not open Apple Photos: ${error}`);
     } finally {
       if (request === applePhotosRequest) applePhotosBusy = false;
     }
@@ -426,7 +430,7 @@
       applePhotosOffset = page.next;
       applePhotosTotal = page.total;
     } catch (error) {
-      if (request === applePhotosRequest) appMessage = `Could not load more photos: ${error}`;
+      if (request === applePhotosRequest) hold(`Could not load more photos: ${error}`);
     } finally {
       if (request === applePhotosRequest) applePhotosBusy = false;
     }
@@ -442,7 +446,7 @@
     try {
       await invoke("apple_photos_cancel");
     } catch (error) {
-      appMessage = `Could not cancel photo download: ${error}`;
+      hold(`Could not cancel photo download: ${error}`);
     }
   }
   let loading = $state(false); // a folder open is in flight — suppresses the empty-state splash so switching folders doesn't flash "REVEAL"
@@ -593,23 +597,8 @@
   /** @type {ReturnType<typeof setInterval> | undefined} */
   let sourceWatch;
 
-  let appMessage = $state("");
-  /** @type {ReturnType<typeof setTimeout> | null} */
-  let appMessageTimer = null;
+
   // The single way to tell the user something happened. Goes to the
-  // notification stack at the bottom of the window — see Toast.svelte for why
-  // `status` must not be used for this.
-  /** @param {string} message @param {number} [ms] */
-  function notify(message, ms = 3000) {
-    appMessage = message;
-    if (appMessageTimer) clearTimeout(appMessageTimer);
-    // A second message replacing the first restarts the clock rather than
-    // inheriting the first one's remaining time.
-    appMessageTimer = setTimeout(() => {
-      appMessage = "";
-      appMessageTimer = null;
-    }, ms);
-  }
   let autoImport = $state(false);
   // AI cull (walk-away card→cull→export): mirrors autoImport's hydrate-at-
   // boot pattern, but sourced from the generic preferences bag rather than
@@ -766,16 +755,13 @@
   /** @type {[string, string][]} */ let installedEditors = $state([]);
   let catalogContent = $state("");
   let catalogOpen = $state(false);
-  /** @type {Activity[]} */ let activityQueue = $state([]);
-  /** @type {string | null} */ let activeActivityId = $state(null);
+
   // Cross-listener correlation: these backend event streams (publish-progress,
   // import-progress, cull-progress) fire many times over one logical
   // operation, so the id created when it starts needs to survive to update
   // the same activity entry on each subsequent event.
   /** @type {string | null} */ let publishTaskId = $state(null);
   /** @type {string | null} */ let cullTaskId = $state(null);
-  const anyActivityRunning = $derived(activityQueue.some((j) => j.status === "running"));
-  let queueOpen = $state(false);
   let currentScrollTop = $state(0);
   /**
    * The open folder's remembered session — its scroll offset, its workflow
@@ -938,8 +924,7 @@
       listen("cards-changed", (e) => (cards = e.payload));
       listen("card-mounted", (e) => {
         const card = e.payload;
-        appMessage = `card detected · ${card.name} (${card.raw_count})`;
-        setTimeout(() => (appMessage = ""), 4000);
+        notify(`card detected · ${card.name} (${card.raw_count})`, 4000);
         if (autoImport && !progress) importCard(card);
       });
       listen("card-unmounted", (e) => {
@@ -975,8 +960,7 @@
         }, 4000);
       });
       listen("app-error", (e) => {
-        appMessage = e.payload.message ?? String(e.payload);
-        setTimeout(() => (appMessage = ""), 5000);
+        notify(e.payload.message ?? String(e.payload), 5000);
       });
       let lastImportRefresh = 0;
       listen("import-progress", async (e) => {
@@ -1013,7 +997,7 @@
       });
       listen("import-finished", async (e) => {
         progress = null;
-        appMessage = `Import complete ✓`;
+        notify(`Import complete ✓`, 4000);
         const stats = e.payload;
         if (stats?.folders?.length) {
           const lastFolder = stats.folders[stats.folders.length - 1];
@@ -1021,7 +1005,6 @@
           await refreshDirs();
           await openDir(lastFolder);
         }
-        setTimeout(() => (appMessage = ""), 4000);
         // Walk-away AI cull: one folder at a time (not concurrently, so a
         // multi-day card doesn't hammer the vision API in parallel), only
         // for folders that actually received photos this run.
@@ -1034,10 +1017,9 @@
       });
       listen("import-failed", (e) => {
         progress = null;
-        appMessage = `Import failed: ${e.payload.message}`;
-        setTimeout(() => (appMessage = ""), 6000);
+        notify(`Import failed: ${e.payload.message}`, 6000);
       });
-      // AI cull toasts — reuses the same appMessage pattern as import/export
+      // AI cull toasts — same notify() path as import/export
       // rather than a dedicated chip/modal (the flow is walk-away, no review
       // step to build UI for).
       listen("cull-started", (e) => {
@@ -1057,29 +1039,27 @@
         const outcome = stats.exported_to
           ? (stats.marked > 0 ? `added to story, exported → ${stats.exported_to}` : `exported → ${stats.exported_to}`)
           : (stats.marked > 0 ? "added to story" : "kept");
-        appMessage = `AI Culling ✓ ${stats.picked}/${stats.considered} kept · ${outcome}`;
-        setTimeout(() => (appMessage = ""), 6000);
+        notify(`AI Culling ✓ ${stats.picked}/${stats.considered} kept · ${outcome}`, 6000);
         if (progress?.verb === "cull") progress = null;
         if (cullTaskId) {
           updateActivity(cullTaskId, { done: stats.picked, total: stats.considered, current: outcome, phase: "Complete", status: "completed" });
-          if (activeActivityId === cullTaskId) activeActivityId = null;
+          releaseActive(cullTaskId);
           cullTaskId = null;
         }
       });
       listen("cull-failed", (e) => {
-        appMessage = `AI Culling : ${e.payload.message}`;
-        setTimeout(() => (appMessage = ""), 6000);
+        notify(`AI Culling : ${e.payload.message}`, 6000);
         if (progress?.verb === "cull") progress = null;
         if (cullTaskId) {
           updateActivity(cullTaskId, { phase: String(e.payload.message), status: "failed" });
-          if (activeActivityId === cullTaskId) activeActivityId = null;
+          releaseActive(cullTaskId);
           cullTaskId = null;
         }
       });
       listen("export-progress", (e) => {
         progress = { verb: "export", ...e.payload };
-        if (activeActivityId) {
-          updateActivity(activeActivityId, {
+        if (activity.activeId) {
+          updateActivity(activity.activeId, {
             current: e.payload.current || "Finishing",
             done: e.payload.done,
             total: e.payload.total,
@@ -1279,7 +1259,7 @@
               : (selected.length > 1 ? selected : current);
           applyRecipeToFrames(presetRecipe, targets);
         });
-        listen("toggle-render-queue-requested", () => (queueOpen = !queueOpen));
+        listen("toggle-render-queue-requested", () => setQueueOpen());
         listen("menu-export-requested", () => {
           if (currentMode === "dev" && photoPath && recipe) exportCurrent();
           else exportSelection();
@@ -1314,8 +1294,7 @@
   async function toggleAutoImport() {
     const prefs = await invoke("toggle_auto_import");
     autoImport = !!prefs.auto_import;
-    appMessage = autoImport ? "auto-import enabled" : "auto-import disabled";
-    setTimeout(() => (appMessage = ""), 2500);
+    notify(autoImport ? "auto-import enabled" : "auto-import disabled", 2500);
   }
 
   function saveLayouts() {
@@ -1378,7 +1357,7 @@
     const next = value ?? !previewFilter;
     if (next) {
       if (applePhotosActive) {
-        appMessage = "Editorial needs a filesystem folder. You can edit and export Apple Photos directly.";
+        hold("Editorial needs a filesystem folder. You can edit and export Apple Photos directly.");
         return;
       }
       if (!curDir && !folder) return;
@@ -1723,8 +1702,7 @@
     try {
       await invoke("toggle_system_appearance");
     } catch (e) {
-      appMessage = `appearance: ${e}`;
-      setTimeout(() => (appMessage = ""), 5000);
+      notify(`appearance: ${e}`, 5000);
     }
   }
 
@@ -2114,7 +2092,7 @@
     try {
       await invoke("reveal_in_finder", { path });
     } catch (error) {
-      appMessage = `Could not reveal photo: ${error}`;
+      hold(`Could not reveal photo: ${error}`);
     }
   }
 
@@ -2128,7 +2106,7 @@
     try {
       await invoke("open_path", { path });
     } catch (error) {
-      appMessage = `Could not open photo: ${error}`;
+      hold(`Could not open photo: ${error}`);
     }
   }
 
@@ -2141,7 +2119,7 @@
     try {
       await invoke("open_in_editor", { filePath: path, appPath });
     } catch (error) {
-      appMessage = `Could not open editor: ${error}`;
+      hold(`Could not open editor: ${error}`);
     }
   }
 
@@ -2155,14 +2133,12 @@
     try {
       const sidecar = await invoke("load_sidecar", { path });
       if (!sidecar?.engine_settings) {
-        appMessage = "No development engine is active for this photo";
-        setTimeout(() => (appMessage = ""), 3000);
+        notify("No development engine is active for this photo", 3000);
         return;
       }
       if (toVault) {
         if (!preferences.obsidian_enabled) {
-          appMessage = "Obsidian integration is disabled in settings";
-          setTimeout(() => (appMessage = ""), 3000);
+          notify("Obsidian integration is disabled in settings", 3000);
           return;
         }
         await exportSelectionToDailyNote(path);
@@ -2180,10 +2156,10 @@
       progress = { ...progress, done: 1 };
       updateActivity(devJobId, { done: 1, phase: "Complete", status: "completed" });
     } catch (error) {
-      appMessage = `Development failed: ${error}`;
+      hold(`Development failed: ${error}`);
       if (devJobId) updateActivity(devJobId, { phase: String(error), status: "failed" });
     } finally {
-      if (devJobId && activeActivityId === devJobId) activeActivityId = null;
+      releaseActive(devJobId);
       if (progress) {
         setTimeout(() => {
           progress = null;
@@ -2269,18 +2245,18 @@
   async function rescanDir(path) {
     if (!path || scanning) return;
     scanning = true;
-    appMessage = `Reindexing ${path.split("/").pop()}…`;
+    hold(`Reindexing ${path.split("/").pop()}…`);
     try {
       await invoke(roots.includes(path) ? "scan_root" : "scan_folder", { path });
       await refreshDirs();
       if (curDir?.startsWith(path)) await openDir(curDir);
-      appMessage = `Reindexed ${path.split("/").pop()}`;
+      hold(`Reindexed ${path.split("/").pop()}`);
     } catch (error) {
-      appMessage = `Could not reindex folder: ${error}`;
+      hold(`Could not reindex folder: ${error}`);
     } finally {
       scanning = false;
       setTimeout(() => {
-        if (appMessage.startsWith("Reindexed ")) appMessage = "";
+        if (activity.message.startsWith("Reindexed ")) dismiss();
       }, 2200);
     }
   }
@@ -2290,7 +2266,7 @@
     try {
       await invoke("open_path", { path });
     } catch (error) {
-      appMessage = `Could not open folder: ${error}`;
+      hold(`Could not open folder: ${error}`);
     }
   }
 
@@ -2303,12 +2279,9 @@
     try {
       await invoke("set_import_dir", { path });
       const name = path?.split("/").pop() || "(racine)";
-      appMessage = `Import → ${name}`;
-      setTimeout(() => {
-        if (appMessage.startsWith("Import → ")) appMessage = "";
-      }, 2500);
+      notify(`Import → ${name}`, 2500);
     } catch (error) {
-      appMessage = `Could not set import folder: ${error}`;
+      hold(`Could not set import folder: ${error}`);
     }
   }
 
@@ -2323,7 +2296,7 @@
   function onPhotoDragStart(path, event) {
     if (path.startsWith("apple-photos://")) {
       event.preventDefault();
-      appMessage = "Export Apple Photos before moving them to a folder.";
+      hold("Export Apple Photos before moving them to a folder.");
       return;
     }
     if (!event.dataTransfer) return;
@@ -2351,8 +2324,7 @@
     const parentOf = (p) => p.slice(0, p.lastIndexOf("/"));
     const toMove = paths.filter((p) => parentOf(p) !== destDir);
     if (!toMove.length) {
-      appMessage = "already in this folder";
-      setTimeout(() => (appMessage = ""), 2500);
+      notify("already in this folder", 2500);
       return;
     }
     const srcDirs = new Set(toMove.map(parentOf));
@@ -2380,15 +2352,17 @@
     selectedPaths = new Set();
     progress = null;
     const destName = destDir.split("/").pop();
-    appMessage = errors.length
-      ? `${moved} moved · ${errors.length} failed`
-      : `${moved} photo${moved > 1 ? "s" : ""} moved → ${destName}`;
+    hold(
+      errors.length
+        ? `${moved} moved · ${errors.length} failed`
+        : `${moved} photo${moved > 1 ? "s" : ""} moved → ${destName}`,
+    );
     updateActivity(jobId, {
       current: destName,
       phase: errors.length ? `${errors.length} failed` : "Complete",
       status: errors.length ? "failed" : "completed",
     });
-    if (activeActivityId === jobId) activeActivityId = null;
+    releaseActive(jobId);
     if (errors.length) console.warn("move errors:", errors);
     return;
   }
@@ -2432,11 +2406,10 @@
       } else if (curDir && curDir.startsWith(path + "/")) {
         await openDir(newPath + curDir.slice(path.length));
       }
-      appMessage = `Renamed → ${newName}`;
+      notify(`Renamed → ${newName}`, 3000);
     } catch (e) {
-      appMessage = `Rename failed: ${e}`;
+      notify(`Rename failed: ${e}`, 3000);
     }
-    setTimeout(() => (appMessage = ""), 3000);
   }
 
   /**
@@ -2446,12 +2419,10 @@
   async function createFolder(parentDir, name) {
     try {
       const abs = await invoke("create_dir", { parentDir, name });
-      appMessage = `Folder created: ${name}`;
-      setTimeout(() => (appMessage = ""), 2500);
+      notify(`Folder created: ${name}`, 2500);
       return abs;
     } catch (e) {
-      appMessage = `Creation failed: ${e}`;
-      setTimeout(() => (appMessage = ""), 4000);
+      notify(`Creation failed: ${e}`, 4000);
       return null;
     }
   }
@@ -2470,11 +2441,10 @@
       } else if (curDir && curDir.startsWith(path + "/")) {
         await openDir(newPath + curDir.slice(path.length));
       }
-      appMessage = `${name} moved`;
+      notify(`${name} moved`, 3000);
     } catch (e) {
-      appMessage = `Move failed: ${e}`;
+      notify(`Move failed: ${e}`, 3000);
     }
-    setTimeout(() => (appMessage = ""), 3000);
   }
 
   let debug = $state("");
@@ -2643,8 +2613,7 @@
       // but StoryComposer's `onSave(c)` call is fire-and-forget — without
       // this catch, that would be a silent, invisible failure: the edit
       // never reaches disk and nothing tells you.
-      appMessage = `Failed to save the story: ${e}`;
-      setTimeout(() => (appMessage = ""), 8000);
+      notify(`Failed to save the story: ${e}`, 8000);
       return;
     }
     storySet = new Set(await invoke("story_stems", { dir: d }));
@@ -2757,8 +2726,7 @@
 
   function toggleLayout() {
     if (layout === "uniform" && frames.length > 500) {
-      appMessage = "Too many images for masonry mode (>500)";
-      setTimeout(() => (appMessage = ""), 4000);
+      notify("Too many images for masonry mode (>500)", 4000);
       return;
     }
     layout = layout === "uniform" ? "masonry" : "uniform";
@@ -2775,7 +2743,7 @@
   /** @param {string} path */
   async function toggleStoryWithPath(path) {
     if (path.startsWith("apple-photos://")) {
-      appMessage = "Apple Photos albums are read-only. Use ratings to select photos, then export.";
+      hold("Apple Photos albums are read-only. Use ratings to select photos, then export.");
       return;
     }
     const d = gridDir();
@@ -2833,7 +2801,7 @@
 
   async function publishStory() {
     const d = gridDir();
-    if (!d || !storySet.size || !gardenAccount?.signed_in || anyActivityRunning) return;
+    if (!d || !storySet.size || !gardenAccount?.signed_in || activity.anyRunning) return;
     liveUrl = null;
     progress = { verb: "publication", done: 0, total: storySet.size, current: "" };
     publishTaskId = startActivity("publish", `Publier l'histoire · ${storySet.size} photos`, storySet.size);
@@ -2846,14 +2814,14 @@
       updateActivity(publishTaskId, { phase: String(e), status: "failed" });
     } finally {
       progress = null;
-      if (activeActivityId === publishTaskId) activeActivityId = null;
+      releaseActive(publishTaskId);
       publishTaskId = null;
     }
   }
 
   async function exportLocalStory() {
     const d = gridDir();
-    if (!d || !storySet.size || anyActivityRunning) return;
+    if (!d || !storySet.size || activity.anyRunning) return;
     const dest = await invoke("pick_folder");
     if (!dest) return;
     liveUrl = null;
@@ -2873,7 +2841,7 @@
       updateActivity(jobId, { phase: String(e), status: "failed" });
     } finally {
       progress = null;
-      if (activeActivityId === jobId) activeActivityId = null;
+      releaseActive(jobId);
     }
   }
 
@@ -2903,9 +2871,8 @@
       const summary = stats.cancelled
         ? `Import stopped · ${stats.copied} imported`
         : `${stats.copied} imported · ${stats.skipped} skipped · ${stats.failed} failed`;
-      appMessage = summary;
+      notify(summary, 5000);
       invoke("notify_user", { title: "Reveal — import", body: summary }).catch(() => {});
-      setTimeout(() => (appMessage = ""), 5000);
       // A real removable card (has a volume mount point) can now be ejected —
       // the ingest loop's last step, offered in the rail rather than forced.
       if (card.volume) ejectableCard = card;
@@ -2940,8 +2907,7 @@
         refreshStoryDirs();
       }
     } catch (error) {
-      appMessage = `AI Culling (${dir.split("/").pop()}) : ${error}`;
-      setTimeout(() => (appMessage = ""), 6000);
+      notify(`AI Culling (${dir.split("/").pop()}) : ${error}`, 6000);
     }
   }
 
@@ -2955,13 +2921,13 @@
    */
   async function cullCurrentFolder() {
     if (applePhotosActive) {
-      appMessage = "AI culling is available for filesystem folders, not Apple Photos.";
+      hold("AI culling is available for filesystem folders, not Apple Photos.");
       return;
     }
     const d = gridDir();
     if (!d || !view.length || progress) return;
     progress = { verb: "cull", done: 0, total: view.length, current: "" };
-    appMessage = `AI Culling · ${view.length} photos…`;
+    hold(`AI Culling · ${view.length} photos…`);
     cullTaskId = startActivity("cull", `AI Culling · ${view.length} photos`, view.length);
     try {
       const result = await invoke("ai_cull_selection", { dir: d, paths: view.map((f) => f.path) });
@@ -2977,19 +2943,18 @@
       }
       await loadStory();
       refreshStoryDirs();
-      appMessage = `AI Culling ✓ ${added} added to the quick collection (${result.picked.length}/${result.considered} kept)`;
+      notify(`AI Culling ✓ ${added} added to the quick collection (${result.picked.length}/${result.considered} kept)`, 6000);
       updateActivity(cullTaskId, {
         done: result.picked.length, total: result.considered,
         current: `${added} added`, phase: "Complete", status: "completed",
       });
     } catch (error) {
-      appMessage = `AI Culling : ${error}`;
+      notify(`AI Culling : ${error}`, 6000);
       updateActivity(cullTaskId, { phase: String(error), status: "failed" });
     } finally {
       progress = null;
-      if (activeActivityId === cullTaskId) activeActivityId = null;
+      releaseActive(cullTaskId);
       cullTaskId = null;
-      setTimeout(() => (appMessage = ""), 6000);
     }
   }
 
@@ -3000,11 +2965,9 @@
     try {
       await invoke("eject_card", { volume: card.volume });
       ejectableCard = null;
-      appMessage = `${card.name} ejected · you can remove the card`;
-      setTimeout(() => (appMessage = ""), 5000);
+      notify(`${card.name} ejected · you can remove the card`, 5000);
     } catch (e) {
-      appMessage = `Eject failed: ${typeof e === "string" ? e : String(e)}`;
-      setTimeout(() => (appMessage = ""), 6000);
+      notify(`Eject failed: ${typeof e === "string" ? e : String(e)}`, 6000);
     } finally {
       ejecting = false;
       cards = await invoke("find_cards");
@@ -3026,45 +2989,9 @@
     }
   }
 
-  /**
-   * @param {string} kind e.g. "import" | "export" | "cull" | "publish" | "move" | "develop"
-   * @param {string} label
-   * @param {number} total
-   */
-  function startActivity(kind, label, total) {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    activityQueue = [
-      ...activityQueue,
-      {
-        id,
-        kind,
-        label,
-        current: "Waiting",
-        done: 0,
-        total,
-        phase: "Queued",
-        status: "running",
-        timestamp: new Date().toLocaleTimeString(),
-      },
-    ];
-    activeActivityId = id;
-    // Subtle by default (Francis: no popping window every time something
-    // starts) — the top-right indicator is the ambient signal; the panel
-    // opens only when that indicator is clicked.
-    return id;
-  }
-
-  /**
-   * @param {string} id
-   * @param {Partial<Activity>} patch
-   */
-  function updateActivity(id, patch) {
-    activityQueue = activityQueue.map((job) => (job.id === id ? { ...job, ...patch } : job));
-  }
-
   async function cancelExportQueue() {
-    if (!activeActivityId) return;
-    updateActivity(activeActivityId, { phase: "Cancelling after current photo…" });
+    if (!activity.activeId) return;
+    updateActivity(activity.activeId, { phase: "Cancelling after current photo…" });
     await invoke("cancel_exports");
   }
 
@@ -3078,7 +3005,7 @@
         longEdge: exportEdge,
         borderFrac: exportBorder ? 0.04 : 0,
       });
-      const job = activityQueue.find((item) => item.id === jobId);
+      const job = activity.queue.find((item) => item.id === jobId);
       if (job?.status !== "cancelled") {
         updateActivity(jobId, {
           current: "",
@@ -3093,7 +3020,7 @@
         status: "failed",
       });
     } finally {
-      if (activeActivityId === jobId) activeActivityId = null;
+      releaseActive(jobId);
     }
   }
 
@@ -3101,7 +3028,7 @@
   // focused frame if nothing is multi-selected) with the active export params.
   async function exportSelection() {
     const targets = selectedFrames();
-    if (!targets.length || anyActivityRunning) return;
+    if (!targets.length || activity.anyRunning) return;
     const jobId = startActivity(
       "export",
       `Export ${targets.length} photo${targets.length > 1 ? "s" : ""}`,
@@ -3123,7 +3050,7 @@
     } catch (error) {
       updateActivity(jobId, { phase: String(error), status: "failed" });
     } finally {
-      if (activeActivityId === jobId) activeActivityId = null;
+      releaseActive(jobId);
     }
   }
 
@@ -3152,7 +3079,7 @@
       updateActivity(jobId, { phase: String(e), status: "failed" });
       notify(`Export failed: ${e}`, 5000);
     } finally {
-      if (activeActivityId === jobId) activeActivityId = null;
+      releaseActive(jobId);
     }
   }
 
@@ -3218,7 +3145,7 @@
       notify(`Journal export failed: ${e}`, 5000);
       updateActivity(jobId, { phase: String(e), status: "failed" });
     } finally {
-      if (activeActivityId === jobId) activeActivityId = null;
+      releaseActive(jobId);
     }
   }
 
@@ -3305,7 +3232,7 @@
         frame.rating = n;
       }
     } catch (error) {
-      appMessage = `Could not save photo rating: ${error}`;
+      hold(`Could not save photo rating: ${error}`);
     } finally {
       frames = [...frames];
     }
@@ -3315,10 +3242,7 @@
   /** @param {string} path */
   function showCopiedMessage(path) {
     const filename = path.split("/").pop();
-    appMessage = `Image copied to the clipboard (${filename}) ✓`;
-    setTimeout(() => {
-      if (appMessage.startsWith("Image copied")) appMessage = "";
-    }, 2500);
+    notify(`Image copied to the clipboard (${filename}) ✓`, 2500);
   }
 
   // Every branch here writes straight to NSPasteboard from Rust rather than
@@ -3355,8 +3279,7 @@
       showCopiedMessage(path);
     } catch (err) {
       console.error("Could not copy image to clipboard:", err);
-      appMessage = `Failed to copy the image: ${err}`;
-      setTimeout(() => (appMessage = ""), 3000);
+      notify(`Failed to copy the image: ${err}`, 3000);
     }
   }
 
@@ -3383,10 +3306,7 @@
     delete base.crop_h;
     copiedRecipe = base;
 
-    appMessage = `Settings copied from ${source.name}`;
-    setTimeout(() => {
-      if (appMessage === `Settings copied from ${source.name}`) appMessage = "";
-    }, 2000);
+    notify(`Settings copied from ${source.name}`, 2000);
   }
 
   // Render + persist one recipe onto a set of frames, updating the live loupe
@@ -3453,17 +3373,14 @@
         }
         frames = [...frames]; // reassign per photo so grid thumbs update live as each frame develops
       }
-      appMessage = `Settings applied to ${targetFrames.length} photo${targetFrames.length === 1 ? "" : "s"}`;
-      setTimeout(() => {
-        if (appMessage.startsWith("Settings applied")) appMessage = "";
-      }, 2500);
+      notify(`Settings applied to ${targetFrames.length} photo${targetFrames.length === 1 ? "" : "s"}`, 2500);
       updateActivity(jobId, { phase: "Complete", status: "completed" });
     } catch (e) {
-      appMessage = `Could not apply settings: ${e}`;
+      notify(`Could not apply settings: ${e}`);
       updateActivity(jobId, { phase: String(e), status: "failed" });
     } finally {
       progress = null;
-      if (activeActivityId === jobId) activeActivityId = null;
+      releaseActive(jobId);
     }
   }
 
@@ -3950,10 +3867,7 @@
       }
     } catch (error) {
       status = "Could not load photo";
-      appMessage = `Could not open photo: ${error}`;
-      setTimeout(() => {
-        if (appMessage.startsWith("Could not open photo:")) appMessage = "";
-      }, 5000);
+      notify(`Could not open photo: ${error}`, 5000);
     }
   }
 
@@ -3965,7 +3879,7 @@
     const description = caption;
     captionTimer = setTimeout(() => {
       if (path) invoke("save_caption", { path, description })
-        .catch((error) => { appMessage = `Could not save caption: ${error}`; });
+        .catch((error) => { hold(`Could not save caption: ${error}`); });
     }, 400);
   }
 
@@ -3973,7 +3887,7 @@
     const path = photoPath;
     if (!path) return;
     invoke("save_tags", { path, tags: [...tags] })
-      .catch((error) => { appMessage = `Could not save tags: ${error}`; });
+      .catch((error) => { hold(`Could not save tags: ${error}`); });
   }
 
   let inflight = $state(false);
@@ -4145,7 +4059,7 @@
     const snapshot = recipe ? { ...recipe } : null;
     saveTimer = setTimeout(() => {
       if (path && snapshot) invoke("save_recipe", { path, recipe: snapshot })
-        .catch((error) => { appMessage = `Could not save development settings: ${error}`; });
+        .catch((error) => { hold(`Could not save development settings: ${error}`); });
     }, 300);
   }
 
@@ -5247,14 +5161,14 @@
      which mode (Grid/Develop) is currently showing — an import can finish
      while you're in Develop, and you should still see it. -->
 <NotificationStack>
-  <Toast message={appMessage} />
-  <TaskIndicator {activityQueue} onOpen={() => (queueOpen = true)} />
+  <Toast message={activity.message} />
+  <TaskIndicator activityQueue={activity.queue} onOpen={() => setQueueOpen(true)} />
 </NotificationStack>
-{#if queueOpen}
+{#if activity.queueOpen}
   <RenderQueueModal
-    {activityQueue}
-    {activeActivityId}
-    onClose={() => (queueOpen = false)}
+    activityQueue={activity.queue}
+    activeActivityId={activity.activeId}
+    onClose={() => setQueueOpen(false)}
     onCancelQueue={cancelExportQueue}
   />
 {/if}
