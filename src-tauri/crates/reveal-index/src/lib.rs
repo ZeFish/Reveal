@@ -125,6 +125,11 @@ impl Index {
         // Migration: seed `roots` from the legacy single `meta.root` so an
         // existing catalogue keeps working — first launch after the upgrade
         // finds one root, exactly the old behaviour, then `add_root` extends it.
+        //
+        // ONCE. It used to run on every open and never cleared `meta.root`,
+        // so a library you removed came back at the next launch — Francis
+        // removed "Capture" twice and it returned twice (2026-09-23). The key
+        // is consumed here; `roots` is the only truth from now on.
         let legacy_root: Option<String> = conn
             .query_row("SELECT value FROM meta WHERE key='root'", [], |r| r.get(0))
             .ok();
@@ -135,16 +140,11 @@ impl Index {
                     [&r],
                 );
             }
+            let _ = conn.execute("DELETE FROM meta WHERE key='root'", []);
         }
         Ok(Self {
             conn: Mutex::new(conn),
         })
-    }
-
-    pub fn root(&self) -> Option<String> {
-        let conn = self.conn.lock().unwrap();
-        conn.query_row("SELECT value FROM meta WHERE key='root'", [], |r| r.get(0))
-            .ok()
     }
 
     /// Every catalogue root, oldest-added first (then lexical). This is the
@@ -175,10 +175,23 @@ impl Index {
     pub fn remove_root(&self, path: &str) -> Result<usize, IndexError> {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM roots WHERE path=?1", [path])?;
-        let like = format!("{path}/%");
+        // Only the photos no remaining root still covers. Roots can nest —
+        // "Capture" lived inside "ffp-production" — and deleting everything
+        // under the removed path threw away rows the parent still owned:
+        // Francis lost indexed photos from ffp-production each time he
+        // removed Capture (2026-09-23).
+        //
+        // Prefixes compared with `substr`, not LIKE: `_` and `%` are
+        // wildcards to LIKE and perfectly ordinary in a folder name.
         let n = conn.execute(
-            "DELETE FROM frames WHERE path=?1 OR path LIKE ?2",
-            rusqlite::params![path, like],
+            "DELETE FROM frames
+             WHERE (path = ?1 OR substr(path, 1, length(?1) + 1) = ?1 || '/')
+               AND NOT EXISTS (
+                 SELECT 1 FROM roots r
+                 WHERE frames.path = r.path
+                    OR substr(frames.path, 1, length(r.path) + 1) = r.path || '/'
+               )",
+            [path],
         )?;
         Ok(n)
     }
@@ -456,15 +469,11 @@ impl Index {
             tx.execute("DELETE FROM frames WHERE path=?1", [p])?;
         }
         if update_root {
-            // Legacy primary pointer (kept for `root()` and single-root
-            // callers) …
-            tx.execute(
-                "INSERT INTO meta(key,value) VALUES('root',?1)
-                 ON CONFLICT(key) DO UPDATE SET value=?1",
-                [root.to_string_lossy()],
-            )?;
-            // … and register it in the multi-root set WITHOUT disturbing any
-            // other root (adding a second library no longer evicts the first).
+            // Register it in the multi-root set WITHOUT disturbing any other
+            // root (adding a second library no longer evicts the first). The
+            // legacy `meta.root` pointer is not written any more: nothing read
+            // it but the migration, which is how a removed library kept
+            // resurrecting itself.
             tx.execute(
                 "INSERT OR IGNORE INTO roots(path, added_at)
                  VALUES(?1, COALESCE((SELECT MAX(added_at) FROM roots), 0) + 1)",
@@ -904,6 +913,99 @@ mod dimension_tests {
             portrait > 0,
             "not one portrait: the sensor rotation is being ignored again"
         );
+        let _ = std::fs::remove_file(&db);
+    }
+}
+
+#[cfg(test)]
+mod root_tests {
+    use super::*;
+
+    fn temp_index(tag: &str) -> (Index, std::path::PathBuf) {
+        let db = std::env::temp_dir().join(format!("reveal-roots-{tag}-{}.sqlite", std::process::id()));
+        let _ = std::fs::remove_file(&db);
+        (Index::open(&db).expect("open"), db)
+    }
+
+    fn put(index: &Index, path: &str) {
+        let conn = index.conn.lock().unwrap();
+        let dir = &path[..path.rfind('/').unwrap()];
+        conn.execute(
+            "INSERT INTO frames(path,dir,name,mtime,rating) VALUES(?1,?2,?3,0,0)",
+            rusqlite::params![path, dir, &path[dir.len() + 1..]],
+        )
+        .unwrap();
+    }
+
+    fn count(index: &Index) -> i64 {
+        index.conn.lock().unwrap().query_row("SELECT count(*) FROM frames", [], |r| r.get(0)).unwrap()
+    }
+
+    /// The exact shape Francis hit: a library nested inside another. Removing
+    /// the inner one must not forget photos the outer one still covers.
+    #[test]
+    fn removing_a_nested_root_keeps_what_the_parent_covers() {
+        let (index, db) = temp_index("nested");
+        index.add_root("/nas/ffp").unwrap();
+        index.add_root("/nas/ffp/Personelle/Capture").unwrap();
+        put(&index, "/nas/ffp/Personelle/Capture/2026/a.RAF");
+        put(&index, "/nas/ffp/Other/b.RAF");
+
+        let removed = index.remove_root("/nas/ffp/Personelle/Capture").unwrap();
+        assert_eq!(removed, 0);
+        assert_eq!(count(&index), 2);
+        assert_eq!(index.roots().unwrap(), vec!["/nas/ffp".to_string()]);
+        let _ = std::fs::remove_file(&db);
+    }
+
+    /// The other direction: removing the parent forgets what only it covered,
+    /// and keeps what the nested root still owns.
+    #[test]
+    fn removing_the_parent_keeps_the_nested_root_s_photos() {
+        let (index, db) = temp_index("parent");
+        index.add_root("/nas/ffp").unwrap();
+        index.add_root("/nas/ffp/Capture").unwrap();
+        put(&index, "/nas/ffp/Capture/a.RAF");
+        put(&index, "/nas/ffp/Other/b.RAF");
+
+        assert_eq!(index.remove_root("/nas/ffp").unwrap(), 1);
+        assert_eq!(count(&index), 1);
+        let _ = std::fs::remove_file(&db);
+    }
+
+    /// A sibling whose name merely starts with the same characters is not
+    /// inside the root — and `_` must not act as a wildcard.
+    #[test]
+    fn a_prefix_is_not_containment() {
+        let (index, db) = temp_index("prefix");
+        index.add_root("/nas/ffp").unwrap();
+        index.add_root("/nas/ffp_2").unwrap();
+        put(&index, "/nas/ffp/a.RAF");
+        put(&index, "/nas/ffp-production/b.RAF");
+        put(&index, "/nas/ffpX2/c.RAF");
+
+        assert_eq!(index.remove_root("/nas/ffp").unwrap(), 1);
+        assert_eq!(count(&index), 2);
+        let _ = std::fs::remove_file(&db);
+    }
+
+    /// A removed library stays removed across a restart. The legacy
+    /// `meta.root` pointer used to re-seed it on every open.
+    #[test]
+    fn a_removed_root_stays_removed_after_reopening() {
+        let (index, db) = temp_index("reopen");
+        {
+            let conn = index.conn.lock().unwrap();
+            conn.execute("INSERT INTO meta(key,value) VALUES('root','/nas/ffp/Capture')", []).unwrap();
+        }
+        drop(index);
+        let index = Index::open(&db).unwrap(); // migration seeds it, once
+        assert_eq!(index.roots().unwrap(), vec!["/nas/ffp/Capture".to_string()]);
+
+        index.remove_root("/nas/ffp/Capture").unwrap();
+        drop(index);
+        let index = Index::open(&db).unwrap(); // the restart
+        assert!(index.roots().unwrap().is_empty(), "the removed library came back");
         let _ = std::fs::remove_file(&db);
     }
 }
