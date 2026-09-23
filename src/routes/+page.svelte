@@ -6,6 +6,11 @@
     activity, notify, hold, dismiss,
     startActivity, updateActivity, setActive, releaseActive, setQueueOpen,
   } from "$lib/activity.svelte.js";
+  import {
+    selection, positionIn, anchorIn, focusAt, selectOnly, selectGridItem,
+    selectRange, toggle as toggleSelected, selectAll, clearSelection,
+    setSelection, setAnchor, selectedFrames,
+  } from "$lib/selection.svelte.js";
   import { invoke } from "@tauri-apps/api/core";
   import { listen as tauriListen, emit } from "@tauri-apps/api/event";
   import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -357,7 +362,7 @@
     const request = ++applePhotosRequest;
     let preserve = applePhotosActive && applePhotosAlbum === album;
     const previous = {
-      selected: new Set(selectedPaths), focus: view[sel]?.path,
+      selected: new Set(selection.paths), focus: view[sel]?.path,
       anchor: view[selectionAnchor]?.path, index: sel,
     };
     const loadedCount = frames.length;
@@ -393,9 +398,8 @@
       frames = page.frames;
       if (preserve) {
         const restored = restorePhotoSelection(view, previous);
-        selectedPaths = restored.selected;
-        focusAt(restored.index);
-        anchorPath = view[restored.anchor]?.path ?? null;
+        setSelection(restored.selected, view[restored.anchor]?.path ?? null);
+        focusAt(view, restored.index);
         // Keep layout/filter, active Develop photo/recipe and scroll. PhotoGrid
         // keeps a moved focused row visible using its existing virtual geometry.
       } else {
@@ -403,8 +407,8 @@
         filterStory = false;
         previewFilter = false;
         storySet = new Set();
-        focusAt(0);
-        selectOnly(0);
+        focusAt(view, 0);
+        selectOnly(view, 0);
         currentScrollTop = 0;
       }
       session.setLastDirectory(APPLE_PHOTOS_ROOT + album);
@@ -450,33 +454,6 @@
     }
   }
   let loading = $state(false); // a folder open is in flight — suppresses the empty-state splash so switching folders doesn't flash "REVEAL"
-  /**
-   * The focused photo and the range anchor, held as PATHS.
-   *
-   * They used to be indexes into `view`, and `view` is not one list: it
-   * filters by rating and by story, and reverses under `sortDesc`. An index
-   * only means something next to the list it was computed in, and the two
-   * drifted apart in every way they could. Restoring a session looked the
-   * saved photo up in `frames` and assigned the result to `sel` — on a
-   * 61-photo folder that reopened its mirror, positions 16 and 46, every
-   * other launch. Flipping the sort left `sel` alone and quietly moved your
-   * selection to the opposite end.
-   *
-   * A path survives all of it. `sel` below is derived: it answers "where is
-   * the focused photo right now", recomputed whenever the list changes, and
-   * it cannot be set to a position that came from somewhere else.
-   * @type {string | null}
-   */
-  let focusPath = $state(null);
-  /** @type {string | null} */ let anchorPath = $state(null);
-  /**
-   * Where to land when the focused photo is not in `view` at all — filtered
-   * out by a rating, hidden by Editorial, moved or deleted. Keeping the last
-   * position means the grid stays where you were working instead of jumping
-   * to the top.
-   */
-  let focusFallback = $state(0);
-  /** @type {Set<string>} */ let selectedPaths = $state(new Set());
 
   /** @type {Recipe | null} */ let copiedRecipe = $state(null);
   /** @type {string[]} */ let roots = $state([]); // every catalogue root — the library is a SET of them
@@ -1251,7 +1228,7 @@
           const payload = e.payload || {};
           const presetRecipe = payload.recipe;
           if (!presetRecipe) return;
-          const selected = selectedFrames();
+          const selected = selectedFrames(view);
           const current = view[sel] ? [view[sel]] : selected;
           const targets =
             payload.scope === "selected"
@@ -1802,80 +1779,14 @@
   });
 
   /**
-   * The focused photo's position in the CURRENT view.
+   * Where the focus and the range anchor sit in the CURRENT view.
    *
-   * The fallback ladder is the one `restorePhotoSelection` already used for
-   * Apple Photos reloads (modules/sidebar/applePhotosBrowsing.js) — identity
-   * first, then the first still-selected photo, then the old position
-   * clamped. That logic was right all along; it was only ever applied to one
-   * code path.
+   * Derived, never assigned: see src/lib/selection.svelte.js for why the
+   * position is computed from the photo rather than stored beside it.
    */
-  const sel = $derived.by(() => {
-    if (!view.length) return 0;
-    const byFocus = focusPath ? view.findIndex((f) => f.path === focusPath) : -1;
-    if (byFocus >= 0) return byFocus;
-    const bySelection = view.findIndex((f) => selectedPaths.has(f.path));
-    if (bySelection >= 0) return bySelection;
-    return Math.max(0, Math.min(focusFallback, view.length - 1));
-  });
+  const sel = $derived(positionIn(view));
+  const selectionAnchor = $derived(anchorIn(view));
 
-  /** The range anchor's position, falling back to the focus. */
-  const selectionAnchor = $derived.by(() => {
-    const i = anchorPath ? view.findIndex((f) => f.path === anchorPath) : -1;
-    return i >= 0 ? i : sel;
-  });
-
-  /**
-   * Move the focus to a position in the view as it stands right now.
-   *
-   * The only way to move it. Everything that used to write `sel` goes
-   * through here, which is what makes an index from the wrong list
-   * impossible to express: the position is resolved to a photo immediately,
-   * and the photo is what is kept.
-   * @param {number} index
-   */
-  function focusAt(index) {
-    focusFallback = index;
-    focusPath = view[index]?.path ?? null;
-  }
-
-  /** @param {number} index */
-  function selectOnly(index) {
-    const frame = view[index];
-    selectedPaths = new Set(frame ? [frame.path] : []);
-    anchorPath = frame?.path ?? null;
-  }
-
-  /**
-   * @param {number} index
-   * @param {MouseEvent} [event]
-   */
-  function selectGridItem(index, event) {
-    const frame = view[index];
-    if (!frame) return;
-
-    if (event?.shiftKey) {
-      const from = Math.min(selectionAnchor, index);
-      const to = Math.max(selectionAnchor, index);
-      const next = event.metaKey || event.ctrlKey ? new Set(selectedPaths) : new Set();
-      for (let i = from; i <= to; i += 1) next.add(view[i].path);
-      selectedPaths = next;
-    } else if (event?.metaKey || event?.ctrlKey) {
-      const next = new Set(selectedPaths);
-      if (next.has(frame.path)) next.delete(frame.path);
-      else next.add(frame.path);
-      selectedPaths = next;
-      anchorPath = frame.path;
-    } else {
-      selectOnly(index);
-    }
-    focusAt(index);
-  }
-
-  function selectedFrames() {
-    const selected = view.filter((frame) => selectedPaths.has(frame.path));
-    return selected.length ? selected : (view[sel] ? [view[sel]] : []);
-  }
 
   /**
    * @param {number} index
@@ -1885,8 +1796,8 @@
     event.preventDefault();
     const frame = view[index];
     if (!frame) return;
-    if (!selectedPaths.has(frame.path)) selectOnly(index);
-    focusAt(index);
+    if (!selection.paths.has(frame.path)) selectOnly(view, index);
+    focusAt(view, index);
     photoMenu = {
       frame,
       x: event.clientX,
@@ -2301,7 +2212,7 @@
     }
     if (!event.dataTransfer) return;
     const paths =
-      selectedPaths.has(path) && selectedPaths.size > 1 ? [...selectedPaths] : [path];
+      selection.paths.has(path) && selection.paths.size > 1 ? [...selection.paths] : [path];
     const payload = JSON.stringify(paths);
     event.dataTransfer.setData("application/x-reveal-photos", payload);
     event.dataTransfer.setData("text/plain", payload);
@@ -2349,7 +2260,7 @@
     } catch (_) {}
     await refreshDirs();
     if (curDir) await openDir(curDir);
-    selectedPaths = new Set();
+    clearSelection();
     progress = null;
     const destName = destDir.split("/").pop();
     hold(
@@ -2369,7 +2280,7 @@
 
   /** @param {string} destDir */
   function moveSelectedPhotosToDir(destDir) {
-    const paths = [...selectedPaths];
+    const paths = [...selection.paths];
     if (!paths.length && view[sel]) paths.push(view[sel].path);
     if (paths.length) movePhotos(paths, destDir);
   }
@@ -2527,8 +2438,8 @@
     // it observes makes the provisional value permanent.
     folderSession = openFolderSession(dir);
     currentScrollTop = folderSession.scroll || scrollOffsets[dir] || 0;
-    focusAt(0);
-    selectOnly(0);
+    focusAt(view, 0);
+    selectOnly(view, 0);
     let restoredToDevelop = false;
     if (restoreSession) {
       const savedPhoto = session.lastPhoto();
@@ -2547,8 +2458,8 @@
       // avoid.
       const savedIdx = savedPhoto ? view.findIndex((f) => f.path === savedPhoto) : -1;
       if (savedPhoto && folderSession.mode === "dev" && savedIdx !== -1) {
-        focusAt(savedIdx);
-        selectOnly(savedIdx);
+        focusAt(view, savedIdx);
+        selectOnly(view, savedIdx);
         await openPhoto(savedPhoto, { openDevPanel: layouts.dev.devPanel });
         restoredToDevelop = true;
       }
@@ -3027,7 +2938,7 @@
   // The Swift `r` — "Reveal": develop + export the current selection (or the
   // focused frame if nothing is multi-selected) with the active export params.
   async function exportSelection() {
-    const targets = selectedFrames();
+    const targets = selectedFrames(view);
     if (!targets.length || activity.anyRunning) return;
     const jobId = startActivity(
       "export",
@@ -3118,8 +3029,8 @@
 
   /** @param {string} [clickedPath] */
   async function exportSelectionToDailyNote(clickedPath) {
-    const targets = selectedPaths.size > 0
-      ? view.filter((f) => selectedPaths.has(f.path)).map((f) => f.path)
+    const targets = selection.paths.size > 0
+      ? view.filter((f) => selection.paths.has(f.path)).map((f) => f.path)
       : (clickedPath ? [clickedPath] : (view[sel] ? [view[sel].path] : []));
 
     if (!targets.length) return;
@@ -3165,8 +3076,8 @@
     filterStory = false;
     previewFilter = false;
     frames = await withPreviewVersions(await invoke("list_dir", { path }));
-    focusAt(0);
-    selectOnly(0);
+    focusAt(view, 0);
+    selectOnly(view, 0);
     // The other way into a folder, and it has to remember as much as the
     // first: without its own session this folder's mode would silently stop
     // being saved. That asymmetry was invisible while both paths wrote to a
@@ -3224,7 +3135,7 @@
 
   /** @param {number} n */
   async function rate(n) {
-    const targets = selectedFrames();
+    const targets = selectedFrames(view);
     if (!targets.length) return;
     try {
       for (const frame of targets) {
@@ -3386,7 +3297,7 @@
 
   async function pasteSettings() {
     if (!copiedRecipe) return;
-    await applyRecipeToFrames(copiedRecipe, selectedFrames());
+    await applyRecipeToFrames(copiedRecipe, selectedFrames(view));
   }
 
   /** @param {any} res */
@@ -3455,7 +3366,7 @@
 
     // ⌘A / Ctrl-A — select all
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
-      selectedPaths = new Set(view.map(f => f.path));
+      selectAll(view);
       e.preventDefault();
       return;
     }
@@ -3472,7 +3383,7 @@
 
     // ⌘D / Ctrl-D — deselect all (clear the focused frame + the ⌘-click set).
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "d") {
-      selectedPaths = new Set();
+      clearSelection();
       e.preventDefault();
       return;
     }
@@ -3640,18 +3551,14 @@
       else if (e.key === "ArrowDown") nextSel = Math.min(sel + c, view.length - 1);
       else if (e.key === "ArrowUp") nextSel = Math.max(sel - c, 0);
       
-      focusAt(nextSel);
+      focusAt(view, nextSel);
 
       if (e.shiftKey) {
-        const from = Math.min(selectionAnchor, sel);
-        const to = Math.max(selectionAnchor, sel);
-        const next = new Set();
-        for (let i = from; i <= to; i += 1) next.add(view[i].path);
-        selectedPaths = next;
+        selectRange(view, selectionAnchor, sel);
       } else if (e.metaKey || e.ctrlKey) {
         // macOS/Windows pattern: Cmd/Ctrl + Arrow just moves the cursor (sel) without changing selection.
       } else {
-        selectOnly(sel);
+        selectOnly(view, sel);
       }
       
       e.preventDefault();
@@ -3676,7 +3583,7 @@
         // photo and pressing space switched to Develop still showing the
         // previous photo's pixels and recipe under the new photo's name
         // (Francis, 2026-09-22). `handleSpace()` never reads photoPath.
-        if (!selectedPaths.size && !view[sel]) return;
+        if (!selection.paths.size && !view[sel]) return;
         if (!view[sel]?.path) return;
       }
       applyWorkflowResult(controller.handleSpace());
@@ -3686,11 +3593,10 @@
     // Toggle selection with space when holding Cmd/Ctrl (like macOS Finder)
     else if (e.key === " " && (e.metaKey || e.ctrlKey)) {
       if (view[sel]) {
-        const next = new Set(selectedPaths);
-        if (next.has(view[sel].path)) next.delete(view[sel].path);
-        else next.add(view[sel].path);
-        selectedPaths = next;
-        anchorPath = view[sel].path;
+        toggleSelected(view[sel].path);
+        // The toggled photo becomes the anchor, so a following shift-arrow
+        // extends from it.
+        setAnchor(view[sel].path);
       }
       e.preventDefault();
       return;
@@ -4384,7 +4290,7 @@
           onGardenSignOut={gardenSignOut}
           onOpenUrl={openUrl}
           onMovePhotos={movePhotos}
-          selectedCount={selectedPaths.size || (view[sel] ? 1 : 0)}
+          selectedCount={selection.paths.size || (view[sel] ? 1 : 0)}
           onMoveSelectedPhotos={moveSelectedPhotosToDir}
           onRenameDir={renameDir}
           onCreateFolder={createFolder}
@@ -4447,7 +4353,7 @@
             onGardenSignOut={gardenSignOut}
             onOpenUrl={openUrl}
             onMovePhotos={movePhotos}
-            selectedCount={selectedPaths.size || (view[sel] ? 1 : 0)}
+            selectedCount={selection.paths.size || (view[sel] ? 1 : 0)}
             onMoveSelectedPhotos={moveSelectedPhotosToDir}
             onRenameDir={renameDir}
             onCreateFolder={createFolder}
@@ -4640,7 +4546,7 @@
               class="rail-btn"
               onclick={exportSelection}
               disabled={!!progress}
-              title={selectedPaths.size > 1 ? (selectedPaths.size === view.length ? `Export all photos (${view.length}) (r)` : `Export the ${selectedPaths.size} selected photos (r)`) : `Export the selected photo (r)`}
+              title={selection.paths.size > 1 ? (selection.paths.size === view.length ? `Export all photos (${view.length}) (r)` : `Export the ${selection.paths.size} selected photos (r)`) : `Export the selected photo (r)`}
             >
               <Icon name="export" size="12px" />
             </button>
@@ -4777,7 +4683,7 @@
           {view}
           {loading}
           {sel}
-          {selectedPaths}
+          selectedPaths={selection.paths}
           {storySet}
           {layout}
           {cols}
@@ -4808,7 +4714,7 @@
     </div>
     <ContextMenu
       {photoMenu}
-      {selectedPaths}
+      selectedPaths={selection.paths}
       {installedEditors}
       {copiedRecipe}
       {storySet}
