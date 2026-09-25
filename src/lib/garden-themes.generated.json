@@ -323,23 +323,6 @@
       ]
     },
     {
-      "id": "technical",
-      "label": "Technical",
-      "darkBackground": "#1d2027",
-      "darkAccent": "#8b7ec8",
-      "fontHeader": "Monosten",
-      "fontText": "Courier Prime",
-      "fontPackages": [
-        "berkeley-mono",
-        "courier-prime",
-        "futura-now",
-        "gorton-perfected",
-        "ibm-plex",
-        "jetbrains-mono",
-        "monosten"
-      ]
-    },
-    {
       "id": "venetian",
       "label": "Venetian",
       "darkBackground": "#1c120a",
