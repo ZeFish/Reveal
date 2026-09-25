@@ -1,6 +1,6 @@
 {
   "name": "reveal",
-  "version": "2.0.22",
+  "version": "2.0.23",
   "private": true,
   "description": "Reveal — personal photography app (Tauri 2 + Rust + wgpu + Svelte 5)",
   "type": "module",
@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@stnd/fonts": "^0.5.1",
-    "@stnd/styles": "^0.10.6",
+    "@stnd/styles": "^0.10.7",
     "@stnd/ui": "^0.6.6",
     "@tauri-apps/api": "^2.11.1"
   },
