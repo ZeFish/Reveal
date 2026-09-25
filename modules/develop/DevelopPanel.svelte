@@ -277,7 +277,7 @@
 
   .din {
     font-family: var(--font-header, sans-serif);
-    font-size: var(--size-xs);
+    font-size: var(--scale-d3);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);

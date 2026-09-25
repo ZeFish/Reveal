@@ -112,7 +112,7 @@
     padding: 0.15rem 0.4rem;
     background: var(--color-surface-high, #27272a);
     border: 1px solid var(--color-border, rgba(255, 255, 255, 0.15));
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
   }
 </style>

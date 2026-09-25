@@ -72,7 +72,7 @@
   /* Quiet capsule buttons, app-wide (the Swift control language). */
   :global(button) {
     font-family: var(--font-monospace, monospace);
-    font-size: var(--size);
+    font-size: var(--scale);
     letter-spacing: 0.05em;
     text-transform: uppercase;
     color: var(--color-foreground);

@@ -340,7 +340,7 @@
 
   .din {
     font-family: var(--font-header, sans-serif);
-    font-size: var(--size-xs);
+    font-size: var(--scale-d3);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
@@ -375,7 +375,7 @@
     flex: 1;
     min-width: 0;
     font-family: var(--font-text, sans-serif);
-    font-size: var(--size-xs);
+    font-size: var(--scale-d3);
     padding: 7px 9px;
   }
   .save-btn {
@@ -422,7 +422,7 @@
   }
   .empty-text {
     font-family: var(--font-text, sans-serif);
-    font-size: var(--size-xs);
+    font-size: var(--scale-d3);
     color: color-mix(in srgb, var(--color-foreground) 45%, transparent);
     line-height: 1.4;
     text-align: center;

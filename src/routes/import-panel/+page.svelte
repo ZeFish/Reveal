@@ -455,7 +455,7 @@
   .progress-bar {
     height: 6px;
     background: rgba(255, 255, 255, 0.1);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
     overflow: hidden;
     margin-bottom: 6px;
   }
@@ -463,7 +463,7 @@
   .progress-fill {
     height: 100%;
     background: var(--color-accent);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
     transition: width 0.1s linear;
   }
 
@@ -583,7 +583,7 @@
     opacity: 0.4;
     cursor: not-allowed;
   }
-  
+
   .empty {
     justify-content: center;
     align-items: center;

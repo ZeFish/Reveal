@@ -1362,7 +1362,7 @@
     cursor: pointer;
     line-height: 1;
     font-family: var(--font-header, sans-serif);
-    font-size: var(--size-xs);
+    font-size: var(--scale-d3);
     letter-spacing: 0.12em;
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
   }
@@ -1421,7 +1421,7 @@
   }
   .lib-label {
     font-family: var(--font-header, sans-serif);
-    font-size: var(--size-xs);
+    font-size: var(--scale-d3);
     font-weight: var(--font-weight-bold);
     color: var(--color-foreground);
     white-space: nowrap;
@@ -1460,7 +1460,7 @@
     width: var(--trail);
     height: 14px;
     flex-shrink: 0;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
   }
   .add-btn:hover {
@@ -1501,7 +1501,7 @@
   }
   .section-name {
     font-family: var(--font-header, sans-serif);
-    font-size: var(--size-xs);
+    font-size: var(--scale-d3);
     font-weight: var(--font-weight-bold);
     color: var(--color-foreground);
     white-space: nowrap;
@@ -1550,11 +1550,11 @@
     flex: 1;
     min-width: 0;
     font-family: var(--font-text, sans-serif);
-    font-size: var(--size-xs);
+    font-size: var(--scale-d3);
     color: var(--color-foreground);
     background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-accent) 50%, transparent);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
     padding: 1px 4px;
   }
   .disc {
@@ -1598,7 +1598,7 @@
 
   .dir-name {
     font-family: var(--font-text, sans-serif);
-    font-size: var(--size-xs);
+    font-size: var(--scale-d3);
     color: var(--color-muted);
     white-space: nowrap;
     overflow: hidden;
@@ -1658,7 +1658,7 @@
     align-items: center;
     justify-content: space-between;
     font-family: var(--font-header, sans-serif);
-    font-size: var(--size-xs);
+    font-size: var(--scale-d3);
     font-weight: var(--font-weight-bold);
     color: var(--color-foreground);
   }
@@ -1667,7 +1667,7 @@
   }
   .lib-note {
     font-family: var(--font-text, sans-serif);
-    font-size: var(--size-xs);
+    font-size: var(--scale-d3);
     color: var(--color-foreground);
     background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
     border: 1px solid var(--color-border);
@@ -1682,7 +1682,7 @@
     align-items: center;
     gap: 4px;
     font-family: var(--font-text, sans-serif);
-    font-size: var(--size-xs);
+    font-size: var(--scale-d3);
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
   }
   .lib-open-note:hover {
@@ -1732,7 +1732,7 @@
     gap: 8px;
     min-width: 0;
     font-family: var(--font-text, sans-serif);
-    font-size: var(--size-xs);
+    font-size: var(--scale-d3);
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
   }
   .account-id:hover {
@@ -1769,7 +1769,7 @@
   }
   .pop-title {
     font-family: var(--font-header, sans-serif);
-    font-size: var(--size-xs);
+    font-size: var(--scale-d3);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
@@ -1788,7 +1788,7 @@
   }
   .pop-key {
     font-family: var(--font-monospace, monospace);
-    font-size: var(--size-xs);
+    font-size: var(--scale-d3);
     color: var(--color-foreground);
     background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
     border: 1px solid var(--color-border);
@@ -1809,7 +1809,7 @@
     background: var(--color-foreground);
     color: var(--color-surface-high);
     font-family: var(--font-header, sans-serif);
-    font-size: var(--size-xs);
+    font-size: var(--scale-d3);
     letter-spacing: 0.12em;
     text-transform: uppercase;
   }
@@ -1835,7 +1835,7 @@
     all: unset;
     cursor: pointer;
     font-family: var(--font-header, sans-serif);
-    font-size: var(--size-xs);
+    font-size: var(--scale-d3);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--color-accent);

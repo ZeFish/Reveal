@@ -5236,6 +5236,12 @@
   .app.themed {
     --color-surface: color-mix(in srgb, var(--color-foreground) 3%, var(--color-background));
     --color-border: color-mix(in srgb, var(--color-foreground) 14%, transparent);
+    --color-surface-light-1: color-mix(in srgb, white 4%, var(--color-background));
+    --color-surface-light-2: color-mix(in srgb, white 9%, var(--color-background));
+    --color-surface-light-3: color-mix(in srgb, white 16%, var(--color-background));
+    --color-surface-dark-1: color-mix(in srgb, black 4%, var(--color-background));
+    --color-surface-dark-2: color-mix(in srgb, black 9%, var(--color-background));
+    --color-surface-dark-3: color-mix(in srgb, black 16%, var(--color-background));
     --color-surface-low: color-mix(in srgb, var(--color-foreground) 3%, var(--color-surface));
     --color-surface-lowest: color-mix(in srgb, var(--color-foreground) 3%, var(--color-surface-low));
     --color-surface-lower: color-mix(in srgb, var(--color-foreground) 3%, transparent);
@@ -5487,7 +5493,7 @@
     cursor: pointer;
     line-height: 1;
     font-family: var(--font-header, sans-serif);
-    font-size: var(--size-xs);
+    font-size: var(--scale-d3);
     letter-spacing: 0.12em;
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
   }
@@ -5512,7 +5518,7 @@
     width: auto;
     gap: 3px;
     padding: 1px 4px;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
   }
   .rail-badge {
     font-family: var(--font-monospace, monospace);
@@ -5526,7 +5532,7 @@
   }
   .frame-count {
     font-family: var(--font-monospace, monospace);
-    font-size: var(--size-xs);
+    font-size: var(--scale-d3);
     text-transform: uppercase;
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
     flex-shrink: 0;
@@ -5541,7 +5547,7 @@
     cursor: pointer;
     flex-shrink: 0;
     font-family: var(--font-monospace, monospace);
-    font-size: var(--size-xs);
+    font-size: var(--scale-d3);
     letter-spacing: 0.02em;
     line-height: 1;
     text-transform: uppercase;
@@ -5607,7 +5613,7 @@
     padding: 3px 0;
     border-radius: var(--radius);
     font-family: var(--font-monospace, monospace);
-    font-size: var(--size-xs);
+    font-size: var(--scale-d3);
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
   }
   .pop-chip.on {
@@ -5631,7 +5637,7 @@
     width: 20px;
     height: 20px;
     object-fit: cover;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
     flex-shrink: 0;
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-foreground) 15%, transparent);
   }
@@ -5668,7 +5674,7 @@
     justify-content: center;
     width: 14px;
     height: 14px;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
   }
   .chip-stop:hover {
@@ -5908,7 +5914,7 @@
     background: var(--color-surface-low);
     color: var(--color-foreground);
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
     padding: 0.4rem 0.8rem;
     font-size: 0.72rem;
     font-family: var(--font-header, sans-serif);
@@ -6031,7 +6037,7 @@
   }
   .modal-footer button {
     padding: 0.4rem 1.2rem;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
     font-size: 0.72rem;
     font-family: var(--font-header, sans-serif);
     background: var(--color-accent);
@@ -6090,7 +6096,7 @@
     width: 100%;
     height: 4px;
     background: var(--color-background);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
     overflow: hidden;
   }
   .progress-fill {
@@ -6130,7 +6136,7 @@
     background: var(--color-surface-low);
     color: var(--color-foreground);
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
     padding: 0.3rem 0.5rem;
     font-size: 0.68rem;
     font-family: var(--font-header, sans-serif);

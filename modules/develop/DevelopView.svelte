@@ -982,7 +982,7 @@
     transform: translateX(-50%);
     width: 24px;
     height: 4px;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
     cursor: ns-resize;
   }
   .crop-handle.handle-s {
@@ -991,7 +991,7 @@
     transform: translateX(-50%);
     width: 24px;
     height: 4px;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
     cursor: ns-resize;
   }
   .crop-handle.handle-w {
@@ -1000,7 +1000,7 @@
     transform: translateY(-50%);
     width: 4px;
     height: 24px;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
     cursor: ew-resize;
   }
   .crop-handle.handle-e {
@@ -1009,7 +1009,7 @@
     transform: translateY(-50%);
     width: 4px;
     height: 24px;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
     cursor: ew-resize;
   }
 

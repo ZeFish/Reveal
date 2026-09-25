@@ -142,7 +142,7 @@
 
   .din {
     font-family: var(--font-header, sans-serif);
-    font-size: var(--size-xs);
+    font-size: var(--scale-d3);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
@@ -170,7 +170,7 @@
     cursor: pointer;
     box-sizing: border-box;
     font-family: var(--font-text, sans-serif);
-    font-size: var(--size-xs);
+    font-size: var(--scale-d3);
     text-align: center;
     padding: 6px 8px;
     border-radius: var(--radius);
@@ -198,7 +198,7 @@
 
   .val-mono {
     font-family: var(--font-monospace, monospace);
-    font-size: var(--size-xs);
+    font-size: var(--scale-d3);
     width: 36px;
     text-align: right;
     color: color-mix(in srgb, var(--color-foreground) 85%, transparent);
@@ -219,7 +219,7 @@
     justify-content: center;
     gap: 6px;
     font-family: var(--font-text, sans-serif);
-    font-size: var(--size-xs);
+    font-size: var(--scale-d3);
     padding: 8px 12px;
     border-radius: var(--radius);
     background: color-mix(in srgb, var(--color-foreground) 4%, transparent);

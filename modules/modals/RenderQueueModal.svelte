@@ -96,7 +96,7 @@
     background: rgba(229, 115, 115, 0.2);
     border: 1px solid var(--color-accent);
     color: var(--color-accent);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
     cursor: pointer;
   }
   .queue-cancel:hover {
@@ -158,7 +158,7 @@
   .queue-progress-bar {
     height: 4px;
     background: rgba(255, 255, 255, 0.1);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
     overflow: hidden;
   }
   .progress-fill {

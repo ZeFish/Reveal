@@ -186,7 +186,7 @@
     align-items: center;
     gap: 8px;
     padding: 6px 10px;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
     background: var(--color-surface-low);
     border: 1px solid var(--color-border);
     transition: all 0.15s var(--ease-soft);

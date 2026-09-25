@@ -49,7 +49,7 @@
     border: 1px solid var(--color-accent);
     background: transparent;
     padding: 0.4rem 1rem;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
     cursor: pointer;
   }
   .publish-btn:disabled {

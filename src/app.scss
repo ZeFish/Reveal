@@ -49,12 +49,12 @@
 }
 .seg-btn.on {
   color: var(--color-foreground);
-  background: var(--color-surface-highest);
+  background: var(--color-surface-light-3);
   box-shadow: var(--shadow);
 }
 .seg-btn:not(.on):not(:disabled):hover {
   color: var(--color-foreground);
-  background: var(--color-surface-lowest);
+  background: var(--color-surface-dark-1);
 }
 .seg-btn:disabled {
   cursor: default;
