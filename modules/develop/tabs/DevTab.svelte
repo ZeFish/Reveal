@@ -1,6 +1,6 @@
 <script>
   import EngineRunner from "@modules/develop/EngineRunner.svelte";
-  import { DEFAULT_PHOTO_SIZE } from "$lib/session.js";
+  import { DEFAULT_PHOTO_SIZE, PHOTO_SIZE_MIN, PHOTO_SIZE_MAX } from "$lib/session.js";
   import Scopes from "@modules/develop/Scopes.svelte";
 
   let {
@@ -39,10 +39,11 @@
       <span class="din frow-label">Photo Size</span>
       <input
         type="range"
-        min="40"
-        max="200"
+        min={PHOTO_SIZE_MIN}
+        max={PHOTO_SIZE_MAX}
         step="5"
         value={photoScale}
+        style="--f: {((photoScale - PHOTO_SIZE_MIN) / (PHOTO_SIZE_MAX - PHOTO_SIZE_MIN)) * 100}%"
         oninput={(e) => {
           photoScale = Number(e.currentTarget.value);
           onPhotoScaleChanged(photoScale);

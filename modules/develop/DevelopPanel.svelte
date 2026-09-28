@@ -176,20 +176,20 @@
     </header>
 
     <!-- TAB BAR -->
-    <div class="tab-bar">
-      <button class="tab-btn" class:active={activeTab === 'dev'} onclick={() => activeTab = 'dev'} title="Dev" aria-label="Dev">
+    <div class="tab-bar seg" role="tablist" aria-label="Develop panel">
+      <button class="seg-btn" class:on={activeTab === 'dev'} role="tab" aria-selected={activeTab === 'dev'} onclick={() => activeTab = 'dev'} title="Dev" aria-label="Dev">
         <Icon name="sliders-horizontal" size="14px" />
       </button>
-      <button class="tab-btn" class:active={activeTab === 'crop'} onclick={() => activeTab = 'crop'} title="Crop" aria-label="Crop">
+      <button class="seg-btn" class:on={activeTab === 'crop'} role="tab" aria-selected={activeTab === 'crop'} onclick={() => activeTab = 'crop'} title="Crop" aria-label="Crop">
         <Icon name="crop" size="14px" />
       </button>
-      <button class="tab-btn" class:active={activeTab === 'preset'} onclick={() => activeTab = 'preset'} title="Presets" aria-label="Presets">
+      <button class="seg-btn" class:on={activeTab === 'preset'} role="tab" aria-selected={activeTab === 'preset'} onclick={() => activeTab = 'preset'} title="Presets" aria-label="Presets">
         <Icon name="stack-simple" size="14px" />
       </button>
-      <button class="tab-btn" class:active={activeTab === 'info'} onclick={() => activeTab = 'info'} title="Editorial" aria-label="Editorial">
+      <button class="seg-btn" class:on={activeTab === 'info'} role="tab" aria-selected={activeTab === 'info'} onclick={() => activeTab = 'info'} title="Editorial" aria-label="Editorial">
         <Icon name="newspaper" size="14px" />
       </button>
-      <button class="tab-btn" class:active={activeTab === 'export'} onclick={() => activeTab = 'export'} title="Export" aria-label="Export">
+      <button class="seg-btn" class:on={activeTab === 'export'} role="tab" aria-selected={activeTab === 'export'} onclick={() => activeTab = 'export'} title="Export" aria-label="Export">
         <Icon name="download-simple" size="14px" />
       </button>
     </div>
@@ -355,41 +355,11 @@
     flex-shrink: 0;
   }
 
+  /* The tab bar is the app's segmented control (.seg / .seg-btn in
+     app.scss) — the same control as the engine switch and Frames /
+     Editorial, so the three can't drift. This only places it. */
   .tab-bar {
-    display: flex;
-    gap: 3px;
     margin: 0 12px 8px;
-    padding: 2px;
-    background: color-mix(in srgb, var(--color-foreground) 3.5%, transparent);
-    border-radius: var(--radius-sm, 4px);
-  }
-  /* Height is 1 line of the app's own text (font-size × line-height), not
-     padding — the same vertical-rhythm unit every other compact control in
-     this dev panel now shares (the segmented engine switch's .seg-btn, in
-     DevTab.svelte), so a row of icon buttons and a row of text pills read
-     as the same size instead of each accumulating its own padding-derived
-     height. calc() off the app's own tokens rather than the 1rlh unit —
-     this WebView doesn't appear to support rlh, so it silently fell back
-     to intrinsic content sizing (~26px) instead of the intended ~16px. */
-  .tab-btn {
-    all: unset;
-    cursor: pointer;
-    flex: 1;
-    height: calc(var(--font-text-size) * var(--line-height));
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 3px;
-    color: color-mix(in srgb, var(--color-foreground) 50%, transparent);
-    transition: color var(--duration-fast) var(--ease-soft), background var(--duration-fast) var(--ease-soft), box-shadow var(--duration-fast) var(--ease-soft);
-  }
-  .tab-btn:hover {
-    color: var(--color-foreground);
-  }
-  .tab-btn.active {
-    color: var(--color-foreground);
-    background: var(--color-surface-high);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
   }
 
   .pane-scroll {

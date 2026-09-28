@@ -1074,6 +1074,7 @@
                   max="1.8"
                   step="0.005"
                   value={previewFontRatio}
+                  style="--f: {((previewFontRatio - 1.05) / (1.8 - 1.05)) * 100}%"
                   oninput={(e) => applyTheme({ fontRatio: e.currentTarget.value })}
                   disabled={!curDir}
                 />

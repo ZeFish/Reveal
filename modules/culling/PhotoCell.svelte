@@ -203,11 +203,13 @@
       </div>
     {/if}
 
-    <!-- Hover caption — the theme's own deepest surface as scrim, its
-         foreground as text, the name centred under the print. -->
-    <div class="caption-overlay">
-      <span class="name">{stem(name)}</span>
     </div>
+    <!-- The file name sits UNDER the card, in the gap between rows, not over
+         the photo (Francis, 2026-09-28): a label on the print hid the part
+         of the frame you were looking at. Outside .print so its clip does
+         not apply; the card itself no longer clips. -->
+    <div class="caption">
+      <span class="name">{stem(name)}</span>
     </div>
   </div>
 </div>
@@ -264,7 +266,8 @@
     width: 100%;
     height: 100%;
     position: relative;
-    overflow: hidden;
+    /* No overflow: hidden — .print clips the photo to its own concentric
+       corner, and the caption hangs below the card. */
     box-sizing: border-box;
     /* The mat around the print: padding in the mat colour, not a border —
        the hairline edge comes from the shadow. */
@@ -408,32 +411,32 @@
   /* Just tall enough to seat the caption — not a wash over half the photo.
      Toned from the theme's deepest surface, with its foreground on top, so
      the scrim follows light and dark instead of always being black. */
-  .caption-overlay {
+  /* Below the card, centred on it, in the row gap. Shown on hover, as
+     before; the lifted cell stays above the next row so the line is never
+     covered. */
+  .caption {
     position: absolute;
-    bottom: 0;
+    top: 100%;
     left: 0;
     right: 0;
-    z-index: 10;
-    background: linear-gradient(
-      to top,
-      var(--color-surface-high),
-      transparent
-    );
-    padding: 18px 8px 8px;
+    margin-top: var(--space-d4);
     display: flex;
-    flex-direction: column;
-    align-items: center;
+    justify-content: center;
     pointer-events: none;
     opacity: 0;
-    transition: all var(--transition-fast);
+    transition: opacity var(--transition-fast);
   }
-  .cell:hover .caption-overlay {
+  .cell:hover {
+    z-index: 6;
+  }
+  .cell:hover .caption {
     opacity: 1;
   }
-  .caption-overlay .name {
+  .caption .name {
     font-family: var(--font-text, sans-serif);
-    font-size: 10px;
-    color: var(--color-foreground);
+    font-size: var(--size-2xs);
+    line-height: 1;
+    color: var(--color-muted);
     max-width: 100%;
     white-space: nowrap;
     overflow: hidden;

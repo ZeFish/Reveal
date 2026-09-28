@@ -77,6 +77,7 @@
         max="45"
         step="0.5"
         value={recipe?.crop_angle ?? 0}
+        style="--f: {(((recipe?.crop_angle ?? 0) + 45) / 90) * 100}%"
         oninput={(e) => setAngle(e.currentTarget.value)}
       />
       <span class="val-mono">{recipe?.crop_angle ?? 0}°</span>
