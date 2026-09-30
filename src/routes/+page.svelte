@@ -979,6 +979,14 @@
           }
         }
       });
+      // A freshly imported photo's developed preview just landed on disk:
+      // stamp its frame with that version so the grid swaps the camera thumb
+      // for the real render without waiting for the next folder refresh.
+      on("import-preview-ready", (e) => {
+        const { dest, version } = e.payload ?? {};
+        const frame = library.frames.find((f) => f.path === dest);
+        if (frame && version) frame.previewVersion = version;
+      });
       on("import-started", (e) => {
         setProgress({ verb: "import", done: 0, total: 1, current: "Starting..." });
         importedByFolder = new Map();

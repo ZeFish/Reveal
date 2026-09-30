@@ -17,6 +17,7 @@ pub(crate) async fn find_cards() -> Vec<reveal_import::Card> {
 pub(crate) async fn import_card(
     app: tauri::AppHandle,
     index_state: tauri::State<'_, IndexState>,
+    engine_state: tauri::State<'_, EngineState>,
     import_state: tauri::State<'_, ImportState>,
     cancel_state: tauri::State<'_, ImportCancelState>,
     dcim: String,
@@ -83,8 +84,45 @@ pub(crate) async fn import_card(
     let dcim_key = dcim.clone();
     let app_for_worker = app.clone();
     let idx = index_state.0.clone();
+    let engine = engine_state.0.clone();
     let worker = tauri::async_runtime::spawn_blocking(move || {
         let sources = reveal_import::collect_raws(std::path::Path::new(&dcim));
+        // Develops the durable `.preview.jpg` for each photo while the next
+        // one is still copying. One worker, fed as files land: the copy loop
+        // never waits on a render, and renders never pile up concurrently.
+        let (preview_tx, preview_rx) = std::sync::mpsc::channel::<(String, String, String)>();
+        let preview_worker = {
+            let app = app_for_worker.clone();
+            let recipe = default_import_recipe.clone().unwrap_or_default();
+            std::thread::spawn(move || {
+                for (card_path, dest_path, dest_dir) in preview_rx {
+                    // Decode from the card — mounted and fast right now —
+                    // and publish next to the archived copy.
+                    let rendered = match engine.develop_jpeg(
+                        std::path::Path::new(&card_path),
+                        &recipe,
+                        DURABLE_PREVIEW_EDGE,
+                    ) {
+                        Ok(out) => out,
+                        Err(e) => {
+                            eprintln!("import: aperçu de {dest_path} : {e:#}");
+                            continue;
+                        }
+                    };
+                    let version = write_preview_sidecar_bytes(
+                        &app,
+                        &dest_path,
+                        &rendered.jpeg,
+                        true,
+                        DURABLE_PREVIEW_EDGE,
+                    );
+                    let _ = app.emit(
+                        "import-preview-ready",
+                        serde_json::json!({ "dest": dest_path, "destDir": dest_dir, "version": version }),
+                    );
+                }
+            })
+        };
         let mut report = |done: usize, total: usize, current: &str, path: &str, dest_path: &str, dest_dir: &str| {
             // Apply the default preset the moment a photo lands, before the
             // grid/index even has a chance to show it — so it never has a
@@ -115,6 +153,9 @@ pub(crate) async fn import_card(
                     );
                 }
             }
+            if !dest_path.is_empty() {
+                let _ = preview_tx.send((path.to_string(), dest_path.to_string(), dest_dir.to_string()));
+            }
             if !dest_dir.is_empty() {
                 let _ = idx.scan_subtree_with(std::path::Path::new(dest_dir), |_, _| {});
             }
@@ -138,7 +179,13 @@ pub(crate) async fn import_card(
             &cancel,
             &mut report,
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string());
+        // Previews read from the card, so it stays busy until they're all
+        // out; the HUD only reports "finished" (and eject only follows) once
+        // the last one is published.
+        drop(preview_tx);
+        let _ = preview_worker.join();
+        let stats = stats?;
         eprintln!(
             "import: {} copiés, {} skippés, {} échoués, {} Mo, {} ms{}",
             stats.copied,
