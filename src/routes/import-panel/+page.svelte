@@ -267,9 +267,7 @@
           </div>
           {#if progress}
             <div class="progress-container">
-              <div class="progress-bar">
-                <div class="progress-fill" style="width: {pct}%"></div>
-              </div>
+              <progress value={pct} max="100"></progress>
               <div class="progress-text">
                 <span>{Math.round(pct)}%</span>
                 <span class="file-name" title={progress.current}>{progress.current || "..."}</span>
@@ -329,7 +327,7 @@
         <p class="status-text">{idleCard.raw_count} RAWs disponibles</p>
         <div class="footer-row">
           <div></div>
-          <button class="ghost-cancel-btn" onclick={() => { getCurrentWindow().hide(); invoke("show_main_window"); }}>
+          <button class="ghost-cancel-btn" onclick={() => { getCurrentWindow().hide(); invoke("reveal_main_window"); }}>
             Ouvrir Reveal
           </button>
         </div>
@@ -361,7 +359,7 @@
   .panel-wrapper {
     width: 100%;
     height: 100%;
-    padding: 6px;
+    padding: var(--space-d3);
     box-sizing: border-box;
     display: flex;
     background: transparent;
@@ -436,44 +434,19 @@
     margin-bottom: 12px;
   }
 
-  .title {
-    font-weight: 600;
-    font-size: 13px;
-    letter-spacing: 0.02em;
-  }
-
   .subtitle {
-    font-size: 11px;
     opacity: 0.6;
-    font-family: var(--font-monospace, SFMono-Regular, Consolas, monospace);
   }
 
   .progress-container {
     margin-bottom: 12px;
   }
 
-  .progress-bar {
-    height: 6px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: var(--radius);
-    overflow: hidden;
-    margin-bottom: 6px;
-  }
-
-  .progress-fill {
-    height: 100%;
-    background: var(--color-accent);
-    border-radius: var(--radius);
-    transition: width 0.1s linear;
-  }
-
   .progress-text {
     display: flex;
     align-items: baseline;
-    gap: 8px;
-    font-size: 10px;
+    gap: var(--space-d2);
     opacity: 0.6;
-    font-family: var(--font-text, sans-serif);
   }
 
   .file-name {
@@ -485,54 +458,48 @@
   }
 
   .status-text {
-    font-size: 12px;
     opacity: 0.8;
-    margin: 4px 0;
+    margin: var(--space-d4) 0;
     flex: 1;
-    font-family: var(--font-text, sans-serif);
   }
 
   /* The destination folder name under the progress bar — small, mono,
      ellipsized, with the full path on hover. Answers "where is this going?" */
   .dest-text {
-    font-size: 10px;
     opacity: 0.55;
-    margin: 4px 0 0;
-    font-family: var(--font-monospace, SFMono-Regular, Consolas, monospace);
+    margin: var(--space-d4) 0 0;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
   .success {
-    color: #4CAF50;
+    color: var(--color-green);
   }
 
   .error {
-    color: #E57373;
+    color: var(--color-red);
   }
 
   /* Title row with a leading icon (importing / finished outcome states). */
   .with-icon {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-d3);
   }
 
   /* The done/total count in the importing header — mono, dimmed, like the
      Swift HUD's `\(done)/\(total)`. */
   .count {
-    font-size: 11px;
     opacity: 0.6;
-    font-family: var(--font-monospace, SFMono-Regular, Consolas, monospace);
   }
 
   /* Outcome icon tints — success green, failure red, stopped neutral. */
   .panel :global(.icon-ok) {
-    color: #4CAF50;
+    color: var(--color-green);
   }
   .panel :global(.icon-warn) {
-    color: #E57373;
+    color: var(--color-red);
   }
   .panel :global(.icon-stopped) {
     color: #e5e5e5;
@@ -543,7 +510,6 @@
      width doesn't jitter as the number changes. The .file-name flexes to
      fill the space between the % and the ETA. */
   .eta {
-    font-family: var(--font-monospace, SFMono-Regular, Consolas, monospace);
     font-variant-numeric: tabular-nums;
     flex-shrink: 0;
   }
@@ -558,25 +524,9 @@
   }
 
   .ghost-cancel-btn {
-    all: unset;
     cursor: pointer;
-    font-family: var(--font-header, sans-serif);
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.55);
-    transition: color 0.15s var(--ease-standard);
     flex-shrink: 0;
     pointer-events: auto;
-  }
-
-  .ghost-cancel-btn:hover:not(:disabled) {
-    color: #E57373;
-  }
-
-  .ghost-cancel-btn.eject:hover:not(:disabled) {
-    color: #8bb4e6;
   }
 
   .ghost-cancel-btn:disabled {
@@ -588,6 +538,5 @@
     justify-content: center;
     align-items: center;
     opacity: 0.4;
-    font-size: 12px;
   }
 </style>

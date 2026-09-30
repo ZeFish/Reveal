@@ -13,19 +13,12 @@
 </script>
 
 {#if message}
-  <div class="toast" role="status">{message}</div>
+  <div class="toast hud" role="status">{message}</div>
 {/if}
 
 <style>
   .toast {
     max-width: min(32rem, calc(100vw - 2rem));
-    padding: 5px 12px;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--color-surface-high, #18181b) 92%, transparent);
-    box-shadow: var(--shadow-raised), var(--shadow-lift);
-    color: var(--color-foreground, #f4f4f5);
-    font-family: var(--font-monospace, monospace);
-    font-size: 10px;
     text-align: center;
     overflow: hidden;
     text-overflow: ellipsis;

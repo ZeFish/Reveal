@@ -19,7 +19,7 @@ pub struct RankedResult {
     pub score: f64,
 }
 
-pub trait VisionRanker {
+pub trait VisionRanker: Sync {
     /// Score one batch of images (already sized to fit one request) and
     /// return a result per input image, in any order.
     fn rank_batch(&self, candidates: &[RankCandidate]) -> Result<Vec<RankedResult>, CullError>;
@@ -44,9 +44,33 @@ pub fn rank_all(
     batch_size: usize,
     target: usize,
 ) -> Result<Vec<RankedResult>, CullError> {
+    // Each batch is one HTTP round trip of several seconds, and they don't
+    // depend on each other — sent one after another, four batches cost four
+    // latencies. A few at once, not all: a handful is plenty to hide the wait
+    // without tripping a provider's rate limit.
+    const CONCURRENT_BATCHES: usize = 3;
+    let batches: Vec<&[RankCandidate]> = candidates.chunks(batch_size.max(1)).collect();
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let results = std::sync::Mutex::new(Vec::<Result<Vec<RankedResult>, CullError>>::new());
+    std::thread::scope(|scope| {
+        for _ in 0..CONCURRENT_BATCHES.min(batches.len()) {
+            scope.spawn(|| loop {
+                let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let Some(batch) = batches.get(i) else { break };
+                let outcome = ranker.rank_batch(batch);
+                let failed = outcome.is_err();
+                results.lock().unwrap().push(outcome);
+                if failed {
+                    // No point sending the rest of a run that already failed.
+                    next.store(batches.len(), std::sync::atomic::Ordering::Relaxed);
+                    break;
+                }
+            });
+        }
+    });
     let mut all_results: Vec<RankedResult> = Vec::with_capacity(candidates.len());
-    for batch in candidates.chunks(batch_size.max(1)) {
-        all_results.extend(ranker.rank_batch(batch)?);
+    for outcome in results.into_inner().unwrap() {
+        all_results.extend(outcome?);
     }
     all_results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
     all_results.truncate(target);

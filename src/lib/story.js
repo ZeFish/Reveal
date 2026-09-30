@@ -106,12 +106,21 @@ export function parseStory(content) {
         if (s.toLowerCase().startsWith("[!caption]")) {
           s = s.slice("[!caption]".length).trim();
         }
-        caption += (caption ? " " : "") + s;
+        // `> [!caption] text` (the text as the callout's title, how older
+        // notes were written) and `> [!caption]` + `> text` (as its body) read
+        // the same.
+        if (s) caption += (caption ? " " : "") + s;
         j++;
       }
-      // By default, every photo is separated on its own row/line
-      blocks.push({ id: nextId(), isPhoto: true, stem: stemOf(inner), text: caption, rowBreak: true });
-      rowOpen = false;
+      // Flush embeds — no blank line, no caption between — are ONE row: that
+      // adjacency is exactly how a grouped row is written to the file, so it
+      // must be read back as one. (Reading every embed as its own row threw
+      // the grouping away on reload, and the next save wrote a blank line
+      // between them for good.) `toggle` in story.rs separates the photos it
+      // adds with a blank line, so quick-collection marks stay separate rows.
+      const rowBreak = !rowOpen || lastWasBlank;
+      blocks.push({ id: nextId(), isPhoto: true, stem: stemOf(inner), text: caption, rowBreak });
+      rowOpen = caption === ""; // a caption closes the flush row
       lastWasBlank = false;
       i = j;
     } else {
@@ -153,7 +162,9 @@ export function serializeStory(frontmatter, blocks) {
         out += embed; // a new row
       }
       if (cap) {
-        out += `\n> [!caption] ${cap}`;
+        // The caption is the callout's BODY, not its title: a title-less
+        // callout, then the text in `> ` lines (what the daily note writes too).
+        out += `\n> [!caption]\n${cap.split("\n").map((l) => `> ${l}`).join("\n")}`;
         rowOpen = false; // the caption closes the row
       } else {
         rowOpen = true;
@@ -197,4 +208,152 @@ export function storyRows(blocks) {
     }
   }
   return rows;
+}
+
+// ---- arranging ---------------------------------------------------------
+// Pure edits on the block list. A photo shares the row above it only when
+// `rowBreak` is false AND the block before it is a captionless photo (a
+// caption, a paragraph or a blank line ends a row in the file), so every edit
+// ends by re-normalizing: the flags can never describe a row the Markdown
+// could not express.
+
+/**
+ * Force `rowBreak` wherever the block before cannot carry a row.
+ * @param {Block[]} blocks
+ * @returns {Block[]}
+ */
+export function normalizeRows(blocks) {
+  return blocks.map((b, i) => {
+    if (!b.isPhoto || b.rowBreak) return b;
+    const prev = i > 0 ? blocks[i - 1] : null;
+    const canJoin = !!prev && prev.isPhoto && (prev.text ?? "").trim() === "";
+    return canJoin ? b : { ...b, rowBreak: true };
+  });
+}
+
+/**
+ * A row has ONE caption, under the row — that is all the Markdown can say: a
+ * `> [!caption]` callout closes the paragraph of images above it, so it sits
+ * below the whole row on the page, never under a single photo of it. Rows are
+ * read from the `rowBreak` flags, every caption of a multi-photo row is gathered
+ * onto its last photo (the one the callout follows in the file), and only then
+ * is the row structure normalized — so giving a photo a caption, or grouping a
+ * captioned photo, no longer splits the row.
+ * @param {Block[]} blocks
+ * @returns {Block[]}
+ */
+export function settleRows(blocks) {
+  const list = blocks.map((b) => ({ ...b }));
+  let i = 0;
+  while (i < list.length) {
+    if (!list[i].isPhoto) {
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j + 1 < list.length && list[j + 1].isPhoto && !list[j + 1].rowBreak) j++;
+    if (j > i) {
+      const captions = [];
+      for (let k = i; k <= j; k++) {
+        const t = (list[k].text ?? "").trim();
+        if (t) captions.push(t);
+        list[k].text = "";
+      }
+      list[j].text = captions.join(" ");
+    }
+    i = j + 1;
+  }
+  return normalizeRows(list);
+}
+
+/**
+ * Take a block out of the list. If it headed a row, the next photo in that
+ * row becomes the head — otherwise it would fall into the row above.
+ * @param {Block[]} blocks
+ * @param {string} id
+ * @returns {{ rest: Block[], moved: Block | null, index: number }}
+ */
+function extract(blocks, id) {
+  const index = blocks.findIndex((b) => b.id === id);
+  if (index < 0) return { rest: blocks, moved: null, index };
+  const list = blocks.map((b) => ({ ...b }));
+  const [moved] = list.splice(index, 1);
+  const next = list[index];
+  if (moved.isPhoto && moved.rowBreak && next?.isPhoto && !next.rowBreak) next.rowBreak = true;
+  return { rest: list, moved, index };
+}
+
+/**
+ * @param {Block[]} blocks
+ * @param {string} id
+ * @returns {Block[]}
+ */
+export function removeBlock(blocks, id) {
+  const { rest, moved } = extract(blocks, id);
+  return moved ? settleRows(rest) : blocks;
+}
+
+/**
+ * Move a block to stand on its own row before `beforeId` (a row's first
+ * block), or to the very end when `beforeId` is null.
+ * @param {Block[]} blocks
+ * @param {string} id
+ * @param {string | null} beforeId
+ * @returns {Block[]}
+ */
+export function moveBlockBefore(blocks, id, beforeId) {
+  if (id === beforeId) return blocks;
+  const { rest, moved } = extract(blocks, id);
+  if (!moved) return blocks;
+  if (moved.isPhoto) moved.rowBreak = true;
+  let at = beforeId ? rest.findIndex((b) => b.id === beforeId) : rest.length;
+  if (at < 0) at = rest.length;
+  rest.splice(at, 0, moved);
+  return settleRows(rest);
+}
+
+/** @typedef {"left" | "right" | "above" | "below"} DropPlace */
+
+/**
+ * Move a block relative to a target block. `left`/`right` put a photo in the
+ * target's row, beside it; `above`/`below` give it a row of its own before or
+ * after the target's whole row. A paragraph is never placed in a row, so it
+ * treats left/right as above/below.
+ * @param {Block[]} blocks
+ * @param {string} id
+ * @param {string} targetId
+ * @param {DropPlace} place
+ * @returns {Block[]}
+ */
+export function moveBlock(blocks, id, targetId, place) {
+  if (id === targetId) return blocks;
+  const { rest, moved } = extract(blocks, id);
+  if (!moved) return blocks;
+  const t = rest.findIndex((b) => b.id === targetId);
+  if (t < 0) return blocks;
+
+  const inRow = moved.isPhoto && rest[t].isPhoto;
+  const side = place === "left" || place === "right" ? (inRow ? place : place === "left" ? "above" : "below") : place;
+
+  let rowStart = t;
+  while (rowStart > 0 && rest[rowStart].isPhoto && !rest[rowStart].rowBreak) rowStart--;
+  let rowEnd = t;
+  while (rowEnd + 1 < rest.length && rest[rowEnd + 1].isPhoto && !rest[rowEnd + 1].rowBreak) rowEnd++;
+
+  if (side === "left") {
+    // Beside the target: take over its place at the head of the row if it had it.
+    moved.rowBreak = rest[t].rowBreak;
+    rest[t].rowBreak = false;
+    rest.splice(t, 0, moved);
+  } else if (side === "right") {
+    moved.rowBreak = false;
+    rest.splice(t + 1, 0, moved);
+  } else if (side === "above") {
+    if (moved.isPhoto) moved.rowBreak = true;
+    rest.splice(rowStart, 0, moved);
+  } else {
+    if (moved.isPhoto) moved.rowBreak = true;
+    rest.splice(rowEnd + 1, 0, moved);
+  }
+  return settleRows(rest);
 }

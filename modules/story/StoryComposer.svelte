@@ -10,7 +10,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { isTauri } from "$lib/api.js";
   import Icon from "$lib/components/Icon.svelte";
-  import { parseStory, serializeStory, storyRows, stemOf } from "$lib/story.js";
+  import { parseStory, serializeStory, storyRows, stemOf, settleRows, removeBlock, moveBlock, moveBlockBefore } from "$lib/story.js";
 
   /**
    * A photo frame shown in the film roll / used for thumbnails.
@@ -38,7 +38,7 @@
   let containerW = $state(900);
   /** @type {string | null} */
   let dragId = $state(null); // block id being dragged
-  /** @type {{ id: string, mode: "before" | "group" | "after" } | null} */
+  /** @type {{ id: string, place: import("$lib/story.js").DropPlace } | null} */
   let dropTarget = $state(null); // photo cell currently a drag target
   /** @type {number | null} */
   let dropGap = $state(null); // gap index currently a break target
@@ -130,8 +130,7 @@
   }
   /** @param {string} id */
   function remove(id) {
-    blocks = blocks.filter((x) => x.id !== id);
-    normalize();
+    blocks = removeBlock(blocks, id);
     commit(true);
   }
   /** @param {string} name */
@@ -144,46 +143,18 @@
   }
 
   /**
-   * Insert a photo stem from the film roll into a specific position as a new row.
+   * A photo from the film roll that is not in the story yet: appended (own
+   * row), ready to be placed like any other block.
    * @param {string} stemName
-   * @param {string | null} beforeId
+   * @returns {string} the id to move — the existing block's when it is already in
    */
-  function insertPhotoAt(stemName, beforeId) {
+  function ensurePhoto(stemName) {
     const s = stem(stemName);
-    const existingIndex = blocks.findIndex((b) => b.isPhoto && b.stem === s);
-    if (existingIndex >= 0) {
-      moveBefore(blocks[existingIndex].id, beforeId);
-      return;
-    }
-    const newBlock = { id: uid("ph"), isPhoto: true, stem: s, text: "", rowBreak: true };
-    const at = beforeId ? blocks.findIndex((b) => b.id === beforeId) : blocks.length;
-    const targetIdx = at < 0 ? blocks.length : at;
-    blocks = [...blocks.slice(0, targetIdx), newBlock, ...blocks.slice(targetIdx)];
-    normalize();
-    commit(true);
-  }
-
-  /**
-   * Group a photo stem from the film roll onto an existing photo cell (side-by-side).
-   * @param {string} stemName
-   * @param {string} targetId
-   */
-  function groupPhotoOnto(stemName, targetId) {
-    const s = stem(stemName);
-    const existingIndex = blocks.findIndex((b) => b.isPhoto && b.stem === s);
-    if (existingIndex >= 0) {
-      groupOnto(blocks[existingIndex].id, targetId);
-      return;
-    }
-    const newBlock = { id: uid("ph"), isPhoto: true, stem: s, text: "", rowBreak: false };
-    const to = blocks.findIndex((b) => b.id === targetId);
-    if (to < 0) {
-      blocks = [...blocks, newBlock];
-    } else {
-      blocks = [...blocks.slice(0, to + 1), newBlock, ...blocks.slice(to + 1)];
-    }
-    normalize();
-    commit(true);
+    const existing = blocks.find((b) => b.isPhoto && b.stem === s);
+    if (existing) return existing.id;
+    const block = { id: uid("ph"), isPhoto: true, stem: s, text: "", rowBreak: true };
+    blocks = [...blocks, block];
+    return block.id;
   }
 
   const proseBlock = () => ({ id: uid("pr"), isPhoto: false, stem: "", text: "", rowBreak: true });
@@ -211,33 +182,17 @@
     normalize();
   }
 
-  // A photo joins the row above only when the block before it is a captionless
-  // photo — otherwise it must start its own row (Swift `normalizeRowBreaks`).
   function normalize() {
-    for (let i = 0; i < blocks.length; i++) {
-      if (!blocks[i].isPhoto) continue;
-      const prev = i > 0 ? blocks[i - 1] : null;
-      const canJoin = prev && prev.isPhoto && (prev.text ?? "").trim() === "";
-      if (!canJoin) blocks[i].rowBreak = true;
-    }
-    blocks = [...blocks];
+    blocks = settleRows(blocks);
   }
 
-  // ---- drag: group onto a photo, or break out at a gap -------------------
+  // ---- drag: beside a photo, or on a row of its own ----------------------
   /**
    * @param {string} id
    * @param {string | null} beforeId
    */
   function moveBefore(id, beforeId) {
-    if (id === beforeId) return;
-    const from = blocks.findIndex((b) => b.id === id);
-    if (from < 0) return;
-    const [moved] = blocks.splice(from, 1);
-    if (moved.isPhoto) moved.rowBreak = true; // its own row
-    let to = beforeId ? blocks.findIndex((b) => b.id === beforeId) : blocks.length;
-    if (to < 0) to = blocks.length;
-    blocks.splice(to, 0, moved);
-    normalize();
+    blocks = moveBlockBefore(blocks, id, beforeId);
     commit(true);
   }
 
@@ -263,21 +218,6 @@
       beforeId = targetRow.type === "prose" ? targetRow.block.id : targetRow.blocks[0].id;
     }
     moveBefore(sourceBlockId, beforeId);
-  }
-  /**
-   * @param {string} id
-   * @param {string} targetId
-   */
-  function groupOnto(id, targetId) {
-    if (id === targetId) return;
-    const from = blocks.findIndex((b) => b.id === id);
-    if (from < 0 || !blocks[from].isPhoto) return;
-    const [moved] = blocks.splice(from, 1);
-    moved.rowBreak = false; // join the target's row
-    const to = blocks.findIndex((b) => b.id === targetId);
-    blocks.splice(to < 0 ? blocks.length : to + 1, 0, moved);
-    normalize();
-    commit(true);
   }
 
   /** @param {string} id */
@@ -349,6 +289,9 @@
   }
 
   /**
+   * Where on a photo the pointer is decides what a drop does: the left or
+   * right third puts the dragged photo BESIDE this one, in its row; the
+   * middle's top or bottom half gives it a row of its own above or below.
    * @param {DragEvent} e
    * @param {string} cellId
    */
@@ -358,19 +301,17 @@
     if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
     if (dragId === cellId) return;
 
-    const el = /** @type {HTMLElement} */ (e.currentTarget);
-    const rect = el.getBoundingClientRect();
+    const rect = /** @type {HTMLElement} */ (e.currentTarget).getBoundingClientRect();
+    const relX = (e.clientX - rect.left) / (rect.width || 1);
     const relY = (e.clientY - rect.top) / (rect.height || 1);
 
-    /** @type {"group" | "before" | "after"} */
-    let mode = "group";
-    if (relY < 0.28) {
-      mode = "before";
-    } else if (relY > 0.72) {
-      mode = "after";
-    }
+    /** @type {import("$lib/story.js").DropPlace} */
+    let place;
+    if (relX < 0.3) place = "left";
+    else if (relX > 0.7) place = "right";
+    else place = relY < 0.5 ? "above" : "below";
 
-    dropTarget = { id: cellId, mode };
+    dropTarget = { id: cellId, place };
     dropGap = null;
   }
 
@@ -381,37 +322,15 @@
   function onCellDrop(e, targetId) {
     e.preventDefault();
     e.stopPropagation(); // handled precisely here; don't let .surface re-handle it
-    const id = dragId || e.dataTransfer?.getData("text/plain");
-    if (!id || id === targetId) {
+    const dragged = dragId || e.dataTransfer?.getData("text/plain");
+    if (!dragged || dragged === targetId) {
       onDragEnd();
       return;
     }
-
-    const mode = dropTarget?.id === targetId ? dropTarget.mode : "group";
-    const isExistingBlock = blocks.some((b) => b.id === id);
-    const isProse = blocks.find((b) => b.id === id)?.isPhoto === false;
-
-    if (mode === "before" || (isProse && mode === "group")) {
-      if (isExistingBlock) {
-        moveBefore(id, targetId);
-      } else {
-        insertPhotoAt(id, targetId);
-      }
-    } else if (mode === "after") {
-      const idx = blocks.findIndex((b) => b.id === targetId);
-      const nextId = idx >= 0 && idx + 1 < blocks.length ? blocks[idx + 1].id : null;
-      if (isExistingBlock) {
-        moveBefore(id, nextId);
-      } else {
-        insertPhotoAt(id, nextId);
-      }
-    } else {
-      if (isExistingBlock) {
-        groupOnto(id, targetId);
-      } else {
-        groupPhotoOnto(id, targetId);
-      }
-    }
+    const place = dropTarget?.id === targetId ? dropTarget.place : "right";
+    const id = blocks.some((b) => b.id === dragged) ? dragged : ensurePhoto(dragged);
+    blocks = moveBlock(blocks, id, targetId, place);
+    commit(true);
     onDragEnd();
   }
 
@@ -492,8 +411,7 @@
     }
     const gap = resolveDropGap(e.clientY, /** @type {HTMLElement} */ (e.currentTarget));
     const beforeId = beforeIdForGap(gap);
-    if (blocks.some((b) => b.id === id)) moveBefore(id, beforeId);
-    else insertPhotoAt(id, beforeId);
+    moveBefore(blocks.some((b) => b.id === id) ? id : ensurePhoto(id), beforeId);
     onDragEnd();
   }
 
@@ -562,6 +480,8 @@
            its own row at this position. -->
       <div
         class="gap"
+        data-reveal-host
+        class:first={r === 0}
         class:over={dropGap === r}
         role="separator"
         ondragenter={(e) => {
@@ -583,32 +503,27 @@
           const before = row.type === "prose" ? row.block.id : row.blocks[0].id;
           const id = dragId || e.dataTransfer?.getData("text/plain");
           if (id) {
-            const isExistingBlock = blocks.some((b) => b.id === id);
-            if (isExistingBlock) {
-              moveBefore(id, before);
-            } else {
-              insertPhotoAt(id, before);
-            }
+            moveBefore(blocks.some((b) => b.id === id) ? id : ensurePhoto(id), before);
           }
           onDragEnd();
         }}
       >
         <!-- Hover the space between two rows to drop a paragraph in there. -->
-        <button class="gap-add" onclick={() => addProseAt(r)} title="Insert a paragraph here">
+        <button class="gap-add small" data-reveal onclick={() => addProseAt(r)} title="Insert a paragraph here">
           <Icon name="plus" size="10px" /><span>Paragraphe</span>
         </button>
       </div>
 
       {#if row.type === "prose"}
         <div
-          class="prose-row"
+          class="prose-row" data-reveal-host
           class:dragging={dragId === row.block.id}
           data-row-first={row.block.id}
         >
           <div class="prose-container">
             <button
               type="button"
-              class="row-grip"
+              class="row-grip ghost icon small" data-reveal
               draggable="true"
               ondragstart={(e) => onDragStart(row.block.id, e)}
               ondragend={onDragEnd}
@@ -627,7 +542,7 @@
               oninput={(e) => setText(row.block.id, e.currentTarget.value)}
             ></textarea>
 
-            <div class="row-side-actions">
+            <div class="row-side-actions" data-reveal>
               {#if r > 0}
                 <button
                   type="button"
@@ -669,9 +584,10 @@
             <div
               class="photo-cell"
               class:dragging={dragId === cell.block.id}
-              class:drop-group={dropTarget?.id === cell.block.id && dropTarget?.mode === "group"}
-              class:drop-before={dropTarget?.id === cell.block.id && dropTarget?.mode === "before"}
-              class:drop-after={dropTarget?.id === cell.block.id && dropTarget?.mode === "after"}
+              class:drop-left={dropTarget?.id === cell.block.id && dropTarget?.place === "left"}
+              class:drop-right={dropTarget?.id === cell.block.id && dropTarget?.place === "right"}
+              class:drop-above={dropTarget?.id === cell.block.id && dropTarget?.place === "above"}
+              class:drop-below={dropTarget?.id === cell.block.id && dropTarget?.place === "below"}
               style="width: {cell.w}px;"
               draggable="true"
               role="listitem"
@@ -682,7 +598,7 @@
               ondragleave={() => dropTarget?.id === cell.block.id && (dropTarget = null)}
               ondrop={(e) => onCellDrop(e, cell.block.id)}
             >
-              <div class="frame" style="height: {cell.h}px;">
+              <div class="frame" data-reveal-host style="height: {cell.h}px;">
                 {#if f}
                   <img
                     src={thumbUrl(f.path, f.previewVersion ?? 0)}
@@ -694,23 +610,37 @@
                   <div class="missing" title="Photo missing from the folder">{cell.block.stem}</div>
                 {/if}
                 {#if row.blocks.length > 1}
-                  <button class="cell-break" onclick={() => breakOut(cell.block.id)} title="Split onto its own row">
+                  <button class="cell-break icon small" data-reveal onclick={() => breakOut(cell.block.id)} title="Split onto its own row">
                     <Icon name="rows" size="11px" />
                   </button>
                 {/if}
-                <button class="cell-remove" onclick={() => remove(cell.block.id)} title="Remove from story">
+                <button class="cell-remove icon small" data-reveal onclick={() => remove(cell.block.id)} title="Remove from story">
                   <Icon name="x" size="10px" />
                 </button>
               </div>
-              <input
-                class="caption"
-                placeholder="Add a caption…"
-                value={cell.block.text}
-                oninput={(e) => setText(cell.block.id, e.currentTarget.value)}
-              />
+              {#if row.blocks.length === 1}
+                <input
+                  class="caption"
+                  placeholder="Add a caption…"
+                  value={cell.block.text}
+                  oninput={(e) => setText(cell.block.id, e.currentTarget.value)}
+                />
+              {/if}
             </div>
           {/each}
         </div>
+        <!-- A row has one caption, under the whole row: on the page a callout
+             follows the paragraph of images, so it cannot sit under one photo
+             of several. It is kept on the row's last photo. -->
+        {#if row.blocks.length > 1}
+          {@const last = row.blocks[row.blocks.length - 1]}
+          <input
+            class="caption"
+            placeholder="Add a caption for this row…"
+            value={last.text}
+            oninput={(e) => setText(last.id, e.currentTarget.value)}
+          />
+        {/if}
       {/if}
     {/each}
 
@@ -736,14 +666,7 @@
         e.preventDefault();
         e.stopPropagation();
         const id = dragId || e.dataTransfer?.getData("text/plain");
-        if (id) {
-          const isExistingBlock = blocks.some((b) => b.id === id);
-          if (isExistingBlock) {
-            moveBefore(id, null);
-          } else {
-            insertPhotoAt(id, null);
-          }
-        }
+        if (id) moveBefore(blocks.some((b) => b.id === id) ? id : ensurePhoto(id), null);
         onDragEnd();
       }}
     ></div>
@@ -759,7 +682,7 @@
   <!-- The film roll sits UNDER the story: the composition is what you're
        reading, the roll is the tray you pick from. Click a frame to append it. -->
   {#if frames.length}
-    <div class="roll">
+    <div class="roll pane">
       <div class="roll-header">
         <Icon name="stack-simple" size="13px" />
         <span class="roll-title">PELLICULE · {frames.length}</span>
@@ -797,7 +720,6 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    background: var(--theme-bg, transparent);
     transition: background 0.3s var(--ease-standard);
   }
 
@@ -813,24 +735,16 @@
     gap: 1rem;
     margin: 0 var(--window-inset) var(--window-inset);
     padding: 0.65rem 1.25rem;
-    background: var(--color-surface-high);
-    border-radius: var(--pane-radius);
-    box-shadow: var(--shadow-raised), var(--shadow-lift);
-    overflow: hidden;
     z-index: 10;
   }
   .roll-header {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-d3);
     flex-shrink: 0;
     color: var(--color-muted);
   }
   .roll-title {
-    font-family: var(--font-header, sans-serif);
-    font-size: 0.68rem;
-    font-weight: 600;
-    letter-spacing: 0.1em;
     user-select: none;
     white-space: nowrap;
   }
@@ -838,7 +752,7 @@
     display: flex;
     gap: 0.5rem;
     overflow-x: auto;
-    padding: 6px;
+    padding: var(--space-d3);
     scrollbar-width: thin;
   }
   .roll-cell {
@@ -859,7 +773,7 @@
     box-shadow: var(--shadow-hover);
   }
   .roll-cell.in-story {
-    box-shadow: 0 0 0 2px var(--theme-accent, var(--color-accent));
+    box-shadow: 0 0 0 2px var(--color-accent);
   }
   .roll-cell img {
     width: 100%;
@@ -879,7 +793,7 @@
     height: 15px;
     border-radius: 50%;
     background: var(--color-accent);
-    color: #fff;
+    color: var(--color-on-accent);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -908,9 +822,6 @@
     align-items: center;
     justify-content: center;
     gap: 1rem;
-    color: var(--color-muted);
-    font-family: var(--font-text, sans-serif);
-    font-size: 0.95rem;
     text-align: center;
     padding: 5rem 1rem;
     opacity: 0.6;
@@ -918,50 +829,35 @@
   .empty p {
     margin: 0;
     max-width: 24rem;
-    line-height: 1.5;
   }
 
   .row-tools {
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    gap: 8px;
+    gap: var(--space-d2);
     margin-bottom: 1.25rem;
   }
   .split-all-btn {
-    all: unset;
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    font-family: var(--font-header, sans-serif);
-    font-size: 11px;
-    letter-spacing: 0.04em;
-    padding: 5px 10px;
-    background: var(--color-surface-low);
-    border: 1px solid var(--color-border);
-    border-radius: var(--theme-radius, var(--radius));
-    color: var(--color-muted);
+    gap: var(--space-d3);
+    padding: var(--space-d3) 10px;
     cursor: pointer;
-    transition: all 0.15s var(--ease-soft);
-  }
-  .split-all-btn:hover {
-    background: var(--color-surface-high);
-    border-color: var(--theme-accent, color-mix(in srgb, var(--color-foreground) 30%, transparent));
-    color: var(--theme-accent, var(--color-foreground));
   }
 
   .photo-row {
     display: flex;
     justify-content: center;
     align-items: flex-start;
-    margin: 8px 0;
+    margin: var(--space-d2) 0;
   }
   .photo-cell {
     position: relative;
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--space-d3);
     cursor: grab;
   }
   .photo-cell.dragging {
@@ -976,37 +872,48 @@
   .frame {
     position: relative;
     width: 100%;
-    border-radius: var(--theme-radius, var(--radius));
+    border-radius: var(--radius);
     overflow: hidden;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.08);
     transition: box-shadow 0.15s var(--ease-standard), transform 0.15s var(--ease-standard);
   }
-  .photo-cell.drop-group .frame {
-    box-shadow: 0 0 0 2px var(--theme-accent, var(--color-accent)), 0 6px 24px rgba(0, 0, 0, 0.5);
-  }
-  .photo-cell.drop-before::before {
+  /* The drop marker is a bar on the edge the photo will land on: a vertical
+     one beside this photo (same row), a horizontal one above or below it
+     (a row of its own). */
+  .photo-cell.drop-left::before,
+  .photo-cell.drop-right::after,
+  .photo-cell.drop-above::before,
+  .photo-cell.drop-below::after {
     content: "";
     position: absolute;
+    background: var(--color-accent);
+    border-radius: var(--radius);
+    z-index: 10;
+    pointer-events: none;
+  }
+  .photo-cell.drop-left::before,
+  .photo-cell.drop-right::after {
+    top: 0;
+    bottom: 0;
+    width: 4px;
+  }
+  .photo-cell.drop-left::before {
+    left: -6px;
+  }
+  .photo-cell.drop-right::after {
+    right: -6px;
+  }
+  .photo-cell.drop-above::before,
+  .photo-cell.drop-below::after {
+    left: -4px;
+    right: -4px;
+    height: 4px;
+  }
+  .photo-cell.drop-above::before {
     top: -6px;
-    left: -4px;
-    right: -4px;
-    height: 4px;
-    background: var(--theme-accent, var(--color-accent));
-    border-radius: var(--theme-radius, var(--radius));
-    z-index: 10;
-    pointer-events: none;
   }
-  .photo-cell.drop-after::after {
-    content: "";
-    position: absolute;
+  .photo-cell.drop-below::after {
     bottom: -6px;
-    left: -4px;
-    right: -4px;
-    height: 4px;
-    background: var(--theme-accent, var(--color-accent));
-    border-radius: var(--theme-radius, var(--radius));
-    z-index: 10;
-    pointer-events: none;
   }
   .frame img {
     width: 100%;
@@ -1029,33 +936,21 @@
     align-items: center;
     justify-content: center;
     background: color-mix(in srgb, var(--color-foreground) 6%, transparent);
-    color: var(--color-muted);
-    font-family: var(--font-monospace, monospace);
-    font-size: 10px;
     text-align: center;
-    padding: 4px;
+    padding: var(--space-d4);
     box-sizing: border-box;
   }
   .cell-remove,
   .cell-break {
     position: absolute;
     top: 8px;
-    all: unset;
     box-sizing: border-box;
     cursor: pointer;
     width: 24px;
     height: 24px;
-    border-radius: 50%;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    background: rgba(0, 0, 0, 0.6);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    color: #fff;
-    opacity: 0;
-    transition: opacity var(--duration-fast) var(--ease-soft), background var(--duration-fast) var(--ease-soft), transform var(--duration-fast) var(--ease-soft);
     z-index: 2;
   }
   .cell-remove {
@@ -1064,43 +959,13 @@
   .cell-break {
     left: 8px;
   }
-  .frame:hover .cell-remove,
-  .frame:hover .cell-break {
-    opacity: 0.85;
-  }
-  .cell-remove:hover {
-    opacity: 1;
-    background: rgba(220, 38, 38, 0.85);
-    transform: scale(1.08);
-  }
-  .cell-break:hover {
-    opacity: 1;
-    background: var(--theme-accent, var(--color-accent));
-    transform: scale(1.08);
-  }
 
   .caption {
-    all: unset;
     display: block;
     box-sizing: border-box;
     width: 100%;
     text-align: center;
-    font-family: var(--theme-font-text, var(--font-text, sans-serif));
-    font-size: 0.82rem;
-    letter-spacing: 0.02em;
-    font-style: italic;
-    color: color-mix(in srgb, var(--theme-text-color, var(--color-foreground)) 65%, transparent);
-    padding: 6px 10px;
-    border-bottom: 1px solid transparent;
-    transition: color 0.15s var(--ease-soft), border-color 0.15s var(--ease-soft);
-  }
-  .caption::placeholder {
-    color: color-mix(in srgb, var(--theme-text-color, var(--color-foreground)) 25%, transparent);
-    font-style: italic;
-  }
-  .caption:focus {
-    color: var(--theme-text-color, var(--color-foreground));
-    border-bottom-color: var(--theme-accent, var(--color-accent));
+    padding: var(--space-d3) 10px;
   }
 
   .prose-row {
@@ -1124,30 +989,14 @@
     position: absolute;
     top: 14px;
     left: -32px;
-    all: unset;
     box-sizing: border-box;
     cursor: grab;
     width: 24px;
     height: 24px;
-    border-radius: var(--theme-radius, var(--radius));
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: var(--color-muted);
-    background: var(--color-surface-low);
-    border: 1px solid var(--color-border);
-    opacity: 0;
-    transition: opacity var(--duration-fast) var(--ease-soft), background var(--duration-fast) var(--ease-soft), color var(--duration-fast) var(--ease-soft);
     z-index: 3;
-  }
-  .prose-row:hover .row-grip {
-    opacity: 0.75;
-  }
-  .row-grip:hover {
-    opacity: 1;
-    color: var(--color-foreground);
-    background: var(--color-surface-high);
-    border-color: color-mix(in srgb, var(--color-foreground) 30%, transparent);
   }
   .row-grip:active {
     cursor: grabbing;
@@ -1159,81 +1008,37 @@
     right: -34px;
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    opacity: 0;
-    transition: opacity var(--duration-fast) var(--ease-soft);
+    gap: var(--space-d4);
     z-index: 3;
   }
-  .prose-row:hover .row-side-actions {
-    opacity: 0.85;
-  }
-  .row-side-actions:hover {
-    opacity: 1;
-  }
   .row-action-btn {
-    all: unset;
     box-sizing: border-box;
     cursor: pointer;
     width: 22px;
     height: 22px;
-    border-radius: 50%;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: var(--color-surface-low);
-    border: 1px solid var(--color-border);
-    color: var(--color-muted);
-    transition: all var(--duration-fast) var(--ease-soft);
-  }
-  .row-action-btn:hover {
-    background: var(--color-surface-high);
-    color: var(--color-foreground);
-    border-color: color-mix(in srgb, var(--color-foreground) 30%, transparent);
-  }
-  .row-action-btn.row-remove:hover {
-    background: rgba(220, 38, 38, 0.85);
-    border-color: transparent;
-    color: #fff;
   }
 
   .prose {
-    all: unset;
     display: block;
     box-sizing: border-box;
     width: 100%;
     margin: 0 auto;
-    font-family: var(--theme-font-text, var(--font-text, Georgia, serif));
-    font-size: 1.12rem;
-    line-height: 1.75;
-    color: var(--theme-text-color, var(--color-foreground));
     padding: 14px 20px;
-    border-radius: var(--theme-radius, var(--radius));
-    border: 1px solid transparent;
     resize: none;
     overflow: hidden;
     text-align: left;
-    background: transparent;
-    transition: font-family 0.25s var(--ease-standard), color 0.3s var(--ease-standard), border-color var(--duration-fast) var(--ease-soft), background var(--duration-fast) var(--ease-soft);
-  }
-  .prose:hover {
-    background: color-mix(in srgb, var(--theme-text-color, var(--color-foreground)) 3%, transparent);
-  }
-  .prose:focus {
-    background: color-mix(in srgb, var(--theme-text-color, var(--color-foreground)) 5%, transparent);
-    border-color: color-mix(in srgb, var(--theme-accent, var(--color-accent)) 40%, transparent);
-  }
-  .prose::placeholder {
-    color: color-mix(in srgb, var(--theme-text-color, var(--color-foreground)) 25%, transparent);
-    font-style: italic;
   }
 
   /* The space between rows: subtle seam that appears cleanly on hover */
   .gap {
     position: relative;
     height: 32px;
-    margin: 4px 0;
+    margin: var(--space-d4) 0;
     flex-shrink: 0;
-    border-radius: var(--theme-radius, var(--radius));
+    border-radius: var(--radius);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1257,36 +1062,22 @@
     height: 40px;
   }
   .gap.over {
-    background: color-mix(in srgb, var(--theme-accent, var(--color-accent)) 25%, transparent);
+    background: color-mix(in srgb, var(--color-accent) 25%, transparent);
   }
   .gap-add {
-    all: unset;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    padding: 4px 12px;
-    border-radius: 999px;
-    background: var(--color-surface-high);
-    color: var(--color-muted);
-    font-family: var(--font-header, sans-serif);
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    opacity: 0;
-    transform: scale(0.96);
-    transition: opacity var(--duration-fast) var(--ease-soft), transform var(--duration-fast) var(--ease-soft), color var(--duration-fast) var(--ease-soft), border-color var(--duration-fast) var(--ease-soft);
-    box-shadow: var(--shadow);
+    gap: var(--space-d3);
+    padding: var(--space-d4) 12px;
     z-index: 2;
   }
-  .gap:hover .gap-add {
-    opacity: 1;
+  /* Above the first row there is nothing to hover over on the way in — the
+     window's title bar sits right there — so the top gap keeps its button
+     showing, quietly, instead of hiding until the pointer finds it. */
+  .gap.first .gap-add {
+    opacity: 0.6;
     transform: scale(1);
-  }
-  .gap-add:hover {
-    color: var(--color-foreground);
-    border-color: var(--theme-accent, var(--color-accent));
-    background: var(--color-surface-higher, var(--color-surface-high));
   }
 
   .composer.dragging .gap-add {
@@ -1305,29 +1096,12 @@
   }
 
   .add-prose {
-    all: unset;
     align-self: center;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-d2);
     margin-top: 24px;
     padding: 10px 22px;
-    border-radius: 999px;
-    background: var(--color-surface-low);
-    border: 1px dashed var(--color-border);
-    color: var(--color-muted);
-    font-family: var(--font-header, sans-serif);
-    font-size: 11px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    transition: all 0.15s var(--ease-soft);
-  }
-  .add-prose:hover {
-    color: var(--color-foreground);
-    border-style: solid;
-    border-color: var(--theme-accent, var(--color-accent));
-    background: var(--color-surface-high);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
   }
 </style>

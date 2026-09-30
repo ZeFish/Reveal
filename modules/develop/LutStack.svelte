@@ -110,7 +110,7 @@
               max="1"
               step="0.01"
               value={layer.opacity}
-              style="--f: {layer.opacity * 100}%"
+              style="--slider-value: {layer.opacity * 100}%"
               oninput={(e) => updateOpacity(idx, parseFloat(e.currentTarget.value))}
             />
             <span class="val">{Math.round(layer.opacity * 100)}%</span>
@@ -130,7 +130,7 @@
   .frow {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-d2);
     min-height: 16px;
   }
   .sub-bar {
@@ -140,21 +140,11 @@
     flex: 1;
   }
   .lut-subhead {
-    font-family: var(--font-monospace, monospace);
-    font-size: 0.62rem;
-    letter-spacing: 0.05em;
     opacity: 0.85;
-    text-transform: uppercase;
-  }
-  .lut-hint {
-    font-size: 0.68rem;
-    opacity: 0.6;
-    margin: 0.2rem 0;
-    line-height: 1.3;
   }
   .lut-layer-card {
     background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
-    border: 1px solid var(--color-border, #333);
+    border: var(--stroke-width) solid var(--color-border);
     border-radius: var(--radius);
     padding: 0.4rem;
     display: flex;
@@ -165,30 +155,17 @@
     gap: 0.4rem;
   }
   .din {
-    font-family: var(--font-monospace, monospace);
-    font-size: 0.6rem;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
     opacity: 0.7;
   }
   .val {
     min-width: 30px;
-    font-family: var(--font-monospace, monospace);
-    font-size: 0.62rem;
     text-align: right;
     opacity: 0.8;
     font-variant-numeric: tabular-nums;
   }
-  /* Sizing only from here down — the track fill/thumb come from app.scss's
-     own StyledSlider rule (::-webkit-slider-runnable-track background:
-     linear-gradient(... var(--f, 50%) ...)), not the framework's default
-     range styling. --f (set inline per input above) is what drives it —
-     this used to be named --slider-value, a name app.scss's gradient never
-     read, so every slider's fill sat frozen at the 50% fallback. */
   .lut-file-pick {
     flex: 1;
-    font-size: 0.75rem;
-    padding: 2px 6px;
+    padding: var(--space-d8) var(--space-d3);
   }
   input[type="range"] {
     flex: 1;
@@ -196,7 +173,6 @@
   }
   .icon-btn,
   .add-lut-btn {
-    font-size: 0.65rem;
-    padding: 2px 6px;
+    padding: var(--space-d8) var(--space-d3);
   }
 </style>

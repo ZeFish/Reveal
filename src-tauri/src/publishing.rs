@@ -9,7 +9,6 @@ use crate::*;
 /// `.obsidian/app.json`), resolved against the vault root. Falls back to the
 /// vault root when unset or set to note-relative (`./`), and creates it. This
 /// is a filesystem export INTO the vault, distinct from Garden publishing.
-#[tauri::command]
 pub(crate) fn vault_attachment_dir(app: tauri::AppHandle) -> Result<String, String> {
     let vault = vault_path(&app);
     if !vault.exists() {
@@ -119,18 +118,19 @@ pub(crate) async fn save_story_note(dir: String, content: String) -> Result<(), 
     note.save().map_err(|e| e.to_string())
 }
 
-/// Read the story note's theme tokens (None = unspecified, inherits default).
+/// What the story note says about its look: the `theme:` it carries.
 #[tauri::command]
-pub(crate) async fn story_load_theme(dir: String) -> story::ThemeTokens {
-    story::StoryNote::load(std::path::Path::new(&dir)).theme_tokens()
+pub(crate) async fn story_load_theme(dir: String) -> story::FolderTheme {
+    story::StoryNote::load(std::path::Path::new(&dir)).theme()
 }
 
-/// Write the theme tokens to the note's frontmatter, deriving light + fg.
-/// Read-modify-write from disk — never from an in-memory copy (invariant 3).
+/// Set the note's `theme:` (`None` = the default) and clear the old custom
+/// colour / font keys. Read-modify-write from disk — never from an in-memory
+/// copy (invariant 3).
 #[tauri::command]
-pub(crate) async fn story_set_theme(dir: String, tokens: story::ThemeTokens) -> Result<(), String> {
+pub(crate) async fn story_set_theme(dir: String, theme: Option<String>) -> Result<(), String> {
     let mut note = story::StoryNote::load(std::path::Path::new(&dir));
-    note.set_theme(&tokens);
+    note.set_theme(theme.as_deref());
     note.save().map_err(|e| e.to_string())
 }
 
@@ -385,6 +385,76 @@ pub(crate) async fn export_local_story(
     .map_err(|e| e.to_string())?
 }
 
+/// Where a story note will land on the Garden, and whether it is already
+/// there. Publishing is an upsert by slug, so "already published" only means
+/// something if we PUT to the slug it lives at — not whatever the folder is
+/// called today. The local note's `garden-url` stamp remembers where it went
+/// last time; a `permalink:`/`slug:` in its frontmatter is what the server
+/// itself resolves first.
+pub(crate) struct StoryTarget {
+    pub slug: String,
+    pub remote: Option<reveal_publish::RemoteNote>,
+    /// Why this slug: "frontmatter", "garden-url" or "folder".
+    pub source: &'static str,
+}
+
+pub(crate) fn resolve_story_target(
+    client: &reveal_publish::GardenClient,
+    dirp: &std::path::Path,
+) -> Result<StoryTarget, String> {
+    let note = story::StoryNote::load(dirp);
+    let folder = dirp.file_name().unwrap_or_default().to_string_lossy().to_string();
+    let clean = |v: String| v.trim().trim_matches(['"', '\'', '/']).to_string();
+    let mut candidates: Vec<(String, &'static str)> = Vec::new();
+    for key in ["permalink", "slug"] {
+        if let Some(v) = note.frontmatter_value(key).map(clean).filter(|v| !v.is_empty()) {
+            candidates.push((v, "frontmatter"));
+        }
+    }
+    if let Some(slug) = note.frontmatter_value("garden-url").and_then(|u| reveal_publish::slug_from_url(&u)) {
+        candidates.push((slug, "garden-url"));
+    }
+    candidates.push((reveal_publish::slugify(&folder), "folder"));
+
+    let mut seen = std::collections::HashSet::new();
+    candidates.retain(|(slug, _)| seen.insert(slug.clone()));
+    for (slug, source) in &candidates {
+        if let Some(remote) = client.get_note(slug).map_err(|e| e.to_string())? {
+            return Ok(StoryTarget { slug: slug.clone(), remote: Some(remote), source });
+        }
+    }
+    let (slug, source) = candidates.into_iter().next().expect("the folder candidate is always present");
+    Ok(StoryTarget { slug, remote: None, source })
+}
+
+/// Is this folder's story already on the Garden? Drives the menu wording
+/// ("Publier" vs "Mettre à jour") without publishing anything.
+#[derive(serde::Serialize)]
+pub(crate) struct StoryPublishStatus {
+    published: bool,
+    slug: String,
+    url: String,
+    updated_at: Option<String>,
+    source: &'static str,
+}
+
+#[tauri::command]
+pub(crate) async fn story_publish_status(app: tauri::AppHandle, dir: String) -> Result<StoryPublishStatus, String> {
+    let client = garden_client(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let target = resolve_story_target(&client, std::path::Path::new(&dir))?;
+        Ok(StoryPublishStatus {
+            published: target.remote.is_some(),
+            url: client.live_url(&target.slug),
+            updated_at: target.remote.as_ref().and_then(|r| r.updated_at.clone()),
+            slug: target.slug,
+            source: target.source,
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Publish the folder's story to the Garden: develop each marked photo
 /// (2048 px JPEG beside the RAW), upload attachments (content-addressed
 /// dedup), rewrite embeds, PUT the note. `dry_run` stops before any write
@@ -496,16 +566,27 @@ pub(crate) async fn publish_story(
 
         // 3. the note
         let name = dirp.file_name().unwrap_or_default().to_string_lossy().to_string();
-        let slug = reveal_publish::slugify(&name);
+        // Already on the Garden? Then this is an edit of that note, at the
+        // slug it lives at — a renamed folder must not publish a second copy.
+        let target = resolve_story_target(&client, dirp)?;
+        let slug = target.slug.clone();
+        let updating = target.remote.is_some();
+        let title = story::StoryNote::load(dirp)
+            .frontmatter_value("title")
+            .map(|t| t.trim().trim_matches(['"', '\'']).to_string())
+            .filter(|t| !t.is_empty())
+            .or_else(|| target.remote.as_ref().map(|r| r.title.clone()).filter(|t| !t.is_empty()))
+            .unwrap_or_else(|| name.clone());
         let content = story::content_for_publish(dirp, &urls).map_err(|e| e.to_string())?;
-        emit(total, &name, "note");
+        emit(total, &name, if updating { "updating" } else { "note" });
         if dry_run {
-            eprintln!("publish dry-run: slug={slug}, {} photos, note ok", urls.len());
-            return Ok(format!("dry-run — slug {slug}, {} photos ready", urls.len()));
+            let verb = if updating { "would update" } else { "would create" };
+            eprintln!("publish dry-run: {verb} slug={slug} ({}), {} photos, note ok", target.source, urls.len());
+            return Ok(format!("dry-run — {verb} {slug}, {} photos ready", urls.len()));
         }
-        let live = client.put_note(&slug, &name, &content).map_err(|e| e.to_string())?;
+        let live = client.put_note(&slug, &title, &content).map_err(|e| e.to_string())?;
         let _ = story::stamp_garden_url(dirp, &live);
-        eprintln!("publié: {live}");
+        eprintln!("{}: {live}", if updating { "mis à jour" } else { "publié" });
         Ok(live)
     })
     .await

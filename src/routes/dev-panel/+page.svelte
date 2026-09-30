@@ -353,7 +353,7 @@
 
 <style>
   :global(body) {
-    background-color: var(--color-surface-high);
+    background-color: var(--color-surface-light-1);
     color: var(--color-foreground);
     margin: 0;
     padding: 0;

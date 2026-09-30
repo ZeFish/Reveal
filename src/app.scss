@@ -11,56 +11,6 @@
 // packages/styles/app.scss, so every app shares them. What stays here is
 // Reveal's own app-shell behaviour. Import it AFTER the theme.
 
-/* The segmented control — one look for every either/or switch in the app
-   (the develop engine, Frames / Editorial). Full width, equal shares.
-   Global because two copies of it had already started to drift.
-
-   Height is one line of the app's own text (font-size × line-height), not
-   vertical padding, so it matches every other compact control. calc()
-   rather than 1rlh: this WebView does not support rlh and silently fell
-   back to intrinsic sizing. */
-.seg {
-  display: flex;
-  background: var(--color-surface);
-  border: none;
-  box-shadow: none;
-  overflow: hidden;
-  padding: 1px;
-  border-radius: var(--radius);
-}
-.seg-btn {
-  all: unset;
-  cursor: pointer;
-  flex: 1;
-  height: calc(var(--font-text-size) * var(--line-height));
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 9px;
-  border-radius: var(--radius);
-  font-family: var(--font-header, sans-serif);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-muted);
-  background: transparent;
-  transition: all var(--transition-fast);
-}
-.seg-btn.on {
-  color: var(--color-foreground);
-  background: var(--color-surface-light-3);
-  box-shadow: var(--shadow);
-}
-.seg-btn:not(.on):not(:disabled):hover {
-  color: var(--color-foreground);
-  background: var(--color-surface-dark-1);
-}
-.seg-btn:disabled {
-  cursor: default;
-  opacity: 0.4;
-}
-
 /* Title-bar text sits on its capitals, not its line box: a line box keeps
    room for descenders, so centred caps rode half a point high. Only as good
    as the font's declared cap height: right for the monospace frame count,
@@ -100,93 +50,107 @@ body {
   user-select: none;
   -webkit-user-select: none;
   cursor: default;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* StyledSlider — Leica instrument precision: 1.5px hairline track, 6.5px precision pip thumb */
-input[type="range"] {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 100%;
-  height: 12px;
-  background: transparent;
-  /* !important: the framework's own input[type="range"] rule
-     (packages/styles/_standard-11-forms.scss) sets `box-shadow:
-     var(--shadow-inset)` — a real, defined inset bezel, not a no-op — and
-     despite this file importing after standard.scss at equal selector
-     specificity, that framework shadow was still winning in the built
-     app (confirmed live, 2026-09-21). Cutting through with !important
-     rather than chasing the exact bundling-order cause. */
-  box-shadow: none !important;
-  border: none !important;
-  margin: 0;
-  cursor: pointer;
+// ---------------------------------------------------------------------------
+// Reconciliations — what an application window needs that the framework's
+// document defaults get wrong. EVERYTHING Reveal overrides in the framework
+// lives here, and only here, so it can be read in one place and promoted into
+// packages/styles/app.scss (or fixed in the framework) one item at a time.
+// Nothing else in the app may restyle a framework element.
+// ---------------------------------------------------------------------------
 
-  &::-webkit-slider-runnable-track {
-    height: 1.5px;
-    border-radius: 1px;
-    background: linear-gradient(
-      to right,
-      color-mix(in srgb, var(--color-foreground) 55%, transparent) var(--f, 50%),
-      color-mix(in srgb, var(--color-foreground) 12%, transparent) var(--f, 50%)
-    );
+/* 1. <main> is a page's reading column: the framework gives it a top gutter.
+   In an app it is a region that fills its cell (the develop canvas), and the
+   gutter pushed a centred photo 36px below the middle of the window. */
+main {
+  padding: 0;
+}
+
+/* 2. Buttons that are rows or labels, not actions. A framework button is a
+   raised control; these carry the click target of a line of text — a folder,
+   a section header, a slider's name (click to reset) — so they drop the
+   raised look and read as the text they are. */
+:is(
+    .group-header,
+    .frow-label,
+    .section-toggle,
+    .lib-toggle,
+    .section-main,
+    .cat-disc,
+    .disc,
+    .account-id,
+    .lib-open-note,
+    .open-page-banner,
+    .wordmark,
+    .band,
+    .row-gap-text,
+    .task-indicator
+  ) {
+  justify-content: flex-start;
+  min-height: 0;
+  padding: var(--space-d5) var(--space-d3);
+  background-color: transparent;
+  box-shadow: none;
+  color: var(--color-muted);
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+
+  &:hover {
+    background-color: var(--color-surface);
+    color: var(--color-foreground);
+    box-shadow: none;
   }
+}
+
+/* A button's label is one line in an app: a control never reflows its text
+   into a second line to make room (the framework's buttons may, on a page). */
+button {
+  white-space: nowrap;
+}
+
+/* 3. Small utility buttons at the end of a row (add, reindex, close). */
+:is(.add-btn, .close-btn, .chip-stop, .stepper-btn, .tag-remove) {
+  padding: var(--space-d8);
+  aspect-ratio: 1;
+  background-color: transparent;
+  box-shadow: none;
+  color: var(--color-muted);
+
+  &:hover {
+    background-color: var(--color-surface);
+    color: var(--color-foreground);
+    box-shadow: none;
+  }
+}
+
+/* 4. The busy mark: a plain 9px ring with one brighter quarter, in the
+   theme's ink. The framework's .loader is a large blurred glow spinning at
+   4 turns a second — loud next to a photo being judged. Candidate to replace
+   the framework's own. */
+.loader {
+  width: 9px;
+  height: 9px;
+  flex-shrink: 0;
+  border: 1.5px solid color-mix(in srgb, var(--color-foreground) 18%, transparent);
+  border-top-color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
+  border-radius: 50%;
+  box-shadow: none;
+  filter: none;
+  animation: rotation 0.7s linear infinite;
+}
+
+/* 5. Sliders in dense panels. The framework's rail is sized for a form on a
+   page (about 8px of rail, a 10px thumb); in a column of thirty controls it
+   reads as a bar, not a setting. A slimmer rail and a proportionate thumb. */
+input[type="range"] {
+  height: var(--space-d4);
 
   &::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 6.5px;
-    height: 6.5px;
-    border-radius: 50%;
-    background: var(--color-foreground);
-    margin-top: -2.5px;
-    border: none;
-    box-shadow: 0 0.5px 2px rgba(0, 0, 0, 0.4);
-    transition: transform var(--duration-instant) ease, background var(--duration-instant) ease;
+    width: var(--space-d2);
+    height: var(--space-d2);
+    margin-top: calc((var(--space-d4) - var(--space-d2)) / 2);
   }
-
-  &:hover::-webkit-slider-thumb {
-    transform: scale(1.25);
-  }
-
-  &:active::-webkit-slider-thumb {
-    background: var(--color-accent, #d6202c);
-  }
-}
-/* App images are native workflow items, not document lightbox zooms.
-   Override the monorepo framework's CSS fallback image zoom rules (:active backdrop). */
-img,
-img:not([data-no-zoom]) {
-  cursor: inherit !important;
-}
-
-html:not(.js-image-zoom-enabled) img:active,
-html img:active {
-  position: static !important;
-  z-index: auto !important;
-  transform: none !important;
-  max-height: none !important;
-  max-width: none !important;
-  margin: 0 !important;
-  top: auto !important;
-  left: auto !important;
-  cursor: inherit !important;
-}
-
-html:not(.js-image-zoom-enabled):has(img:active)::before,
-html:has(img:active)::before {
-  display: none !important;
-  content: none !important;
-}
-
-/* A color-scheme change (theme pick, or macOS system light/dark) recolors
-   dozens of elements at once, and every one of them has its OWN hover-
-   transition duration (120/150/180ms, some none at all) — synced() in
-   app-theme.js toggles this class for the ~250ms the swap takes. Only
-   -duration, not the whole `transition` shorthand: overriding that would
-   wipe out each element's own transition-property list (transform for a
-   chevron rotate, a toggle knob sliding, a hover scale) along with it —
-   this just makes whatever they already animate share one timing, briefly. */
-.theme-transitioning,
-.theme-transitioning * {
-  transition-duration: var(--duration-standard) !important;
 }

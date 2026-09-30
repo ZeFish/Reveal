@@ -15,13 +15,6 @@
 </div>
 
 <style>
-  .din {
-    font-family: var(--font-header, sans-serif);
-    font-size: var(--scale-d3);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-  }
 
   .hairline-inner {
     height: 1px;
@@ -33,10 +26,10 @@
   .pane-scroll {
     flex: 1;
     overflow-y: auto;
-    padding: 16px;
+    padding: var(--space);
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: var(--space);
   }
 
   .empty {

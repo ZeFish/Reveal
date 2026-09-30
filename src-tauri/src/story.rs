@@ -129,48 +129,24 @@ impl StoryNote {
         std::fs::rename(&tmp, &self.url)
     }
 
-    /// Read all theme tokens from frontmatter (None for absent keys).
-    pub fn theme_tokens(&self) -> ThemeTokens {
-        let get = |k: &str| self.frontmatter_value(k);
-        ThemeTokens {
-            dark_background: get("color-dark-background"),
-            dark_foreground: get("color-dark-foreground"),
-            light_background: get("color-light-background"),
-            light_foreground: get("color-light-foreground"),
-            dark_accent: get("color-dark-accent"),
-            light_accent: get("color-light-accent"),
-            font_header: get("font-header"),
-            font_text: get("font-text"),
-            font_ratio: get("font-ratio"),
+    /// The folder's theme: the `theme:` key the Garden itself reads. The old
+    /// per-note colour and font keys are read only to recognise a theme that
+    /// was picked before `theme:` existed; nothing writes them any more.
+    pub fn theme(&self) -> FolderTheme {
+        FolderTheme {
+            theme: self.frontmatter_value("theme").filter(|t| !t.is_empty()),
+            legacy_dark_background: self.frontmatter_value("color-dark-background"),
+            legacy_dark_accent: self.frontmatter_value("color-dark-accent"),
         }
     }
 
-    /// Write all 8 theme tokens to frontmatter, deriving the unspecified ones.
-    /// Mirrors Swift `setStoryTheme` (StoryModel.swift:342-360):
-    ///   dark_fg = derive_foreground(dark_bg)
-    ///   light_bg = dark_fg, light_fg = dark_bg (the swap)
-    ///   light_accent = dark_accent (mirror)
-    /// None values delete the key (returns to "inherits default").
-    pub fn set_theme(&mut self, tokens: &ThemeTokens) {
-        let dark_bg = tokens.dark_background.as_deref();
-        let accent = tokens.dark_accent.as_deref();
-
-        self.set_frontmatter("color-dark-background", dark_bg);
-
-        let dark_fg = dark_bg.map(derive_foreground);
-        self.set_frontmatter("color-dark-foreground", dark_fg.as_deref());
-
-        // light side = swap of dark side
-        self.set_frontmatter("color-light-background", dark_fg.as_deref());
-        self.set_frontmatter("color-light-foreground", dark_bg);
-
-        // accent mirrors to both schemes
-        self.set_frontmatter("color-dark-accent", accent);
-        self.set_frontmatter("color-light-accent", accent);
-
-        self.set_frontmatter("font-header", tokens.font_header.as_deref());
-        self.set_frontmatter("font-text", tokens.font_text.as_deref());
-        self.set_frontmatter("font-ratio", tokens.font_ratio.as_deref());
+    /// Set the folder's theme (`None` = the Garden's default) and sweep out
+    /// the custom colour / font keys an earlier version wrote beside it.
+    pub fn set_theme(&mut self, theme: Option<&str>) {
+        self.set_frontmatter("theme", theme);
+        for key in LEGACY_THEME_KEYS {
+            self.set_frontmatter(key, None);
+        }
     }
 
     /// Whether this note is pinned (frontmatter `pinned: true`).
@@ -192,24 +168,30 @@ impl StoryNote {
     }
 }
 
-/// The Garden theme frontmatter tokens, all optional (None = unspecified,
-/// inherits default). The user picks dark_background + dark_accent + fonts
-/// (+ font_ratio, the heading modular-scale multiplier); the rest are
-/// derived on write. Port of Swift `ThemeTokens` + `setStoryTheme`.
+/// Keys an earlier Reveal wrote to colour and type a story by hand. The theme
+/// is one `theme:` now; these are cleared whenever it is set.
+const LEGACY_THEME_KEYS: [&str; 9] = [
+    "color-dark-background",
+    "color-dark-foreground",
+    "color-light-background",
+    "color-light-foreground",
+    "color-dark-accent",
+    "color-light-accent",
+    "font-header",
+    "font-text",
+    "font-ratio",
+];
+
+/// What a story note says about its look.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ThemeTokens {
-    pub dark_background: Option<String>,
-    pub dark_foreground: Option<String>,
-    pub light_background: Option<String>,
-    pub light_foreground: Option<String>,
-    pub dark_accent: Option<String>,
-    pub light_accent: Option<String>,
-    pub font_header: Option<String>,
-    pub font_text: Option<String>,
-    /// Heading modular-scale ratio (`--font-ratio`, e.g. "1.333") — how much
-    /// bigger each heading level reads relative to the base size.
-    pub font_ratio: Option<String>,
+pub struct FolderTheme {
+    /// The `theme:` value — a Garden theme id such as "forest".
+    pub theme: Option<String>,
+    /// From before `theme:`: lets the app recognise a curated theme that was
+    /// picked by its colours, and move it to `theme:`.
+    pub legacy_dark_background: Option<String>,
+    pub legacy_dark_accent: Option<String>,
 }
 
 /// Read a frontmatter scalar from one line (quotes stripped), or None.
@@ -223,24 +205,6 @@ fn fm_value(line: &str, key: &str) -> Option<String> {
         v = v[1..v.len() - 1].to_string();
     }
     Some(v)
-}
-
-/// Contrast-derived ink from a background hex — two warm ink tones, not flat
-/// black/white. Port of Swift `deriveForeground` (ThemeTokens.swift:9-13).
-/// Threshold luminance < 0.5 → `#F5F1EA`, else `#15110D`.
-pub fn derive_foreground(bg_hex: &str) -> String {
-    let s = bg_hex.trim_start_matches('#');
-    if s.len() != 6 {
-        return "#15110D".to_string(); // safe default on parse failure
-    }
-    let Ok(v) = u64::from_str_radix(s, 16) else {
-        return "#15110D".to_string();
-    };
-    let r = ((v >> 16) & 0xFF) as f64 / 255.0;
-    let g = ((v >> 8) & 0xFF) as f64 / 255.0;
-    let b = (v & 0xFF) as f64 / 255.0;
-    let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    if lum < 0.5 { "#F5F1EA".to_string() } else { "#15110D".to_string() }
 }
 
 pub fn note_path(dir: &Path) -> PathBuf {
@@ -463,94 +427,44 @@ mod tests {
     }
 
     #[test]
-    fn derive_foreground_dark_bg_yields_light_ink() {
-        assert_eq!(super::derive_foreground("#15110D"), "#F5F1EA");
-    }
-
-    #[test]
-    fn derive_foreground_light_bg_yields_dark_ink() {
-        assert_eq!(super::derive_foreground("#F5F1EA"), "#15110D");
-    }
-
-    #[test]
-    fn derive_foreground_mid_tone_threshold() {
-        // pure red, luminance 0.2126 < 0.5 → light ink
-        assert_eq!(super::derive_foreground("#FF0000"), "#F5F1EA");
-        // pure green, luminance 0.7152 >= 0.5 → dark ink
-        assert_eq!(super::derive_foreground("#00FF00"), "#15110D");
-    }
-
-    #[test]
-    fn derive_foreground_strips_hash_prefix() {
-        assert_eq!(super::derive_foreground("15110D"), "#F5F1EA");
-    }
-
-    #[test]
-    fn theme_tokens_empty_on_fresh_note() {
+    fn theme_is_empty_on_a_fresh_note() {
         let n = super::StoryNote::parse("---\npublish: true\n---\n\nbody\n", std::path::Path::new("/tmp/n.md"));
-        let t = n.theme_tokens();
-        assert!(t.dark_background.is_none());
-        assert!(t.dark_accent.is_none());
-        assert!(t.font_header.is_none());
+        let t = n.theme();
+        assert!(t.theme.is_none());
+        assert!(t.legacy_dark_background.is_none());
     }
 
     #[test]
-    fn set_theme_writes_all_keys_derives_light_and_fg() {
+    fn set_theme_writes_the_theme_key_and_nothing_else_of_the_look() {
         let mut n = super::StoryNote::parse("---\npublish: true\n---\n\nbody\n", std::path::Path::new("/tmp/n.md"));
-        let tokens = super::ThemeTokens {
-            dark_background: Some("#15110D".to_string()),
-            dark_foreground: None, // derived
-            light_background: None, // derived
-            light_foreground: None, // derived
-            dark_accent: Some("#D6202C".to_string()),
-            light_accent: None, // mirrors dark_accent
-            font_header: Some("Sohne".to_string()),
-            font_text: None,
-            font_ratio: None,
-        };
-        n.set_theme(&tokens);
-        // user-picked
-        assert_eq!(n.frontmatter_value("color-dark-background"), Some("#15110D".to_string()));
-        assert_eq!(n.frontmatter_value("color-dark-accent"), Some("#D6202C".to_string()));
-        assert_eq!(n.frontmatter_value("font-header"), Some("Sohne".to_string()));
-        // derived foreground
-        assert_eq!(n.frontmatter_value("color-dark-foreground"), Some("#F5F1EA".to_string()));
-        // derived light side (swap of dark)
-        assert_eq!(n.frontmatter_value("color-light-background"), Some("#F5F1EA".to_string()));
-        assert_eq!(n.frontmatter_value("color-light-foreground"), Some("#15110D".to_string()));
-        // accent mirrors to light
-        assert_eq!(n.frontmatter_value("color-light-accent"), Some("#D6202C".to_string()));
-    }
-
-    #[test]
-    fn set_theme_none_deletes_keys() {
-        let raw = "---\ncolor-dark-background: #15110D\ncolor-dark-foreground: #F5F1EA\ncolor-light-background: #F5F1EA\ncolor-light-foreground: #15110D\ncolor-dark-accent: #D6202C\ncolor-light-accent: #D6202C\nfont-header: Sohne\n---\n\nbody\n";
-        let mut n = super::StoryNote::parse(raw, std::path::Path::new("/tmp/n.md"));
-        let tokens = super::ThemeTokens {
-            dark_background: None, dark_foreground: None, light_background: None,
-            light_foreground: None, dark_accent: None, light_accent: None,
-            font_header: None, font_text: None, font_ratio: None,
-        };
-        n.set_theme(&tokens);
+        n.set_theme(Some("forest"));
+        assert_eq!(n.frontmatter_value("theme"), Some("forest".to_string()));
+        assert_eq!(n.frontmatter_value("publish"), Some("true".to_string()));
         assert!(n.frontmatter_value("color-dark-background").is_none());
-        assert!(n.frontmatter_value("color-light-accent").is_none());
         assert!(n.frontmatter_value("font-header").is_none());
     }
 
     #[test]
-    fn theme_tokens_reads_back_set_values() {
-        let mut n = super::StoryNote::parse("---\npublish: true\n---\n\nbody\n", std::path::Path::new("/tmp/n.md"));
-        let tokens = super::ThemeTokens {
-            dark_background: Some("#15110D".to_string()), dark_foreground: None,
-            light_background: None, light_foreground: None,
-            dark_accent: Some("#D6202C".to_string()), light_accent: None,
-            font_header: Some("Sohne".to_string()), font_text: None, font_ratio: None,
-        };
-        n.set_theme(&tokens);
-        let read = n.theme_tokens();
-        assert_eq!(read.dark_background, Some("#15110D".to_string()));
-        assert_eq!(read.dark_accent, Some("#D6202C".to_string()));
-        assert_eq!(read.font_header, Some("Sohne".to_string()));
+    fn set_theme_sweeps_the_custom_keys_an_earlier_version_wrote() {
+        let raw = "---\npublish: true\ncolor-dark-background: #231e1a\ncolor-dark-foreground: #F5F1EA\ncolor-light-background: #F5F1EA\ncolor-light-foreground: #231e1a\ncolor-dark-accent: #f9a61a\ncolor-light-accent: #f9a61a\nfont-header: Forrest\nfont-text: Forrest\nfont-ratio: 1.4\n---\n\nbody\n";
+        let mut n = super::StoryNote::parse(raw, std::path::Path::new("/tmp/n.md"));
+        // they are still readable, so the app can recognise forest by its colours
+        assert_eq!(n.theme().legacy_dark_background, Some("#231e1a".to_string()));
+        n.set_theme(Some("forest"));
+        for key in ["color-dark-background", "color-dark-foreground", "color-light-background",
+                    "color-light-foreground", "color-dark-accent", "color-light-accent",
+                    "font-header", "font-text", "font-ratio"] {
+            assert!(n.frontmatter_value(key).is_none(), "{key} should be gone");
+        }
+        assert_eq!(n.frontmatter_value("theme"), Some("forest".to_string()));
+        assert_eq!(n.frontmatter_value("publish"), Some("true".to_string()));
+    }
+
+    #[test]
+    fn set_theme_none_removes_the_theme() {
+        let mut n = super::StoryNote::parse("---\ntheme: forest\n---\n\nbody\n", std::path::Path::new("/tmp/n.md"));
+        n.set_theme(None);
+        assert!(n.theme().theme.is_none());
     }
 
     #[test]

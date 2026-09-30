@@ -63,19 +63,14 @@
     align-items: center;
     justify-content: space-between;
     padding: 1rem 1.25rem;
-    border-bottom: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
+    border-bottom: var(--stroke-width) solid var(--color-border);
   }
   .panel-header h2 {
-    font-family: var(--font-header, sans-serif);
-    font-size: 0.9rem;
-    letter-spacing: 0.1em;
     margin: 0;
   }
   .close-btn {
-    all: unset;
     cursor: pointer;
     opacity: 0.6;
-    font-size: 1rem;
     padding: 0.2rem;
   }
   .close-btn:hover {
@@ -89,17 +84,12 @@
     gap: 1.25rem;
   }
   .shortcut-group h3 {
-    font-family: var(--font-monospace, monospace);
-    font-size: 0.7rem;
-    letter-spacing: 0.08em;
-    color: var(--color-accent);
     margin: 0 0 0.6rem 0;
   }
   .shortcut-row {
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    font-size: 0.78rem;
     margin-bottom: 0.4rem;
   }
   .shortcut-row span {
@@ -107,12 +97,6 @@
     opacity: 0.8;
   }
   kbd {
-    font-family: var(--font-monospace, monospace);
-    font-size: 0.7rem;
     padding: 0.15rem 0.4rem;
-    background: var(--color-surface-high, #27272a);
-    border: 1px solid var(--color-border, rgba(255, 255, 255, 0.15));
-    border-radius: var(--radius);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
   }
 </style>

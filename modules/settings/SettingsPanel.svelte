@@ -5,7 +5,7 @@
   // that category's fields on the right. Adding a category later is adding
   // one entry to CATEGORIES and one {#if} block below — nothing else moves.
   //
-  // Same prop contract the old SettingsModal.svelte had (preferences
+  // Same prop contract the old settings dialog had (preferences
   // bindable, onClose/onChooseFolder/onSave, onCacheStatus/onCacheClear) —
   // deliberately, so whichever host renders this doesn't need its own
   // translation layer. routes/settings-panel/+page.svelte is that host: it
@@ -20,6 +20,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { getVersion } from "@tauri-apps/api/app";
   import { isTauri } from "$lib/api.js";
+  import { TEXT_SIZES, DEFAULT_TEXT_SIZE } from "$lib/app-theme.js";
 
   /**
    * @typedef {Object} Preferences
@@ -38,6 +39,7 @@
    * @property {number} [apple_photos_cache_limit_gib]
    * @property {string} [default_engine]
    * @property {string} [app_theme]
+   * @property {number} [ui_text_size]
    */
 
   /** @typedef {Object} EngineInfo
@@ -95,6 +97,8 @@
     themes = [],
     /** @type {(id: string) => Promise<void> | void} */
     onSelectTheme = () => {},
+    /** @type {(px: number) => void} */
+    onSelectTextSize = () => {},
     /** @type {() => Promise<{size_bytes: number, photo_count: number, limit_bytes: number}>} */
     onPreviewCacheStatus = async () => ({ size_bytes: 0, photo_count: 0, limit_bytes: 0 }),
     /** @type {() => Promise<{removed_bytes: number}>} */
@@ -333,7 +337,10 @@
     const limit = preferences.apple_photos_cache_limit_gib;
     if (cacheAvailable && (limit === undefined || !Number.isInteger(limit) || limit < 1 || limit > 64)) {
       saveError = "Apple Photos cache limit must be a whole number from 1 to 64 GiB.";
-      activeCategory = "apple-photos";
+      // Take the user to the field that is wrong. This said "apple-photos",
+      // a category that does not exist (it is "cache"), so the reset effect
+      // above bounced the pane to Photos and the bad field vanished from view.
+      activeCategory = "cache";
       return;
     }
     saving = true;
@@ -391,12 +398,12 @@
 <svelte:window onkeydown={handleKeyDown} />
 
 <div class="settings-window">
-  <nav class="categories" data-tauri-drag-region>
+  <nav class="categories pane" data-tauri-drag-region>
     <div class="categories-spacer" data-tauri-drag-region></div>
     {#each visibleCategories as cat (cat.id)}
       <button
-        class="category-btn"
-        class:active={activeCategory === cat.id}
+        class="item category-btn"
+        aria-current={activeCategory === cat.id ? "true" : undefined}
         onclick={() => (activeCategory = cat.id)}
       >
         <Icon name={cat.icon} size="14px" />
@@ -413,7 +420,7 @@
             <Icon name="image" size="12px" />
             <span>PHOTO ORGANIZATION</span>
           </div>
-          <div class="inset-card date-card">
+          <div class="card flush list divided date-card">
             <div class="setting-row">
               <div class="row-meta">
                 <span class="row-label">DATE FOLDER STRUCTURE</span>
@@ -457,7 +464,7 @@
               </div>
             </div>
           </div>
-          <div class="inset-card">
+          <div class="card flush list divided">
             <div class="setting-row">
               <div class="row-meta">
                 <span class="row-label">DEFAULT DEVELOP ENGINE</span>
@@ -498,7 +505,7 @@
         </div>
       {:else if activeCategory === "appearance"}
         <div class="section-group">
-          <div class="inset-card date-card">
+          <div class="card flush list divided date-card">
             <div class="setting-row">
               <div class="row-meta">
                 <span class="row-label">THEME</span>
@@ -516,6 +523,23 @@
                 </Dropdown>
               </div>
             </div>
+            <div class="setting-row">
+              <div class="row-meta">
+                <span class="row-label">TEXT SIZE</span>
+                <span class="row-desc">Scales the whole interface together — text, spacing and controls.</span>
+              </div>
+              <div class="row-control">
+                <Dropdown label="Text size" triggerClass="outline small action-pill-btn" align="end">
+                  {#snippet trigger()}
+                    <span>{TEXT_SIZES.find((t) => t.px === (preferences.ui_text_size ?? DEFAULT_TEXT_SIZE))?.label ?? "Default"}</span>
+                    <Icon name="caret-down" size="10px" />
+                  {/snippet}
+                  {#each TEXT_SIZES as size}
+                    <DropdownItem onclick={() => onSelectTextSize(size.px)}>{size.label} · {size.px}px</DropdownItem>
+                  {/each}
+                </Dropdown>
+              </div>
+            </div>
           </div>
         </div>
       {:else if activeCategory === "locations"}
@@ -524,7 +548,7 @@
             <Icon name="folder-open" size="12px" />
             <span>LOCATIONS &amp; EXPORT</span>
           </div>
-          <div class="inset-card">
+          <div class="card flush list divided">
             <div class="setting-row">
               <div class="row-meta">
                 <span class="row-label">DEFAULT EXPORT FOLDER</span>
@@ -532,7 +556,7 @@
               </div>
               <div class="row-control">
                 <div class="path-picker-group">
-                  <div class="path-display" title={preferences.export_folder || "Desktop (default)"}>
+                  <code class="path-display" title={preferences.export_folder || "Desktop (default)"}>
                     <Icon name="folder-open" size="12px" />
                     <span class="path-text mono">
                       {preferences.export_folder ? formatPath(preferences.export_folder) : "Desktop (default)"}
@@ -547,7 +571,7 @@
                         <Icon name="x" size="10px" />
                       </button>
                     {/if}
-                  </div>
+                  </code>
                   <button type="button" class="outline small action-pill-btn" onclick={() => onChooseFolder("export_folder")}>
                     CHOOSE…
                   </button>
@@ -561,7 +585,7 @@
               </div>
               <div class="row-control">
                 <div class="path-picker-group">
-                  <div class="path-display" title={preferences.lut_folder || "Built-in LUTs only"}>
+                  <code class="path-display" title={preferences.lut_folder || "Built-in LUTs only"}>
                     <Icon name="folder-open" size="12px" />
                     <span class="path-text mono">
                       {preferences.lut_folder ? formatPath(preferences.lut_folder) : "Built-in LUTs"}
@@ -576,7 +600,7 @@
                         <Icon name="x" size="10px" />
                       </button>
                     {/if}
-                  </div>
+                  </code>
                   <button type="button" class="outline small action-pill-btn" onclick={() => onChooseFolder("lut_folder")}>
                     CHOOSE…
                   </button>
@@ -591,7 +615,7 @@
             <Icon name="note-pencil" size="12px" />
             <span>OBSIDIAN INTEGRATION</span>
           </div>
-          <div class="inset-card">
+          <div class="card flush list divided">
             <div class="setting-row">
               <div class="row-meta">
                 <span class="row-label">ENABLE OBSIDIAN INTEGRATION</span>
@@ -609,7 +633,7 @@
                 </div>
                 <div class="row-control">
                   <div class="path-picker-group">
-                    <div class="path-display" title={preferences.vault || "~/Documents/Atelier (default)"}>
+                    <code class="path-display" title={preferences.vault || "~/Documents/Atelier (default)"}>
                       <Icon name="folder-open" size="12px" />
                       <span class="path-text mono">
                         {preferences.vault ? formatPath(preferences.vault) : "~/Documents/Atelier (default)"}
@@ -624,7 +648,7 @@
                           <Icon name="x" size="10px" />
                         </button>
                       {/if}
-                    </div>
+                    </code>
                     <button type="button" class="outline small action-pill-btn" onclick={() => onChooseFolder("vault")}>
                       CHOOSE…
                     </button>
@@ -649,7 +673,7 @@
             <Icon name="books" size="12px" />
             <span>CATALOGUED LIBRARIES</span>
           </div>
-          <div class="inset-card">
+          <div class="card flush list divided">
             {#if libraries === null}
               <div class="setting-row"><span class="row-desc">Reading libraries…</span></div>
             {:else if libraries.length === 0}
@@ -688,7 +712,7 @@
               {/each}
             {/if}
           </div>
-          <div class="inset-card">
+          <div class="card flush list divided">
             <div class="setting-row">
               <div class="row-meta">
                 <span class="row-label">ADD A LIBRARY</span>
@@ -716,7 +740,7 @@
             <Icon name="hard-drive" size="12px" />
             <span>DEVELOPED PREVIEWS</span>
           </div>
-          <div class="inset-card">
+          <div class="card flush list divided">
             <div class="setting-row">
               <div class="row-meta">
                 <span class="row-label">JPEG RENDER CACHE</span>
@@ -744,7 +768,7 @@
               <Icon name="image" size="12px" />
               <span>APPLE PHOTOS CACHE</span>
             </div>
-            <div class="inset-card">
+            <div class="card flush list divided">
               <div class="setting-row">
                 <div class="row-meta">
                   <label class="row-label" for="photos-cache-limit">CACHE LIMIT (GiB)</label>
@@ -784,7 +808,7 @@
             <Icon name="user-circle" size="12px" />
             <span>GARDEN ACCOUNT</span>
           </div>
-          <div class="inset-card">
+          <div class="card flush list divided">
             {#if gardenAccount?.signed_in}
               <div class="setting-row">
                 <div class="row-meta">
@@ -826,7 +850,7 @@
             <Icon name="lightning" size="12px" />
             <span>AI CULLING &amp; AUTOMATION</span>
           </div>
-          <div class="inset-card">
+          <div class="card flush list divided">
             <div class="setting-row">
               <div class="row-meta">
                 <span class="row-label">AUTO-SELECT (STORY)</span>
@@ -845,7 +869,7 @@
                 <input type="checkbox" role="switch" bind:checked={preferences.ai_cull_export_desktop} />
               </div>
             </div>
-            <div class="setting-row" class:row-disabled={!aiCullActive}>
+            <div class="setting-row" aria-disabled={!aiCullActive}>
               <div class="row-meta">
                 <span class="row-label">PHOTOS TO KEEP PER SESSION</span>
                 <span class="row-desc">Target number of photos kept per date folder during auto-cull — the 24-or-36-exposure roll concept.</span>
@@ -858,7 +882,7 @@
                 </div>
               </div>
             </div>
-            <div class="setting-row" class:row-disabled={!aiCullActive}>
+            <div class="setting-row" aria-disabled={!aiCullActive}>
               <div class="row-meta">
                 <span class="row-label">VISION PROVIDER</span>
                 <span class="row-desc">Who scores culling candidates and suggests photo tags. Same provider for both — swap it here, not per-feature.</span>
@@ -875,7 +899,7 @@
                 </Dropdown>
               </div>
             </div>
-            <div class="setting-row" class:row-disabled={!aiCullActive}>
+            <div class="setting-row" aria-disabled={!aiCullActive}>
               <div class="row-meta">
                 <span class="row-label">VISION API KEY</span>
                 <span class="row-desc">Sends compressed thumbnails to the provider above for ranking and tag suggestions. Billed per API usage.</span>
@@ -884,7 +908,7 @@
                 <input type="password" class="mono-input" disabled={!aiCullActive} bind:value={preferences.ai_api_key} placeholder={preferences.ai_provider === "gemini" ? "AIza…" : "sk-ant-…"} autocomplete="off" spellcheck="false" />
               </div>
             </div>
-            <div class="setting-row" class:row-disabled={!aiCullActive}>
+            <div class="setting-row" aria-disabled={!aiCullActive}>
               <div class="row-meta">
                 <span class="row-label">MODEL</span>
                 <span class="row-desc">Leave blank for the provider's default. Must be a valid model id for the selected provider, or requests will fail.</span>
@@ -901,7 +925,7 @@
             <Icon name="info" size="12px" />
             <span>REVEAL</span>
           </div>
-          <div class="inset-card">
+          <div class="card flush list divided">
             <div class="setting-row">
               <div class="row-meta">
                 <span class="row-label">VERSION</span>
@@ -920,7 +944,7 @@
             <Icon name="heart" size="12px" />
             <span>OPEN SOURCE &amp; CREDITS</span>
           </div>
-          <div class="inset-card">
+          <div class="card flush list divided">
             <div class="setting-row">
               <div class="row-meta">
                 <span class="row-label">SPEKTRAFILM-RS</span>
@@ -1004,12 +1028,8 @@
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    margin: var(--window-inset);
-    padding: 0 8px 8px;
-    background: var(--color-surface-high);
-    border-radius: var(--pane-radius);
-    box-shadow: var(--shadow);
+    gap: var(--space-d8);
+    padding: 0 var(--space-d2) var(--space-d2);
     overflow-y: auto;
   }
   /* Clears the traffic lights: the title-bar band, less the pane's own
@@ -1019,29 +1039,13 @@
     flex-shrink: 0;
   }
   .category-btn {
-    all: unset;
     box-sizing: border-box;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-d2);
     width: 100%;
-    padding: 6px 10px;
-    border-radius: var(--radius);
-    font-family: var(--font-text, sans-serif);
-    font-size: 12px;
-    color: color-mix(in srgb, var(--color-foreground) 60%, transparent);
+    padding: var(--space-d3) 10px;
     cursor: pointer;
-  }
-  /* Selection reads exactly like a folder row in the sidebar: a quiet
-     foreground wash and full-strength text, not an accent block. */
-  .category-btn:hover {
-    background: color-mix(in srgb, var(--color-foreground) 6%, transparent);
-    color: var(--color-foreground);
-  }
-  .category-btn.active {
-    background: color-mix(in srgb, var(--color-foreground) 12%, transparent);
-    color: var(--color-foreground);
-    font-weight: 600;
   }
 
   .detail {
@@ -1076,20 +1080,8 @@
     align-items: center;
     gap: 0.4rem;
     padding-left: 0.25rem;
-    font-family: var(--font-header, sans-serif);
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.1em;
-    color: color-mix(in srgb, var(--color-foreground, #fff) 50%, transparent);
-    text-transform: uppercase;
   }
 
-  .inset-card {
-    background: color-mix(in srgb, var(--color-foreground, #fff) 3.5%, var(--color-surface-low, #18181b));
-    border: 1px solid color-mix(in srgb, var(--color-foreground, #fff) 8%, transparent);
-    border-radius: var(--radius, 8px);
-    overflow: hidden;
-  }
   /* .inset-card's overflow:hidden clips any Dropdown popover open inside it
      to the card's own bounds — used on any card whose row has one (the date
      preset picker, the theme picker), not literally date-specific anymore. */
@@ -1101,17 +1093,6 @@
     justify-content: space-between;
     padding: 0.75rem 0.9rem;
     gap: 1rem;
-    transition: background 120ms ease, opacity 150ms ease;
-  }
-  .setting-row:not(:last-child) {
-    border-bottom: 1px solid color-mix(in srgb, var(--color-foreground, #fff) 5%, transparent);
-  }
-  .setting-row:hover {
-    background: color-mix(in srgb, var(--color-foreground, #fff) 1.5%, transparent);
-  }
-  .setting-row.row-disabled {
-    opacity: 0.4;
-    pointer-events: none;
   }
 
   .row-meta {
@@ -1121,27 +1102,12 @@
     flex: 1;
     min-width: 0;
   }
-  .row-label {
-    font-family: var(--font-header, sans-serif);
-    font-size: 11.5px;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    color: var(--color-foreground, #f4f4f5);
-  }
   .lib-path {
-    font-family: var(--font-monospace, monospace);
-    font-size: 0.62rem;
     opacity: 0.6;
     overflow-wrap: anywhere;
   }
   .lib-offline {
     color: var(--color-accent);
-  }
-    .row-desc {
-    font-family: var(--font-text, system-ui, sans-serif);
-    font-size: 11px;
-    line-height: 1.35;
-    color: color-mix(in srgb, var(--color-foreground, #fff) 48%, transparent);
   }
   .row-control {
     flex-shrink: 0;
@@ -1158,8 +1124,6 @@
     padding: 0.35rem 0.65rem;
     width: 190px;
     max-width: 100%;
-    font-family: var(--font-monospace, monospace);
-    font-size: 11px;
   }
 
   .date-control-col {
@@ -1183,44 +1147,16 @@
   .preset-option {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    padding: 4px 0;
-  }
-  .preset-code {
-    font-family: var(--font-monospace, monospace);
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--color-foreground, #fff);
-  }
-  .preset-desc {
-    font-family: var(--font-text, sans-serif);
-    font-size: 10px;
-    color: color-mix(in srgb, var(--color-foreground, #fff) 55%, transparent);
-  }
-  .preset-example {
-    font-family: var(--font-monospace, monospace);
-    font-size: 9.5px;
-    color: color-mix(in srgb, var(--color-accent, #d6202c) 85%, white);
+    gap: var(--space-d8);
+    padding: var(--space-d4) 0;
   }
 
   .path-picker-group {
     display: flex;
     align-items: center;
-    gap: 6px;
-  }
-  .path-display {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 0.35rem 0.6rem;
-    background: color-mix(in srgb, var(--color-foreground, #fff) 3%, transparent);
-    border: 1px solid color-mix(in srgb, var(--color-foreground, #fff) 9%, transparent);
-    border-radius: var(--radius-sm, 4px);
-    max-width: 180px;
-    color: color-mix(in srgb, var(--color-foreground, #fff) 80%, transparent);
+    gap: var(--space-d3);
   }
   .path-text {
-    font-size: 10.5px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1236,38 +1172,18 @@
   }
 
   .action-pill-btn {
-    font-family: var(--font-header, sans-serif);
-    font-size: 10px;
-    letter-spacing: 0.08em;
     white-space: nowrap;
-    gap: 4px;
+    gap: var(--space-d4);
   }
 
-  .stepper-group {
-    display: flex;
-    align-items: center;
-    background: color-mix(in srgb, var(--color-foreground, #fff) 4%, var(--color-surface-low, #18181b));
-    border: 1px solid color-mix(in srgb, var(--color-foreground, #fff) 12%, transparent);
-    border-radius: var(--radius-sm, 4px);
-    overflow: hidden;
-  }
   .stepper-btn {
-    all: unset;
     display: flex;
     align-items: center;
     justify-content: center;
     width: 26px;
     height: 26px;
-    font-size: 13px;
-    font-weight: 600;
     cursor: pointer;
-    color: var(--color-foreground, #fff);
-    background: color-mix(in srgb, var(--color-foreground, #fff) 4%, transparent);
     user-select: none;
-    transition: background 120ms ease;
-  }
-  .stepper-btn:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--color-foreground, #fff) 12%, transparent);
   }
   .stepper-btn:disabled {
     opacity: 0.3;
@@ -1277,13 +1193,6 @@
     width: 44px;
     height: 26px;
     text-align: center;
-    border: none;
-    background: transparent;
-    color: var(--color-foreground, #fff);
-    font-family: var(--font-monospace, monospace);
-    font-size: 11.5px;
-    font-weight: 600;
-    outline: none;
     -moz-appearance: textfield;
     appearance: textfield;
   }
@@ -1305,14 +1214,5 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-  }
-  .btn-cancel,
-  .btn-save {
-    font-family: var(--font-header, sans-serif);
-    font-size: 11px;
-    letter-spacing: 0.08em;
-  }
-  .mono {
-    font-family: var(--font-monospace, monospace);
   }
 </style>

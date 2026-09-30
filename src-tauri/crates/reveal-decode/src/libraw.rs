@@ -23,10 +23,24 @@ pub struct LibrawDecoder;
 /// rawpy `ColorSpace.ACES` — libraw output_color index.
 const OUTPUT_COLOR_ACES: i32 = 6;
 
+/// One full decode at a time, process-wide.
+///
+/// This libraw is built with OpenMP, and each decode fans out across every
+/// core. Run four at once (the viewer's neighbour prefetch does) and the
+/// machine is oversubscribed four times over; libraw's allocator then guards
+/// every alloc/free with a global `omp critical` whose queuing lock hands
+/// off to threads the OS has descheduled. Everything else that touches
+/// libraw — the AI cull's thumbnail reads, the grid — ends up parked on that
+/// lock: a 152-photo cull sat five minutes at 650% CPU, stuck in
+/// `~LibRaw → __kmp_acquire_queuing_lock` (sampled 2026-09-30). A decode
+/// already uses all the cores, so serialising them costs nothing.
+static FULL_DECODE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 impl RawDecoder for LibrawDecoder {
     fn decode_linear(&self, path: &Path, fast: bool) -> Result<LinearImage, DecodeError> {
         let cpath = CString::new(path.to_string_lossy().as_bytes())
             .map_err(|_| DecodeError::Decode("path contains NUL".into()))?;
+        let _one_at_a_time = FULL_DECODE.lock().unwrap_or_else(|e| e.into_inner());
 
         unsafe {
             let lr = ffi::libraw_init(0);

@@ -76,7 +76,32 @@ fn score_paths(
         "cull-progress",
         serde_json::json!({ "dir": dir, "phase": "local", "done": 0, "total": considered }),
     );
-    let survivors = reveal_cull::prefilter(paths, &reveal_cull::PrefilterConfig::default());
+    // Timed, because "it feels stuck" has been the complaint: the log says
+    // which stage ate the minutes.
+    let started = std::time::Instant::now();
+    let local_started = std::time::Instant::now();
+    let last_tick = std::sync::atomic::AtomicUsize::new(0);
+    let survivors = reveal_cull::prefilter_with(
+        paths,
+        &reveal_cull::PrefilterConfig::default(),
+        &|done| {
+            // A tick every 8 photos is live enough to watch and quiet enough
+            // not to flood the event bus.
+            if done % 8 == 0 || done == considered {
+                last_tick.store(done, std::sync::atomic::Ordering::Relaxed);
+                let _ = app.emit(
+                    "cull-progress",
+                    serde_json::json!({ "dir": dir, "phase": "local", "done": done, "total": considered }),
+                );
+            }
+        },
+        cancel,
+    );
+    eprintln!(
+        "ai_cull: local prefilter {considered} photos → {} survivors in {} ms",
+        survivors.len(),
+        local_started.elapsed().as_millis()
+    );
     if cancel.load(std::sync::atomic::Ordering::Acquire) {
         return Err("cancelled".into());
     }
@@ -87,13 +112,17 @@ fn score_paths(
 
     // Re-extract/re-encode only the survivors — keeping every candidate's
     // preview bytes in memory for a full day's import would be wasteful.
-    let candidates: Vec<reveal_cull::RankCandidate> = survivors
-        .iter()
-        .filter_map(|s| {
-            reveal_cull::embedded_preview_jpeg(&s.path, 768)
-                .map(|jpeg_bytes| reveal_cull::RankCandidate { path: s.path.clone(), jpeg_bytes })
-        })
+    let extract_started = std::time::Instant::now();
+    let survivor_paths: Vec<String> = survivors.iter().map(|s| s.path.clone()).collect();
+    let candidates: Vec<reveal_cull::RankCandidate> = reveal_cull::embedded_previews(&survivor_paths, 768)
+        .into_iter()
+        .map(|(path, jpeg_bytes)| reveal_cull::RankCandidate { path, jpeg_bytes })
         .collect();
+    eprintln!(
+        "ai_cull: re-extracted {} previews in {} ms",
+        candidates.len(),
+        extract_started.elapsed().as_millis()
+    );
 
     let model = model.unwrap_or_else(|| provider.default_model().to_string());
     let ranker = reveal_cull::vision_ranker(provider, api_key.to_string(), model);
@@ -107,6 +136,7 @@ fn score_paths(
     };
     let ranked = reveal_cull::rank_all(&progress_ranker, candidates, 20, target as usize)
         .map_err(|e| e.to_string())?;
+    eprintln!("ai_cull: cloud ranking {candidate_count} candidates, total run {} ms", started.elapsed().as_millis());
     if cancel.load(std::sync::atomic::Ordering::Acquire) {
         return Err("cancelled".into());
     }

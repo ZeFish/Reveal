@@ -74,28 +74,23 @@ async function loadThemeFonts(theme) {
   await loadFontPackages(THEME_FONT_PACKAGES[theme] ?? []);
 }
 
-// Every component picks its own hover-transition timing (120ms here, 150ms
-// there, some with no transition at all) — fine for a hover, but a color
-// SCHEME change (theme pick, or macOS system light/dark) recolors dozens of
-// them at once, and those mismatched durations turn one swap into a visible
-// wave instead of a single fade. This forces one shared, synchronized
-// duration (--duration-standard, 180ms in the app context — see app.scss)
-// for the swap, then gets out of the way so hover transitions go back to
-// their own timing. The 260ms timeout is that plus a buffer, not a duration
-// of its own — keep it above whatever --duration-standard resolves to.
-let transitionSyncTimer = /** @type {ReturnType<typeof setTimeout> | undefined} */ (undefined);
-export function syncThemeTransition() {
-  const root = document.documentElement;
-  root.classList.add("theme-transitioning");
-  clearTimeout(transitionSyncTimer);
-  transitionSyncTimer = setTimeout(() => root.classList.remove("theme-transitioning"), 260);
-}
-
 /** @param {string} theme */
 async function ensureThemeCssLoaded(theme) {
   if (!THEME_LOADERS[theme] || loadedThemes.has(theme)) return;
   await THEME_LOADERS[theme]();
   loadedThemes.add(theme);
+}
+
+// <html>'s data-theme is the app's theme, unless the open folder carries a
+// curated one. Both set a wish; the latest wins, and the attribute is always
+// painted from the pair so neither clobbers the other.
+let appTheme = DEFAULT_THEME;
+/** @type {string | null} */
+let folderTheme = null;
+let folderRequest = 0;
+
+function paintTheme() {
+  document.documentElement.dataset.theme = folderTheme ?? appTheme;
 }
 
 /**
@@ -106,44 +101,44 @@ export async function applyTheme(id) {
   const theme = id && THEME_LOADERS[id] ? id : DEFAULT_THEME;
   await ensureThemeCssLoaded(theme);
   await loadThemeFonts(theme);
-  syncThemeTransition();
-  document.documentElement.dataset.theme = theme;
+  appTheme = theme;
+  paintTheme();
 }
 
-// A theme's [data-theme="<id>"] rule sets far more than the handful of
-// color/font tokens the folder-theme system (garden-themes.generated.json)
-// hand-picks — radius, font-weights, letter-spacing, all derived the same
-// way colors are. That derivation only ever resolves at :root in this
-// framework by design ($stnd-theme-scope, packages/styles), so a folder
-// theme applied as a NESTED override (this app's own chrome stays on its
-// own separate theme) never picks those up: "the corner radius of forest
-// is not following". Reconfiguring $stnd-theme-scope package-wide would
-// duplicate every derived token under a selector for every consumer of
-// this framework, not just this one preview — too broad a change for what
-// this needs. Instead: load the theme's real CSS, let the browser resolve
-// it on a real (offscreen) element carrying that data-theme, read back
-// whichever custom properties are asked for, and hand back plain values a
-// caller can apply as its own inline overrides. Contained entirely to
-// Reveal's own code, no shared-package risk.
 /**
- * @param {string} id
- * @param {string[]} props e.g. ["--radius", "--radius-sm", "--radius-lg"]
- * @returns {Promise<Record<string, string>>}
+ * The open folder's curated theme, worn over the app's until the folder is
+ * left (null).
+ * @param {string | null | undefined} id
  */
-export async function measureThemeTokens(id, props) {
-  if (!THEME_LOADERS[id]) return {};
-  await ensureThemeCssLoaded(id);
-  const probe = document.createElement("div");
-  probe.dataset.theme = id;
-  probe.style.cssText = "position:absolute;visibility:hidden;pointer-events:none;width:0;height:0;";
-  document.body.appendChild(probe);
-  const computed = getComputedStyle(probe);
-  /** @type {Record<string, string>} */
-  const out = {};
-  for (const p of props) {
-    const v = computed.getPropertyValue(p).trim();
-    if (v) out[p] = v;
+export async function applyFolderTheme(id) {
+  const request = ++folderRequest;
+  const theme = id && (id === DEFAULT_THEME || THEME_LOADERS[id]) ? id : null;
+  if (theme) {
+    await ensureThemeCssLoaded(theme);
+    await loadThemeFonts(theme);
+    if (request !== folderRequest) return;
   }
-  probe.remove();
-  return out;
+  folderTheme = theme;
+  paintTheme();
+}
+
+// ---- interface text size ---------------------------------------------------
+// One knob. app.scss (the framework's) fixes --font-text-size for a window;
+// the type scale, the spacing rhythm (1rlh) and every control derive from it,
+// so changing it scales the whole interface together. The preference is the
+// size in px; the default leaves the framework's own value in place.
+export const DEFAULT_TEXT_SIZE = 13;
+export const TEXT_SIZES = [
+  { px: 12, label: "Small" },
+  { px: 13, label: "Default" },
+  { px: 14, label: "Large" },
+  { px: 15, label: "Larger" },
+];
+
+/** @param {number | null | undefined} px */
+export function applyTextSize(px) {
+  const style = document.documentElement.style;
+  const size = TEXT_SIZES.some((t) => t.px === px) ? px : DEFAULT_TEXT_SIZE;
+  if (size === DEFAULT_TEXT_SIZE) style.removeProperty("--font-text-size");
+  else style.setProperty("--font-text-size", `${size}px`);
 }

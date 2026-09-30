@@ -275,17 +275,17 @@
   .curve-editor {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: 2px 0 4px;
+    gap: var(--space-d4);
+    padding: var(--space-d8) 0 var(--space-d4);
   }
   .curve-tabs {
     display: flex;
     align-items: center;
-    gap: 3px;
+    gap: var(--space-d5);
   }
   .din {
     font-family: var(--font-header, sans-serif);
-    font-size: 9px;
+    font-size: var(--scale-d3);
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }
@@ -295,10 +295,10 @@
     background: none;
     border: 0;
     border-radius: 0;
-    padding: 1px 4px;
+    padding: 1px var(--space-d4);
     box-shadow: none;
     color: color-mix(in srgb, var(--color-foreground) 45%, transparent);
-    border-bottom: 1px solid transparent;
+    border-bottom: var(--stroke-width) solid transparent;
     cursor: pointer;
   }
   .curve-tab:hover {
@@ -316,7 +316,7 @@
     appearance: none;
     background: none;
     border: 0;
-    padding: 0 2px;
+    padding: 0 var(--space-d8);
     box-shadow: none;
     color: color-mix(in srgb, var(--color-foreground) 45%, transparent);
     cursor: pointer;
@@ -336,7 +336,7 @@
     aspect-ratio: 1;
     display: block;
     background: color-mix(in srgb, var(--color-foreground) 5%, transparent);
-    border: 1px solid color-mix(in srgb, var(--color-foreground) 12%, transparent);
+    border: var(--stroke-width) solid color-mix(in srgb, var(--color-foreground) 12%, transparent);
     border-radius: var(--radius-sm, 3px);
     touch-action: none;
     cursor: crosshair;

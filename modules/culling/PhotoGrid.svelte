@@ -83,6 +83,29 @@
     virtual ? Math.max(0, (totalRows - 1 - lastRow) * rowPitch) : 0,
   );
 
+  // Masonry, placed by us rather than by CSS columns. `column-count` fills a
+  // column top to bottom before starting the next, so the folder read down
+  // the first column, then the second — and every image that measured itself
+  // changed a height and let the browser re-balance the columns, cells
+  // jumping between them. Here each photo goes, in order, to the currently
+  // shortest column (reading order stays left to right), and the choice uses
+  // only what the index already knows, so a photo loading never moves any
+  // other. Indices into `frames`, one list per column.
+  const MASONRY_FALLBACK_ASPECT = 1.5; // what PhotoCell assumes before it knows
+  const masonryColumns = $derived.by(() => {
+    if (layout !== "masonry") return /** @type {number[][]} */ ([]);
+    const lists = /** @type {number[][]} */ (Array.from({ length: cols }, () => []));
+    const heights = new Array(cols).fill(0);
+    const gapUnits = gap / cellW;
+    frames.forEach((f, i) => {
+      let shortest = 0;
+      for (let c = 1; c < cols; c++) if (heights[c] < heights[shortest] - 1e-6) shortest = c;
+      lists[shortest].push(i);
+      heights[shortest] += 1 / (f.width && f.height ? f.width / f.height : MASONRY_FALLBACK_ASPECT) + gapUnits;
+    });
+    return lists;
+  });
+
   // Gaps between rows do two things: show whatever paragraphs already
   // anchor there (always — this is how you SEE a story while working the
   // grid, not just add to it), and — for gaps strictly between two visible
@@ -257,7 +280,7 @@
     style="--cols: {cols}; --gap: {gap}px; --cellw: {cellW}px; padding-top: {gap / 2 +
       padTop}px; padding-bottom: {64 + padBottom}px"
   >
-    {#each slice as f, j (f.path)}
+    {#snippet cell(/** @type {PhotoFrame} */ f, /** @type {number} */ i)}
       <PhotoCell
         path={f.path}
         name={f.name}
@@ -270,14 +293,28 @@
         {layout}
         {aspect}
         {fill}
-        idx={start + j}
-        onSelect={(/** @type {MouseEvent | undefined} */ event) => onSelect(start + j, event)}
+        idx={i}
+        onSelect={(/** @type {MouseEvent | undefined} */ event) => onSelect(i, event)}
         onDblClick={() => onDblClick(f.path)}
-        onContextMenu={(/** @type {MouseEvent} */ event) => onContextMenu(start + j, event)}
+        onContextMenu={(/** @type {MouseEvent} */ event) => onContextMenu(i, event)}
         onToggleStory={() => onToggleStory(f.path)}
         onDragStart={(/** @type {DragEvent} */ event) => onDragStart(f.path, event)}
       />
-    {/each}
+    {/snippet}
+
+    {#if layout === "masonry"}
+      {#each masonryColumns as column, c (c)}
+        <div class="masonry-col">
+          {#each column as i (frames[i].path)}
+            {@render cell(frames[i], i)}
+          {/each}
+        </div>
+      {/each}
+    {:else}
+      {#each slice as f, j (f.path)}
+        {@render cell(f, start + j)}
+      {/each}
+    {/if}
 
     {#each rowGaps as r (r)}
       {@const center = r === -1 ? gap / 4 : gap / 2 + padTop + (r - firstRow) * rowPitch + rowH + gap / 2}
@@ -364,7 +401,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 4px;
+    gap: var(--space-d4);
     z-index: 2;
   }
   .row-gap.expanded {
@@ -377,16 +414,9 @@
     width: 22px;
     height: 22px;
     flex-shrink: 0;
-    border: none;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--color-accent) 16%, transparent);
-    color: var(--color-accent);
     cursor: pointer;
     opacity: 0;
     animation: row-gap-in 0.15s ease forwards;
-  }
-  .row-gap-add:hover {
-    background: color-mix(in srgb, var(--color-accent) 28%, transparent);
   }
   @keyframes row-gap-in {
     to { opacity: 1; }
@@ -394,58 +424,45 @@
   .row-gap-prose {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--space-d4);
     width: 100%;
   }
   .row-gap-text {
     display: block;
     width: 100%;
     text-align: left;
-    font-size: 12px;
-    line-height: 1.4;
     padding: 0.4em 0.6em;
-    border: 1px solid transparent;
-    border-radius: 6px;
-    background: var(--color-surface-low, rgba(0, 0, 0, 0.04));
-    color: inherit;
     cursor: pointer;
     white-space: pre-wrap;
   }
-  .row-gap-text:hover {
-    border-color: var(--color-accent);
-  }
   .row-gap-composer {
     width: 100%;
-    padding: 2px 0;
+    padding: var(--space-d8) 0;
   }
   .row-gap-composer textarea {
     width: 100%;
     resize: none;
     font: inherit;
-    font-size: 12px;
-    line-height: 1.4;
     padding: 0.4em 0.6em;
-    border-radius: 6px;
-    border: 1px solid var(--color-accent);
-    background: var(--color-surface, #fff);
-    color: inherit;
   }
 
-  /* Masonry — native CSS columns at the same explicit column count. */
+  /* Masonry — columns are real elements, filled by masonryColumns above. */
   .photo-grid.masonry {
-    display: block;
-    column-count: var(--cols);
-    column-gap: var(--gap);
+    display: flex;
+    align-items: flex-start;
+    gap: var(--gap);
+  }
+  .masonry-col {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap);
   }
   .photo-grid.masonry :global(.cell) {
-    margin-bottom: var(--gap);
-    break-inside: avoid;
     width: 100%;
-    /* A transform (the shadow-isolation trick used in the uniform grid) turns
-       a cell into a containing block, which breaks CSS multi-column flow —
-       cells land in the wrong column or vanish. Masonry uses columns, so drop
-       it here; the sideways-shadow smear it fixes only shows in the uniform
-       grid's centered tracks anyway. */
+    /* The uniform grid's shadow-isolation transform is not needed here
+       (there are no centered tracks to smear a shadow across). */
     transform: none;
     isolation: auto;
   }

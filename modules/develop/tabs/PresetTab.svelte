@@ -280,7 +280,7 @@
               <div class="card-actions">
                 <button
                   class="ghost icon default-btn"
-                  class:active={defaultPresetName === entry.name}
+                  aria-pressed={defaultPresetName === entry.name}
                   title={defaultPresetName === entry.name
                     ? "Default preset on import — click to unset"
                     : "Set as default preset on import"}
@@ -326,7 +326,7 @@
   .pane-scroll {
     flex: 1;
     overflow-y: auto;
-    padding: 16px;
+    padding: var(--space);
     display: flex;
     flex-direction: column;
     gap: 18px;
@@ -335,36 +335,22 @@
   section {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-  }
-
-  .din {
-    font-family: var(--font-header, sans-serif);
-    font-size: var(--scale-d3);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-  }
-  .section-label {
-    font-size: 9.5px;
+    gap: var(--space-d2);
   }
   .list-header {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-d3);
   }
   .count-badge {
-    font-family: var(--font-monospace, monospace);
-    font-size: 9px;
-    color: color-mix(in srgb, var(--color-foreground) 45%, transparent);
     background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
-    padding: 1px 6px;
+    padding: 1px var(--space-d3);
     border-radius: 999px;
   }
 
   .save-row {
     display: flex;
-    gap: 6px;
+    gap: var(--space-d3);
     align-items: center;
   }
   /* Sizing only — border/background/focus ring on inputs and buttons come
@@ -374,16 +360,13 @@
   .panel-input {
     flex: 1;
     min-width: 0;
-    font-family: var(--font-text, sans-serif);
-    font-size: var(--scale-d3);
     padding: 7px 9px;
   }
   .save-btn {
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    font-size: 10px;
+    gap: var(--space-d3);
     padding: 7px 13px;
   }
   .import-btn {
@@ -391,40 +374,32 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 5px;
-    font-size: 10px;
-    padding: 6px 12px;
-    margin-top: 6px;
+    gap: var(--space-d3);
+    padding: var(--space-d3) 12px;
+    margin-top: var(--space-d3);
   }
   .import-note {
-    margin-top: 5px;
+    margin-top: var(--space-d3);
   }
 
   .hint {
-    font-family: var(--font-text, sans-serif);
-    font-size: 9px;
-    color: color-mix(in srgb, var(--color-foreground) 40%, transparent);
     margin: 0;
   }
 
   .list {
-    gap: 6px;
+    gap: var(--space-d3);
   }
   .empty-state {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 8px;
-    padding: 28px 16px;
+    gap: var(--space-d2);
+    padding: 28px var(--space);
     color: color-mix(in srgb, var(--color-foreground) 30%, transparent);
-    border: 1px dashed var(--color-border);
+    border: var(--stroke-width) dashed var(--color-border);
     border-radius: var(--radius);
   }
   .empty-text {
-    font-family: var(--font-text, sans-serif);
-    font-size: var(--scale-d3);
-    color: color-mix(in srgb, var(--color-foreground) 45%, transparent);
-    line-height: 1.4;
     text-align: center;
     margin: 0;
   }
@@ -435,14 +410,14 @@
   .preset-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
+    gap: var(--space-d2);
   }
   .preset-card {
     all: unset;
     cursor: pointer;
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: var(--space-d3);
     border-radius: var(--radius);
     transition: transform var(--duration-fast) var(--ease-soft);
   }
@@ -491,36 +466,25 @@
     top: 4px;
     right: 4px;
     display: flex;
-    gap: 3px;
+    gap: var(--space-d5);
     opacity: 0;
     transition: opacity var(--duration-fast) var(--ease-soft);
   }
   .preset-card:hover .card-actions,
   .preset-card:focus-visible .card-actions,
-  .card-actions:has(.default-btn.active) {
+  .card-actions:has([aria-pressed="true"]) {
     opacity: 1;
   }
   .card-actions button.icon {
     width: 20px;
     height: 20px;
     padding: 0;
-    border-radius: 999px;
-    background: rgba(0, 0, 0, 0.55);
-    backdrop-filter: blur(4px);
-    color: rgba(255, 255, 255, 0.85);
-  }
-  .card-actions button.icon:hover {
-    background: rgba(0, 0, 0, 0.75);
-    color: #fff;
-  }
-  .default-btn.active {
-    color: var(--color-accent);
   }
   .card-meta {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 6px;
+    gap: var(--space-d3);
     padding: 0 1px;
   }
   .preset-name {
@@ -528,16 +492,8 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-family: var(--font-text, sans-serif);
-    font-size: 10.5px;
-    color: color-mix(in srgb, var(--color-foreground) 85%, transparent);
   }
   .engine-badge {
     flex-shrink: 0;
-    font-family: var(--font-header, sans-serif);
-    font-size: 8px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--color-foreground) 50%, transparent);
   }
 </style>

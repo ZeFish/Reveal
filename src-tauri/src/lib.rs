@@ -538,6 +538,14 @@ fn setup_main_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// The import panel's "Ouvrir Reveal": it hid itself and asked for the main
+/// window through a command that was never registered, so the click closed
+/// the panel and showed nothing.
+#[tauri::command]
+fn reveal_main_window(app: tauri::AppHandle) {
+    show_main_window(&app);
+}
+
 fn show_main_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
@@ -876,28 +884,6 @@ fn toggle_system_appearance() -> Result<(), String> {
     toggle_macos_appearance()
 }
 
-/// Toggle Reveal's focus mode. The frontend currently draws the overlay;
-/// the native NSPanel backdrop is the next macOS-only refinement.
-#[tauri::command]
-fn toggle_focus(app: tauri::AppHandle) -> bool {
-    let enabled = app
-        .try_state::<FocusState>()
-        .map(|state| {
-            let mut value = state.0.lock().unwrap();
-            *value = !*value;
-            *value
-        })
-        .unwrap_or(false);
-    let mut prefs = read_shell_prefs(&app);
-    prefs.focus_mode = enabled;
-    let _ = write_shell_prefs(&app, &prefs);
-    let _ = app.emit("shell-prefs-changed", &prefs);
-    if let Err(e) = apply_focus_mode(&app, enabled) {
-        let _ = app.emit("app-error", serde_json::json!({ "message": e }));
-    }
-    enabled
-}
-
 /// Set Reveal's focus mode explicitly.
 #[tauri::command]
 fn set_focus(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
@@ -978,12 +964,6 @@ fn set_focus_window_presence(
     Ok(())
 }
 
-/// Current focus state for initial frontend hydration.
-#[tauri::command]
-fn focus_state(state: tauri::State<'_, FocusState>) -> bool {
-    *state.0.lock().unwrap()
-}
-
 /// Lightroom-style borderless fullscreen for the main window: cover the whole
 /// display in place (menu bar + Dock hidden) rather than the macOS native
 /// Spaces fullscreen. On exit, restore the pre-fullscreen frame.
@@ -1004,12 +984,6 @@ fn set_simple_fullscreen(window: tauri::WebviewWindow, enabled: bool) -> Result<
         let _ = (&window, enabled);
     }
     Ok(())
-}
-
-/// Show the main Reveal window from JS or tray.
-#[tauri::command]
-fn show_contact_sheet(app: tauri::AppHandle) {
-    show_main_window(&app);
 }
 
 /// Hide the main Reveal window while keeping the app alive.
@@ -1118,23 +1092,6 @@ async fn load_catalog_note(root: String) -> String {
 async fn save_catalog_note(root: String, content: String) -> Result<(), String> {
     let path = std::path::Path::new(&root).join("reveal.md");
     std::fs::write(&path, content).map_err(|e| e.to_string())
-}
-
-/// Native RAW file picker (Rust-side dialog — no JS plugin surface needed).
-#[tauri::command]
-async fn pick_raw(app: tauri::AppHandle) -> Option<String> {
-    use tauri_plugin_dialog::DialogExt;
-    app.dialog()
-        .file()
-        .add_filter(
-            "Photos RAW",
-            &[
-                "raf", "dng", "nef", "arw", "cr2", "cr3", "orf", "rw2", "pef", "srw",
-            ],
-        )
-        .blocking_pick_file()
-        .and_then(|f| f.into_path().ok())
-        .map(|p| p.to_string_lossy().into_owned())
 }
 
 struct IndexState(std::sync::Arc<reveal_index::Index>);
@@ -1316,13 +1273,6 @@ fn list_profiles(
 #[tauri::command]
 fn list_luts(state: tauri::State<'_, EngineState>) -> Result<Vec<String>, String> {
     state.0.list_luts().map_err(|e| format!("{e:#}"))
-}
-
-/// Where the user drops their own `.cube` files — the LUTs section's
-/// "Révéler dans le Finder" opens exactly this path via `open_path`.
-#[tauri::command]
-fn luts_dir(state: tauri::State<'_, EngineState>) -> String {
-    state.0.luts_dir().to_string_lossy().into_owned()
 }
 
 // ---- Named develop presets (the Preset palette) -----------------------------
@@ -1987,15 +1937,11 @@ pub fn run() {
             open_path,
             reveal_in_finder,
             toggle_system_appearance,
-            toggle_focus,
             set_focus,
             set_focus_window_presence,
             set_simple_fullscreen,
-            focus_state,
-            show_contact_sheet,
             hide_contact_sheet,
             ping,
-            pick_raw,
             catalog::pick_folder,
             catalog::list_dir,
             catalog::set_rating,
@@ -2021,12 +1967,13 @@ pub fn run() {
             export::export_photo,
             export::export_to_daily_note,
             export::export_batch_to_daily_note,
-            publishing::vault_attachment_dir,
             export::export_photos,
             export::cancel_exports,
             cull::ai_cull,
             cull::ai_cull_selection,
             cull::cancel_cull,
+            reveal_main_window,
+            publishing::story_publish_status,
             publishing::story_stems,
             publishing::story_toggle,
             publishing::publish_story,
@@ -2055,7 +2002,6 @@ pub fn run() {
             prefetch_photo,
             list_profiles,
             list_luts,
-            luts_dir,
             list_presets,
             save_preset,
             delete_preset,

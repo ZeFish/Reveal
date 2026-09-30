@@ -276,7 +276,7 @@
                   max="1"
                   step="any"
                   value={toPosition(toDisplay(control.id, recipe[control.id]), control.min, control.max, neutralOf(control.id))}
-                  style="--f: {toPosition(toDisplay(control.id, recipe[control.id]), control.min, control.max, neutralOf(control.id)) * 100}%"
+                  style="--slider-value: {toPosition(toDisplay(control.id, recipe[control.id]), control.min, control.max, neutralOf(control.id)) * 100}%"
                   oninput={(e) => {
                     recipe[control.id] = fromDisplay(control.id, fromPosition(parseFloat(e.currentTarget.value), control.min, control.max, neutralOf(control.id), control.step));
                     edited(true); // live proxy
@@ -309,7 +309,7 @@
                   max="1"
                   step="any"
                   value={toPosition(recipe[control.id]?.[control.index] ?? 0, control.min, control.max, neutralOf(control.id, control.index))}
-                  style="--f: {toPosition(recipe[control.id]?.[control.index] ?? 0, control.min, control.max, neutralOf(control.id, control.index)) * 100}%"
+                  style="--slider-value: {toPosition(recipe[control.id]?.[control.index] ?? 0, control.min, control.max, neutralOf(control.id, control.index)) * 100}%"
                   oninput={(e) => {
                     if (!Array.isArray(recipe[control.id])) recipe[control.id] = [];
                     recipe[control.id][control.index] = fromPosition(parseFloat(e.currentTarget.value), control.min, control.max, neutralOf(control.id, control.index), control.step);
@@ -396,7 +396,7 @@
                         max="1"
                         step="any"
                         value={toPosition(readField(field), ch.min, ch.max, neutralOf(field.id, field.index))}
-                        style="--f: {toPosition(readField(field), ch.min, ch.max, neutralOf(field.id, field.index)) * 100}%"
+                        style="--slider-value: {toPosition(readField(field), ch.min, ch.max, neutralOf(field.id, field.index)) * 100}%"
                         oninput={(e) => {
                           writeField(field, fromPosition(parseFloat(e.currentTarget.value), ch.min, ch.max, neutralOf(field.id, field.index), ch.step));
                           edited(true);
@@ -461,7 +461,7 @@
                             max="1"
                             step="0.01"
                             value={layer.opacity}
-                            style="--f: {pct(layer.opacity, 0, 1)}"
+                            style="--slider-value: {pct(layer.opacity, 0, 1)}"
                             oninput={(e) =>
                               updateLutOpacity(control.stage, idx, parseFloat(e.currentTarget.value))}
                           />
@@ -489,21 +489,15 @@
 
   /* Precision Leica Collapsible Group Header */
   .group-header {
-    all: unset;
     cursor: pointer;
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: var(--space-d3);
     width: 100%;
     margin-top: 10px;
-    margin-bottom: 3px;
-    padding: 2px 0;
+    margin-bottom: var(--space-d5);
+    padding: var(--space-d8) 0;
     user-select: none;
-    color: color-mix(in srgb, var(--color-foreground) 45%, transparent);
-    transition: color var(--duration-fast) ease;
-  }
-  .group-header:hover {
-    color: var(--color-foreground);
   }
   .group-header .chevron {
     display: inline-flex;
@@ -519,11 +513,6 @@
     transform: rotate(-90deg);
   }
   .group-title {
-    font-family: var(--font-header, sans-serif);
-    font-size: 9.5px;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
     white-space: nowrap;
   }
   .group-line {
@@ -547,25 +536,14 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 4px;
-    padding: 4px 2px 7px;
+    gap: var(--space-d4);
+    padding: var(--space-d4) var(--space-d8) 7px;
   }
   .band {
-    all: unset;
     position: relative;
     box-sizing: border-box;
     cursor: pointer;
     text-align: center;
-    font-family: var(--font-header, sans-serif);
-    font-size: 9px;
-    font-weight: 500;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-    transition:
-      transform 140ms cubic-bezier(0.34, 1.56, 0.64, 1),
-      color var(--duration-fast) ease,
-      background var(--duration-fast) ease;
   }
   /* Colour bands ARE their swatch; an axis with no colour of its own
      (Shadows/Midtones/Highlights) stays a text chip rather than being
@@ -573,15 +551,10 @@
   .band.swatch {
     width: 18px;
     height: 18px;
-    border-radius: 50%;
-    background: var(--swatch);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
   }
   .band:not(.swatch) {
     flex: 1;
-    padding: 4px 6px;
-    border-radius: var(--radius-sm, 6px);
-    background: color-mix(in srgb, var(--color-foreground) 6%, transparent);
+    padding: var(--space-d4) var(--space-d3);
   }
   .band:not(.swatch).active {
     color: var(--color-foreground);
@@ -590,7 +563,7 @@
   .band.swatch.active {
     transform: scale(1.15);
     box-shadow:
-      0 0 0 2px var(--color-surface-high),
+      0 0 0 2px var(--color-surface-light-1),
       0 0 0 3.5px var(--color-foreground);
   }
   .band:hover:not(.active) {
@@ -617,7 +590,7 @@
   .frow {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-d2);
     min-height: 20px;
     padding: 1px 0;
     transition: opacity var(--duration-fast);
@@ -646,12 +619,6 @@
     width: 106px;
     flex-shrink: 0;
     white-space: nowrap;
-    font-family: var(--font-header, sans-serif);
-    font-size: 10px;
-    font-weight: 500;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--color-foreground) 60%, transparent);
     transition: color var(--duration-fast);
     cursor: default;
     text-align: right;
@@ -666,17 +633,8 @@
     display: block;
     -webkit-appearance: none;
     appearance: none;
-    background: none;
-    border: 0;
-    border-radius: 0;
     padding: 0;
-    outline: none;
-    box-shadow: none;
     text-align: right;
-  }
-  .reset-label:focus-visible {
-    outline: 2px solid var(--color-accent);
-    outline-offset: 2px;
   }
   .frow:hover .frow-label {
     color: var(--color-foreground);
@@ -685,12 +643,10 @@
     flex: 1;
   }
   .val {
-    width: 44px;
+    min-width: 44px;
+    white-space: nowrap;
     flex-shrink: 0;
-    font-family: var(--font-monospace, monospace);
-    font-size: 10px;
     text-align: right;
-    color: color-mix(in srgb, var(--color-foreground) 80%, transparent);
     font-variant-numeric: tabular-nums;
   }
   /* A toggle row has no .val text, so nothing forced it into the same fixed
@@ -708,22 +664,8 @@
      edge instead. */
   .toggle-wrap input {
     margin-inline-end: 0;
-    /* Standard's own --switch-height (_standard-11-forms.scss) is sized for
-       normal-density forms — taller than this panel's 10px text/20px rows
-       call for. Width and thumb size derive from this one token —
-       including --switch-padding, which scales with it in the framework
-       itself now — so overriding just the height here is enough to shrink
-       the whole switch proportionally to fit the row's own line-height. */
-    --switch-height: 11px;
   }
 
-  /* Sizing only from here down — range-slider identity (fill gradient,
-     thumb) is app.scss's own StyledSlider rule reading --f, not the
-     framework's default; select/button chevron/borders/hover still come
-     from Standard's zero-class rules (_standard-11-forms.scss,
-     _standard-13-components.scss) plus the app-wide pill shape in
-     +layout.svelte. --f used to be named --slider-value here, a name
-     app.scss's gradient never read, so every fill sat frozen at 50%. */
   input[type="range"] {
     flex: 1;
     min-width: 0;
@@ -731,9 +673,6 @@
   .panel-select {
     width: 100%;
     box-sizing: border-box;
-    font-family: var(--font-text, sans-serif);
-    font-size: 10.5px;
-    padding: 2.5px 18px 2.5px 6px;
   }
 
   /* LUT Stacks */
@@ -747,44 +686,27 @@
     display: flex;
     align-items: center;
   }
-  .lut-subhead {
-    font-family: var(--font-header, sans-serif);
-    font-size: 9.5px;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--color-foreground) 45%, transparent);
-  }
   .add-lut-btn {
-    font-family: var(--font-header, sans-serif);
-    font-size: 9px;
-    letter-spacing: 0.08em;
-    padding: 1px 6px;
+    padding: 1px var(--space-d3);
   }
 
   .lut-layer-card {
     background: color-mix(in srgb, var(--color-foreground) 2.5%, transparent);
-    border: 1px solid color-mix(in srgb, var(--color-foreground) 7%, transparent);
+    border: var(--stroke-width) solid color-mix(in srgb, var(--color-foreground) 7%, transparent);
     border-radius: var(--radius-sm, 3px);
-    padding: 4px 6px;
+    padding: var(--space-d4) var(--space-d3);
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: var(--space-d5);
   }
   .layer-row {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: var(--space-d3);
   }
   .icon-btn {
     width: 16px;
     height: 16px;
     padding: 0;
-  }
-  .opacity-label {
-    font-size: 9.5px;
-  }
-  .mono {
-    font-family: var(--font-monospace, monospace);
   }
 </style>

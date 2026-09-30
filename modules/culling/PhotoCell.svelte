@@ -109,13 +109,17 @@
   class:selected
   class:exporting={isExporting}
   data-idx={idx}
+  data-reveal-host
   draggable={!path.startsWith("apple-photos://")}
   ondragstart={onDragStart}
   onclick={onSelect}
   ondblclick={onDblClick}
   oncontextmenu={onContextMenu}
   onkeydown={(e) => {
-    if (e.key === "Enter" || e.key === " ") {
+    // Enter activates. Space is NOT handled here: it is the app's quick-look
+    // key, and preventing its default on the cell hid it from the window-level
+    // shortcut handler (which skips events already handled).
+    if (e.key === "Enter") {
       e.preventDefault();
       onSelect();
     }
@@ -170,8 +174,8 @@
     <!-- The overlays live INSIDE the print, not the slot: the card hugs the
          photo now, so anything anchored to the slot floated off its edges.
          The print's overflow + radius clips them to the photo. -->
-    <!-- Stars: fill = the app background, stroke = the hairline — the one star
-         look everywhere (Swift `Stars`), no black chip behind. -->
+    <!-- Stars: filled with the accent, edged a shade darker — no black chip
+         behind. -->
     {#if rating > 0}
       <div class="stars-overlay">
         {#each Array(rating) as _}
@@ -182,10 +186,11 @@
       </div>
     {/if}
 
-    <!-- Story dot: in-story = a quiet bg-coloured marker (not a loud red dot);
-         hover-only when it isn't, so empty dots don't clutter the grid. -->
+    <!-- Story dot: in-story = the accent; hover-only when it isn't, so empty
+         dots don't clutter the grid. -->
     <button
       class="story-dot-btn"
+      data-reveal
       disabled={path.startsWith("apple-photos://")}
       hidden={path.startsWith("apple-photos://")}
       class:in-story={inStory}
@@ -198,9 +203,7 @@
     ></button>
 
     {#if isExporting || isRendering}
-      <div class="render-badge" title={isExporting ? "Export en cours…" : "Rendu en cours…"}>
-        <span class="badge-dot"></span>
-      </div>
+      <span class="loader render-badge" title={isExporting ? "Export en cours…" : "Rendu en cours…"}></span>
     {/if}
 
     </div>
@@ -208,7 +211,7 @@
          the photo (Francis, 2026-09-28): a label on the print hid the part
          of the frame you were looking at. Outside .print so its clip does
          not apply; the card itself no longer clips. -->
-    <div class="caption">
+    <div class="caption" data-reveal>
       <span class="name">{stem(name)}</span>
     </div>
   </div>
@@ -240,22 +243,14 @@
      framework's lift, both themes (the tokens already know the scheme).
      On the card, never on .cell: the cell is the invisible slot, and a
      shadow there outlined empty space once the card hugged the photo. */
-  .cell.selected {
-    z-index: 5;
-  }
-  .cell.selected .matte {
-    box-shadow: var(--shadow-hover), var(--shadow-glow);
-    transform: translateY(-1px) translateZ(0);
-    background: var(--color-surface-higher);
-  }
 
   /* Mid-export — a soft accent aura breathing BEHIND the print, not a mark on it. */
   .cell.exporting {
     animation: export-breathe 2.2s infinite var(--ease-standard);
   }
   @keyframes export-breathe {
-    0%, 100% { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28), 0 0 8px rgba(214, 32, 44, 0.25); }
-    50% { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28), 0 0 16px rgba(214, 32, 44, 0.7); }
+    0%, 100% { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28), 0 0 8px color-mix(in srgb, var(--color-accent) 25%, transparent); }
+    50% { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28), 0 0 16px color-mix(in srgb, var(--color-accent) 70%, transparent); }
   }
 
   .cell:active {
@@ -273,7 +268,7 @@
        the hairline edge comes from the shadow. */
     --mat: 6px;
     padding: var(--mat);
-    background: var(--color-surface-high);
+    background: var(--color-surface-light-1);
     border-radius: max(1px, var(--radius));
     /* The quiet print-on-a-table depth. */
     box-shadow: var(--shadow);
@@ -284,6 +279,18 @@
        (a shared-layer paint bug). Isolating the card contains its shadow. */
     transform: translateZ(0);
     isolation: isolate;
+  }
+  .cell:hover .matte {
+      background: var(--color-surface-light-2);
+      box-shadow: var(--shadow-hover), var(--shadow-glow);
+  }
+  .cell.selected {
+    z-index: 5;
+  }
+  .cell.selected .matte {
+    box-shadow: var(--shadow-hover), var(--shadow-glow);
+    transform: translateY(-1px) translateZ(0);
+    background: var(--color-surface-light-3);
   }
 
   /* A border used to be the mat, and CSS rounds a border's inner edge for
@@ -339,7 +346,7 @@
     opacity: 0.16;
   }
   .matte:not(.loaded) {
-    background: var(--color-surface-low);
+    background: var(--color-surface-dark-1);
     box-shadow: var(--shadow-inset);
   }
   .placeholder.failed {
@@ -351,61 +358,31 @@
     top: 8px;
     left: 8px;
     display: flex;
-    gap: 2px;
+    gap: var(--space-d8);
     z-index: 10;
     filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45));
     pointer-events: none;
   }
   .star {
-    fill: var(--color-background);
-    stroke: var(--color-border);
+    fill: var(--color-accent);
+    stroke: color-mix(in srgb, var(--color-accent) 55%, black);
     stroke-width: 1.2;
     stroke-linejoin: round;
   }
 
   .story-dot-btn {
-    all: unset;
     position: absolute;
     top: 8px;
     right: 8px;
     width: 12px;
     height: 12px;
-    border-radius: 50%;
-    background: rgba(0, 0, 0, 0.28);
-    border: 1.5px solid var(--color-border);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
     z-index: 10;
-    opacity: 0;
-    transition: opacity var(--duration-standard) var(--ease-soft), background-color var(--duration-instant) var(--ease-soft);
     cursor: pointer;
   }
-  .cell:hover .story-dot-btn,
   .story-dot-btn.in-story {
     opacity: 1;
-  }
-  .story-dot-btn.in-story {
-    background: var(--color-background);
-  }
-
-  .render-badge {
-    position: absolute;
-    bottom: 8px;
-    right: 8px;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: var(--color-surface-high);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: var(--shadow);
-    z-index: 10;
-  }
-  .badge-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
     background: var(--color-accent);
+    border-color: color-mix(in srgb, var(--color-accent) 55%, black);
   }
 
   /* Just tall enough to seat the caption — not a wash over half the photo.
@@ -423,23 +400,20 @@
     display: flex;
     justify-content: center;
     pointer-events: none;
-    opacity: 0;
-    transition: opacity var(--transition-fast);
   }
   .cell:hover {
     z-index: 6;
   }
-  .cell:hover .caption {
-    opacity: 1;
-  }
   .caption .name {
-    font-family: var(--font-text, sans-serif);
-    font-size: var(--size-2xs);
-    line-height: 1;
-    color: var(--color-muted);
     max-width: 100%;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .render-badge {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    z-index: 10;
   }
 </style>

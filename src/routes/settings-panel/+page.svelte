@@ -10,7 +10,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { isTauri } from "$lib/api.js";
-  import { applyTheme } from "$lib/app-theme.js";
+  import { applyTheme, applyTextSize } from "$lib/app-theme.js";
   import gardenThemes from "$lib/garden-themes.generated.json";
   import SettingsPanel from "@modules/settings/SettingsPanel.svelte";
 
@@ -33,6 +33,7 @@
    * @property {number} [apple_photos_cache_limit_gib]
    * @property {string} [default_engine]
    * @property {string} [app_theme]
+   * @property {number} [ui_text_size]
    */
 
   /** @type {Preferences} */
@@ -127,6 +128,18 @@
     }
   }
 
+  /** @param {number} px */
+  async function selectTextSize(px) {
+    preferences = { ...preferences, ui_text_size: px };
+    applyTextSize(px);
+    try {
+      await invoke("save_preferences", { preferences: { ui_text_size: px } });
+      emit("app-text-size-changed", { ui_text_size: px });
+    } catch (_) {
+      // reconciled from disk on the next load
+    }
+  }
+
   /** @param {string | null} name */
   async function setDefaultImportPreset(name) {
     defaultImportPreset = name; // optimistic; shell-prefs-changed confirms
@@ -208,4 +221,5 @@
   onSetDefaultImportPreset={setDefaultImportPreset}
   {themes}
   onSelectTheme={selectTheme}
+  onSelectTextSize={selectTextSize}
 />

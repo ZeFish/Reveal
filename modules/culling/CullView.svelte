@@ -109,15 +109,9 @@
     min-height: 360px;
   }
   .empty h1 {
-    font-family: var(--font-header, sans-serif);
-    font-size: 2.4rem;
-    letter-spacing: 0.24em;
-    color: var(--color-accent);
     margin: 0 0 0.6rem;
   }
   .empty p {
-    font-family: var(--font-monospace, monospace);
-    font-size: 0.75rem;
     opacity: 0.6;
     margin: 0.2rem 0;
   }

@@ -54,7 +54,7 @@
       {#each aspects as [label, a]}
         <button
           class="chip"
-          class:active={(recipe?.crop_aspect ?? "original") === a}
+          aria-pressed={(recipe?.crop_aspect ?? "original") === a}
           onclick={() => setAspect(a)}
         >
           {label}
@@ -77,7 +77,7 @@
         max="45"
         step="0.5"
         value={recipe?.crop_angle ?? 0}
-        style="--f: {(((recipe?.crop_angle ?? 0) + 45) / 90) * 100}%"
+        style="--slider-value: {(((recipe?.crop_angle ?? 0) + 45) / 90) * 100}%"
         oninput={(e) => setAngle(e.currentTarget.value)}
       />
       <span class="val-mono">{recipe?.crop_angle ?? 0}°</span>
@@ -93,7 +93,7 @@
     <div class="btn-group">
       <button
         class="action-btn"
-        class:active={recipe?.flip_h}
+        aria-pressed={recipe?.flip_h}
         onclick={() => toggleFlip("h")}
         title="Miroir horizontal"
       >
@@ -102,7 +102,7 @@
       </button>
       <button
         class="action-btn"
-        class:active={recipe?.flip_v}
+        aria-pressed={recipe?.flip_v}
         onclick={() => toggleFlip("v")}
         title="Miroir vertical"
       >
@@ -117,10 +117,10 @@
   .crop-tab {
     flex: 1;
     overflow-y: auto;
-    padding: 16px;
+    padding: var(--space);
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: var(--space);
   }
 
   .section {
@@ -141,54 +141,21 @@
     justify-content: space-between;
   }
 
-  .din {
-    font-family: var(--font-header, sans-serif);
-    font-size: var(--scale-d3);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-  }
-
   .reset-btn {
-    all: unset;
     cursor: pointer;
-    font-family: var(--font-text, sans-serif);
-    font-size: 10px;
-    color: color-mix(in srgb, var(--color-foreground) 45%, transparent);
-  }
-  .reset-btn:hover {
-    color: var(--color-foreground);
   }
 
   .aspect-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 6px;
+    gap: var(--space-d3);
   }
 
   .chip {
-    all: unset;
     cursor: pointer;
     box-sizing: border-box;
-    font-family: var(--font-text, sans-serif);
-    font-size: var(--scale-d3);
     text-align: center;
-    padding: 6px 8px;
-    border-radius: var(--radius);
-    background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
-    color: color-mix(in srgb, var(--color-foreground) 75%, transparent);
-    border: 1px solid var(--color-border);
-    transition: all var(--duration-instant) var(--ease-soft);
-  }
-  .chip:hover {
-    color: var(--color-foreground);
-    border-color: color-mix(in srgb, var(--color-foreground) 25%, transparent);
-  }
-  .chip.active {
-    background: var(--color-surface-high);
-    color: var(--color-foreground);
-    border-color: var(--color-surface-high);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+    padding: var(--space-d3) var(--space-d2);
   }
 
   .slider-row {
@@ -198,44 +165,23 @@
   }
 
   .val-mono {
-    font-family: var(--font-monospace, monospace);
-    font-size: var(--scale-d3);
     width: 36px;
     text-align: right;
-    color: color-mix(in srgb, var(--color-foreground) 85%, transparent);
   }
 
   .btn-group {
     display: flex;
-    gap: 8px;
+    gap: var(--space-d2);
   }
 
   .action-btn {
-    all: unset;
     cursor: pointer;
     box-sizing: border-box;
     flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
-    font-family: var(--font-text, sans-serif);
-    font-size: var(--scale-d3);
-    padding: 8px 12px;
-    border-radius: var(--radius);
-    background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
-    color: color-mix(in srgb, var(--color-foreground) 75%, transparent);
-    border: 1px solid var(--color-border);
-    transition: all var(--duration-instant) var(--ease-soft);
-  }
-  .action-btn:hover {
-    color: var(--color-foreground);
-    border-color: color-mix(in srgb, var(--color-foreground) 25%, transparent);
-  }
-  .action-btn.active {
-    background: var(--color-surface-high);
-    border-color: var(--color-surface-high);
-    color: var(--color-foreground);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+    gap: var(--space-d3);
+    padding: var(--space-d2) 12px;
   }
 </style>

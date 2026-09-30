@@ -154,10 +154,10 @@
   .pane-scroll {
     flex: 1;
     overflow-y: auto;
-    padding: 16px;
+    padding: var(--space);
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: var(--space);
   }
 
   .sec-body {
@@ -166,23 +166,10 @@
     gap: 10px;
   }
 
-  .din {
-    font-family: var(--font-header, sans-serif);
-    font-size: var(--scale-d3);
-    letter-spacing: 0.12em;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-  }
-
-  .mono {
-    font-family: var(--font-monospace, monospace);
-    font-size: var(--scale-d3);
-    color: color-mix(in srgb, var(--color-foreground) 90%, transparent);
-  }
-
   .frow {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-d2);
     min-height: 16px;
   }
   .frow-label {
@@ -204,16 +191,12 @@
   .panel-select {
     width: auto;
     max-width: 170px;
-    font-family: var(--font-monospace, monospace);
-    font-size: var(--scale-d3);
-    padding: 2px 22px 2px 8px;
+    padding: var(--space-d8) 22px var(--space-d8) var(--space-d2);
   }
 
   .folder-pick {
-    font-family: var(--font-monospace, monospace);
-    font-size: var(--scale-d3);
-    padding: 2px 8px;
-    gap: 4px;
+    padding: var(--space-d8) var(--space-d2);
+    gap: var(--space-d4);
   }
   .folder-pick :global(.icon) {
     color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
@@ -222,27 +205,16 @@
   .panel-btn {
     display: block;
     width: 100%;
-    padding: 8px 0;
-    font-size: var(--scale-d3);
-    letter-spacing: 0.12em;
-    margin-top: 4px;
+    padding: var(--space-d2) 0;
+    margin-top: var(--space-d4);
   }
 
   .hint {
-    font-family: var(--font-text, sans-serif);
-    font-size: 9px;
-    color: color-mix(in srgb, var(--color-foreground) 40%, transparent);
     margin: 0;
   }
   .published-link {
     display: block;
     word-break: break-all;
-    color: var(--color-accent);
-    text-decoration: underline;
-    text-underline-offset: 2px;
     cursor: pointer;
-  }
-  .published-link:hover {
-    color: color-mix(in srgb, var(--color-accent) 80%, var(--color-foreground));
   }
 </style>

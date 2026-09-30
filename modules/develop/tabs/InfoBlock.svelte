@@ -207,41 +207,16 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
-    padding: 16px;
-  }
-
-  .din {
-    font-family: var(--font-header, sans-serif);
-    font-size: var(--scale-d3);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-  }
-
-  .info-name {
-    font-size: 13px;
-    color: var(--color-foreground);
-  }
-
-  .mono {
-    font-family: var(--font-monospace, monospace);
-    font-size: var(--scale-d3);
-    color: color-mix(in srgb, var(--color-foreground) 90%, transparent);
+    padding: var(--space);
   }
   .mono.dim {
     color: color-mix(in srgb, var(--color-foreground) 45%, transparent);
   }
 
-  .info-stars {
-    font-size: 10px;
-    letter-spacing: 2px;
-    color: color-mix(in srgb, var(--color-foreground) 85%, transparent);
-  }
-
   .caption-block {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--space-d3);
   }
   .caption-toolbar {
     display: flex;
@@ -250,14 +225,10 @@
   }
   .toolbar-actions {
     display: flex;
-    gap: 2px;
+    gap: var(--space-d8);
   }
   .toolbar-btn {
-    padding: 3px;
-    border-radius: 3px;
-  }
-  .toolbar-btn:hover {
-    background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
+    padding: var(--space-d5);
   }
 
   /* The editorial surface of this panel — everything else here is metadata
@@ -265,23 +236,14 @@
      height and a serif/reading font (not the mono/din used everywhere
      else) so it reads as prose, not a form field. */
   .caption {
-    font-family: var(--font-text, serif);
-    font-size: 12px;
-    line-height: 1.5;
-    color: var(--color-foreground);
-    background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
-    border: 1px solid var(--color-border);
-    border-left: 2px solid color-mix(in srgb, var(--color-accent, orange) 55%, transparent);
-    border-radius: var(--radius);
     padding: 10px 12px;
     resize: vertical;
-    outline: none;
   }
 
   .tags-block {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--space-d3);
   }
   .tags-header {
     display: flex;
@@ -291,11 +253,7 @@
   .ai-btn {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    font-family: var(--font-header, sans-serif);
-    font-size: 9.5px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    gap: var(--space-d4);
   }
   .ai-btn:disabled {
     opacity: 0.4;
@@ -305,51 +263,39 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-d4);
     min-height: calc(var(--font-text-size) * var(--line-height) + 8px);
-    padding: 4px 6px;
+    padding: var(--space-d4) var(--space-d3);
     background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
-    border: 1px solid var(--color-border);
+    border: var(--stroke-width) solid var(--color-border);
     border-radius: var(--radius);
   }
   .tag-chip {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
-    font-family: var(--font-monospace, monospace);
-    font-size: 10px;
-    color: var(--color-foreground);
+    gap: var(--space-d5);
     background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
     border-radius: 9999px;
-    padding: 2px 4px 2px 8px;
+    padding: var(--space-d8) var(--space-d4) var(--space-d8) var(--space-d2);
   }
   .tag-remove {
-    all: unset;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
-    padding: 2px;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-  }
-  .tag-remove:hover {
-    color: var(--color-foreground);
+    padding: var(--space-d8);
   }
   .tag-input {
-    all: unset;
     flex: 1;
     min-width: 60px;
-    font-family: var(--font-monospace, monospace);
-    font-size: 10px;
-    color: var(--color-foreground);
   }
   .tags-error {
-    color: var(--color-red, #c44);
+    color: var(--color-red);
   }
 
   .path-row {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-d4);
   }
   .path {
     color: color-mix(in srgb, var(--color-foreground) 38%, transparent);
@@ -361,12 +307,7 @@
   }
 
   .ghost {
-    all: unset;
     cursor: pointer;
     display: inline-flex;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-  }
-  .ghost:hover {
-    color: var(--color-foreground);
   }
 </style>

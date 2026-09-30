@@ -26,7 +26,7 @@
   </button>
   <button
     class="tool-btn clipping-btn"
-    class:active={showClipping}
+    aria-pressed={showClipping}
     title="Clipping warning (highlights & shadows)"
     onclick={toggleClipping}
   >
@@ -49,35 +49,17 @@
 <style>
   .tools-strip {
     display: flex;
-    gap: 8px;
-    padding: 0 16px 12px;
+    gap: var(--space-d2);
+    padding: 0 var(--space) 12px;
   }
 
   .tool-btn {
-    all: unset;
     cursor: pointer;
     position: relative;
     display: grid;
     place-items: center;
     width: 32px;
     height: 32px;
-    border-radius: var(--radius);
-    background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-    border: 1px solid var(--color-border);
-    transition: color var(--duration-instant) var(--ease-soft), background var(--duration-instant) var(--ease-soft), border-color var(--duration-instant) var(--ease-soft);
-  }
-
-  .tool-btn:hover {
-    color: var(--color-foreground);
-    background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
-    border-color: color-mix(in srgb, var(--color-foreground) 20%, transparent);
-  }
-
-  .tool-btn.active {
-    background: color-mix(in srgb, var(--color-foreground) 15%, transparent);
-    border-color: var(--color-accent);
-    color: var(--color-foreground);
   }
 
   .clip-dots {
@@ -85,7 +67,7 @@
     bottom: 2px;
     right: 3px;
     display: flex;
-    gap: 2px;
+    gap: var(--space-d8);
   }
   .dot {
     width: 4px;

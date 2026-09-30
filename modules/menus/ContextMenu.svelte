@@ -25,6 +25,7 @@
    * @property {() => void} [onExportSelection]
    * @property {string | null} [gardenUrl]
    * @property {() => void} [onCull]
+   * @property {boolean} [storyPublished] the collection is already on the Garden: publishing updates it
    * @property {() => void} [onPublishStory]
    * @property {() => void} [onOpenGardenUrl]
    * @property {(p: string) => void} [onDevelopToVault]
@@ -52,6 +53,7 @@
     onExportSelection = () => {},
     onDevelopToVault = undefined,
     onCull = undefined,
+    storyPublished = false,
     onPublishStory = undefined,
     onOpenGardenUrl = undefined,
   } = $props();
@@ -95,7 +97,7 @@
       <Item label="AI culling" onclick={onCull} />
     {/if}
     {#if storySet.size > 0 && onPublishStory}
-      <Item label={`Publish collection (${storySet.size})`} onclick={onPublishStory} />
+      <Item label={`${storyPublished ? "Update" : "Publish"} collection (${storySet.size})`} onclick={onPublishStory} />
     {/if}
     {#if gardenUrl && onOpenGardenUrl}
       <Item label="Open on the web" onclick={onOpenGardenUrl} />

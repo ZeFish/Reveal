@@ -153,7 +153,7 @@
       </button>
       <button
         class="header-util-btn"
-        class:active={showClipping}
+        aria-pressed={showClipping}
         onclick={() => toggleClipping()}
         title="Clipping warning (highlights & shadows)"
       >
@@ -164,7 +164,7 @@
       </button>
       <button
         class="header-util-btn"
-        class:active={showCaption}
+        aria-pressed={showCaption}
         onclick={() => toggleCaptionOverlay()}
         title="Show caption at bottom of photo"
       >
@@ -176,20 +176,20 @@
     </header>
 
     <!-- TAB BAR -->
-    <div class="tab-bar seg" role="tablist" aria-label="Develop panel">
-      <button class="seg-btn" class:on={activeTab === 'dev'} role="tab" aria-selected={activeTab === 'dev'} onclick={() => activeTab = 'dev'} title="Dev" aria-label="Dev">
+    <div class="tab-bar btn-group" role="tablist" aria-label="Develop panel">
+      <button  role="tab" aria-selected={activeTab === 'dev'} onclick={() => activeTab = 'dev'} title="Dev" aria-label="Dev">
         <Icon name="sliders-horizontal" size="14px" />
       </button>
-      <button class="seg-btn" class:on={activeTab === 'crop'} role="tab" aria-selected={activeTab === 'crop'} onclick={() => activeTab = 'crop'} title="Crop" aria-label="Crop">
+      <button  role="tab" aria-selected={activeTab === 'crop'} onclick={() => activeTab = 'crop'} title="Crop" aria-label="Crop">
         <Icon name="crop" size="14px" />
       </button>
-      <button class="seg-btn" class:on={activeTab === 'preset'} role="tab" aria-selected={activeTab === 'preset'} onclick={() => activeTab = 'preset'} title="Presets" aria-label="Presets">
+      <button  role="tab" aria-selected={activeTab === 'preset'} onclick={() => activeTab = 'preset'} title="Presets" aria-label="Presets">
         <Icon name="stack-simple" size="14px" />
       </button>
-      <button class="seg-btn" class:on={activeTab === 'info'} role="tab" aria-selected={activeTab === 'info'} onclick={() => activeTab = 'info'} title="Editorial" aria-label="Editorial">
+      <button  role="tab" aria-selected={activeTab === 'info'} onclick={() => activeTab = 'info'} title="Editorial" aria-label="Editorial">
         <Icon name="newspaper" size="14px" />
       </button>
-      <button class="seg-btn" class:on={activeTab === 'export'} role="tab" aria-selected={activeTab === 'export'} onclick={() => activeTab = 'export'} title="Export" aria-label="Export">
+      <button  role="tab" aria-selected={activeTab === 'export'} onclick={() => activeTab = 'export'} title="Export" aria-label="Export">
         <Icon name="download-simple" size="14px" />
       </button>
     </div>
@@ -264,53 +264,33 @@
     height: 100%;
     display: flex;
     flex-direction: column;
-    background: var(--color-surface-high);
+    background: var(--color-surface-light-1);
   }
 
   .sticky-top {
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    background: var(--color-surface-high);
+    background: var(--color-surface-light-1);
     z-index: 10;
-  }
-
-  .din {
-    font-family: var(--font-header, sans-serif);
-    font-size: var(--scale-d3);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
   }
 
   header {
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-d2);
     padding: 12px 14px 10px;
   }
   .close {
-    all: unset;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 20px;
     height: 20px;
-    border-radius: 4px;
-    color: color-mix(in srgb, var(--color-foreground) 50%, transparent);
-    transition: color var(--duration-fast), background var(--duration-fast);
-  }
-  .close:hover {
-    color: var(--color-foreground);
-    background: color-mix(in srgb, var(--color-foreground) 10%, transparent);
   }
   header .title {
-    color: var(--color-foreground);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.1em;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -318,7 +298,6 @@
     flex: 1;
   }
   .header-util-btn {
-    all: unset;
     cursor: pointer;
     position: relative;
     display: inline-flex;
@@ -326,17 +305,6 @@
     justify-content: center;
     width: 24px;
     height: 24px;
-    border-radius: var(--radius-sm, 4px);
-    color: color-mix(in srgb, var(--color-foreground) 50%, transparent);
-    transition: color var(--duration-fast), background var(--duration-fast);
-  }
-  .header-util-btn:hover {
-    color: var(--color-foreground);
-    background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
-  }
-  .header-util-btn.active {
-    color: var(--color-accent);
-    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
   }
   .clip-indicator {
     position: absolute;
@@ -355,11 +323,10 @@
     flex-shrink: 0;
   }
 
-  /* The tab bar is the app's segmented control (.seg / .seg-btn in
-     app.scss) — the same control as the engine switch and Frames /
-     Editorial, so the three can't drift. This only places it. */
+  /* The tab bar is the framework's .btn-group — the same control as the
+     engine switch and Frames / Editorial. This only places it. */
   .tab-bar {
-    margin: 0 12px 8px;
+    margin: 0 12px var(--space-d2);
   }
 
   .pane-scroll {

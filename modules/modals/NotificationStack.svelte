@@ -24,7 +24,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-d3);
     /* The stack spans the window so its children can centre themselves, but
        it must never swallow clicks meant for the photo behind it — each
        child opts back in. */

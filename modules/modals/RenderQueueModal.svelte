@@ -37,14 +37,12 @@
       <p class="empty-queue">No activity this session.</p>
     {:else}
       {#each activityQueue.slice().reverse() as item (item.id)}
-        <div class="queue-item" class:active={item.id === activeActivityId}>
+        <div class="queue-item card" aria-current={item.id === activeActivityId ? "true" : undefined}>
           <div class="queue-item-meta">
             <span class="queue-time">{item.timestamp}</span>
             <span class="queue-name">{item.label}</span>
           </div>
-          <div class="queue-progress-bar">
-            <div class="progress-fill" style="width: {item.total ? (item.done / item.total) * 100 : 0}%"></div>
-          </div>
+          <progress value={item.done} max={item.total || 1}></progress>
           <div class="queue-status">
             <span>{item.current || item.phase}</span>
             <span>{item.done} / {item.total}</span>
@@ -66,7 +64,7 @@
     right: 1rem;
     bottom: 1rem;
     z-index: 10000;
-    background: var(--color-surface-low, #18181b);
+    background: var(--color-surface-dark-1);
     border-radius: var(--radius-lg);
     width: min(90vw, 380px);
     max-height: min(60vh, 420px);
@@ -74,40 +72,25 @@
     flex-direction: column;
     overflow: hidden;
     box-shadow: var(--shadow-raised), var(--shadow-lift);
-    color: var(--color-foreground, #f4f4f5);
+    color: var(--color-foreground);
   }
   .modal-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 1rem 1.25rem;
-    border-bottom: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
+    border-bottom: var(--stroke-width) solid var(--color-border);
   }
   .modal-header h3 {
-    font-family: var(--font-header, sans-serif);
-    font-size: 0.9rem;
-    letter-spacing: 0.1em;
     margin: 0;
   }
   .queue-cancel {
-    font-family: var(--font-monospace, monospace);
-    font-size: 0.7rem;
     padding: 0.2rem 0.6rem;
-    background: rgba(229, 115, 115, 0.2);
-    border: 1px solid var(--color-accent);
-    color: var(--color-accent);
-    border-radius: var(--radius);
     cursor: pointer;
-  }
-  .queue-cancel:hover {
-    background: var(--color-accent);
-    color: #fff;
   }
   .close-btn {
-    all: unset;
     cursor: pointer;
     opacity: 0.6;
-    font-size: 1rem;
     padding: 0.2rem;
   }
   .close-btn:hover {
@@ -119,8 +102,6 @@
     flex: 1;
   }
   .empty-queue {
-    font-family: var(--font-text, sans-serif);
-    font-size: 0.85rem;
     opacity: 0.5;
     text-align: center;
     padding: 2rem 0;
@@ -132,50 +113,24 @@
   }
   .queue-item {
     padding: 0.75rem;
-    background: var(--color-surface-high, #27272a);
-    border: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
+    background: var(--color-surface-light-1);
+    border: var(--stroke-width) solid var(--color-border);
     border-radius: var(--radius);
 
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
   }
-  .queue-item.active {
-    border-color: var(--color-accent);
-  }
   .queue-item-meta {
     display: flex;
     justify-content: space-between;
-    font-size: 0.75rem;
-    font-family: var(--font-monospace, monospace);
   }
   .queue-time {
     opacity: 0.5;
   }
-  .queue-name {
-    font-weight: 600;
-  }
-  .queue-progress-bar {
-    height: 4px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: var(--radius);
-    overflow: hidden;
-  }
-  .progress-fill {
-    height: 100%;
-    background: var(--color-accent);
-    transition: width 0.2s var(--ease-standard);
-  }
   .queue-status {
     display: flex;
     justify-content: space-between;
-    font-size: 0.7rem;
     opacity: 0.7;
-    font-family: var(--font-monospace, monospace);
-  }
-  .queue-phase {
-    font-size: 0.7rem;
-    font-family: var(--font-monospace, monospace);
-    color: var(--color-accent);
   }
 </style>

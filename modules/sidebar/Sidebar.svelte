@@ -14,9 +14,8 @@
   // then LIBRARY and the Garden account row at the bottom.
   import { invoke } from "@tauri-apps/api/core";
   import Icon from "$lib/components/Icon.svelte";
-  import gardenThemes from "$lib/garden-themes.generated.json";
-  import { storyTheme, updateStoryTheme, DEFAULT_DARK_BG, DEFAULT_ACCENT } from "$lib/story-theme.svelte.js";
-  import { loadFontPackages } from "$lib/app-theme.js";
+  import { storyTheme, setStoryTheme, THEMES } from "$lib/story-theme.svelte.js";
+  import { THEME_IDS, DEFAULT_THEME } from "$lib/app-theme.js";
   import { APPLE_PHOTOS_ROOT, photoCollectionAncestors } from "./applePhotosTree.js";
 
   let {
@@ -37,6 +36,8 @@
     onPublishStory = () => {},
     onExportLocalStory = () => {},
     publishing = false,
+    // The story is already on the Garden: publishing edits that note.
+    storyPublished = false,
     publishStatus = null,
     gardenUrl = null,
     focusOn = false,
@@ -110,90 +111,14 @@
 
   const signedIn = $derived(!!garden?.signed_in);
 
-  // Folder theme — a plain dropdown (the richer specimen-card/curated-chips
-  // picker, StoryThemePanel.svelte, was tried and dropped — Francis: "the
-  // theme selector I hate it. Replace with a simple dropdown."), plus a
-  // fold-out for the fine-tune override Francis asked back afterward:
-  // "the panel should offer the ability to customize the style tokens like
-  // fonts and color." Both read/write the same storyTheme reactive
-  // singleton +page.svelte's own curDir effect populates, so this and the
-  // app-wide chrome never disagree about which theme is active.
-  const THEMES = gardenThemes.themes;
-  const currentThemeId = $derived.by(() => {
-    const match = THEMES.find(
-      (t) =>
-        t.darkBackground?.toLowerCase() === storyTheme.darkBackground?.toLowerCase() &&
-        t.darkAccent?.toLowerCase() === storyTheme.darkAccent?.toLowerCase()
-    );
-    return match ? String(match.id) : "";
-  });
-  let previewBg = $derived(storyTheme.darkBackground ?? DEFAULT_DARK_BG);
-  let previewAccent = $derived(storyTheme.darkAccent ?? DEFAULT_ACCENT);
-  // Matches the reveal theme's own default (packages/themes/reveal/reveal.scss).
-  const DEFAULT_FONT_RATIO = 1.333;
-  let previewFontRatio = $derived(
-    storyTheme.fontRatio ? Number(storyTheme.fontRatio) : DEFAULT_FONT_RATIO
-  );
-
-  const FONTS = [
-    { label: "System", value: null },
-    { label: "Söhne", value: "Sohne" },
-    { label: "Avenir Next", value: "Avenir Next" },
-    { label: "Lexend", value: "Lexend" },
-    { label: "Instrument Sans", value: "Instrument Sans" },
-    { label: "Baskerville", value: "Baskerville" },
-    { label: "Bookerly", value: "Bookerly" },
-    { label: "Adobe Jenson Pro", value: "Adobe Jenson Pro" },
-    { label: "New Burns", value: "New Burns" },
-    { label: "National Park", value: "National Park" },
-    { label: "Wonder", value: "Wonder" },
-  ];
-
-  /** @type {ReturnType<typeof setTimeout> | null} */
-  let themeSaveTimer = null;
-  /** @param {{darkBackground?: string|null, darkAccent?: string|null, fontHeader?: string|null, fontText?: string|null, fontRatio?: string|null}} partial */
-  function applyTheme(partial) {
-    updateStoryTheme(partial);
-    if (!curDir) return;
-    if (themeSaveTimer) clearTimeout(themeSaveTimer);
-    themeSaveTimer = setTimeout(async () => {
-      const dark_bg = storyTheme.darkBackground;
-      await invoke("story_set_theme", {
-        dir: curDir,
-        tokens: {
-          darkBackground: dark_bg,
-          darkForeground: null,
-          lightBackground: null,
-          lightForeground: null,
-          darkAccent: storyTheme.darkAccent,
-          lightAccent: null,
-          fontHeader: storyTheme.fontHeader,
-          fontText: storyTheme.fontText,
-          fontRatio: storyTheme.fontRatio,
-        },
-      });
-    }, 250);
-  }
-
+  // The folder's theme is one dropdown: a Garden theme, written to the story
+  // note as `theme:` (the key the Garden reads). Colours, fonts and scale come
+  // with the theme; there is nothing to tune by hand.
   /** @param {Event & { currentTarget: HTMLSelectElement }} e */
-  function onThemePick(e) {
-    const id = e.currentTarget.value;
-    const t = id ? THEMES.find((theme) => String(theme.id) === id) : null;
-    applyTheme({
-      darkBackground: t?.darkBackground ?? null,
-      darkAccent: t?.darkAccent ?? null,
-      fontHeader: t?.fontHeader ?? null,
-      fontText: t?.fontText ?? null,
-    });
-    // Picking a curated theme sets fontHeader/fontText to names like
-    // "Forrest" or "Monosten", but nothing else in this preview ever loads
-    // those fonts' @font-face CSS — the published Garden page does, via its
-    // own pipeline, which is why a theme's fonts show up there but silently
-    // fall back to the FONTS dropdown's system-safe defaults in here. This
-    // is the same lazy font-package loader Reveal's own app-chrome theme
-    // switcher already uses (see app-theme.js), just pointed at this
-    // theme's fontPackages instead of the app's own.
-    if (t?.fontPackages?.length) loadFontPackages(t.fontPackages);
+  async function onThemePick(e) {
+    const id = e.currentTarget.value || null;
+    setStoryTheme(id);
+    if (curDir) await invoke("story_set_theme", { dir: curDir, theme: id });
   }
 
   async function submitKey() {
@@ -667,19 +592,18 @@
 
 {#snippet row(/** @type {TreeNode} */ node, /** @type {number} */ depth)}
   <div
-    class="dir-row"
-    class:current={isCurrent(node)}
+    class="item dir-row"
     class:import-dest={isImportDest(node.abs)}
     class:import-branch={isImportBranch(node.abs)}
-    class:drop-target={dropTarget === node.abs}
-    class:dragging={draggingFolder === node.abs}
+    class:is-drop-target={dropTarget === node.abs}
+    class:is-dragging={draggingFolder === node.abs}
     style="--depth: {depth}"
     role="button"
     tabindex="0"
     draggable={node.source !== "photos"}
     aria-disabled={node.source === "photos" && applePhotos?.busy}
     aria-label={node.name}
-    aria-pressed={isCurrent(node)}
+    aria-current={isCurrent(node) ? "true" : undefined}
     onclick={() => navigate(node)}
     oncontextmenu={(event) => node.source === "photos" ? event.preventDefault() : openFolderMenu(event, node.abs, node.name)}
     ondragstart={node.source === "photos" ? undefined : (event) => onFolderDragStart(event, node)}
@@ -689,7 +613,10 @@
     ondrop={node.source === "photos" ? undefined : (event) => onRowDrop(event, node.abs)}
     onkeydown={(e) => {
       if (e.target !== e.currentTarget) return;
-      if (e.key === "Enter" || e.key === " ") {
+      // Space on a row that merely kept focus after a mouse click belongs to
+      // the photos (quick look); it is only the row's own when the row was
+      // reached by keyboard.
+      if (e.key === "Enter" || (e.key === " " && e.currentTarget.matches(":focus-visible"))) {
         e.preventDefault();
         e.stopPropagation();
         navigate(node);
@@ -754,9 +681,9 @@
 
 {#snippet ghostRow(/** @type {{ abs: string, name: string, parentAbs: string }} */ g, /** @type {number} */ depth)}
   <div
-    class="dir-row"
-    class:current={curDir === g.abs}
-    class:drop-target={dropTarget === g.abs}
+    class="item dir-row"
+    aria-current={curDir === g.abs ? "true" : undefined}
+    class:is-drop-target={dropTarget === g.abs}
     style="--depth: {depth}"
     role="button"
     tabindex="0"
@@ -796,22 +723,22 @@
   </div>
 {/snippet}
 
-<nav class:floating>
+<nav class="pane" class:floating>
   <!-- Brand cluster — rides the top of the card; native traffic lights
        overlay the window top-left, so the row starts past them. -->
   <div class="brand" data-tauri-drag-region>
-    <button class="chrome-btn" onclick={onToggleSidebar} title="Folder panel (B)">
+    <button class="ghost icon small" onclick={onToggleSidebar} title="Folder panel (B)">
       <Icon name="sidebar-simple" size="12px" />
     </button>
     <button
-      class="chrome-btn"
-      class:on={focusOn}
+      class="ghost icon small"
+      aria-pressed={focusOn}
       onclick={onToggleFocus}
       title="Focus mode (O)"
     >
       <span class="focus-glyph" class:on={focusOn}></span>
     </button>
-    <button class="chrome-btn" onclick={onToggleAppearance} title="Toggle system light/dark appearance (L)">
+    <button class="ghost icon small" onclick={onToggleAppearance} title="Toggle system light/dark appearance (L)">
       <Icon name="circle-half" size="12px" />
     </button>
     <button class="wordmark" onclick={onShowShortcuts} title="Keyboard shortcuts">REVEAL</button>
@@ -820,11 +747,10 @@
   <!-- FRAMES ↔ EDITORIAL — a display filter on the same grid, not a mode.
        Both tabs call the same toggle; only Editorial is guarded (nothing to
        compose without a folder or in the read-only Apple Photos library). -->
-  <div class="tabs seg" role="group" aria-label="View">
-    <button class="seg-btn" class:on={!previewFilter} onclick={() => previewFilter && onTogglePreview()}>Frames</button>
+  <div class="tabs btn-group" role="group" aria-label="View">
+    <button aria-pressed={!previewFilter} onclick={() => previewFilter && onTogglePreview()}>Frames</button>
     <button
-      class="seg-btn"
-      class:on={previewFilter}
+      aria-pressed={previewFilter}
       disabled={isLibrary || applePhotos?.active}
       onclick={() => !previewFilter && onTogglePreview()}
       title={isLibrary ? "Choose a folder to compose a story" : "Editorial (S)"}
@@ -835,9 +761,9 @@
     <div class="tree">
       <!-- The index-wide view — the base of everything. -->
       <div
-        class="lib-row"
-      class:current={isLibrary}
-      class:drop-target={root && dropTarget === root}
+        class="item lib-row"
+      aria-current={isLibrary ? "true" : undefined}
+      class:is-drop-target={root && dropTarget === root}
       role="button"
       tabindex="0"
       aria-disabled={!root}
@@ -894,12 +820,11 @@
           <span class="disc" class:open><Icon name="caret-right" size="9px" /></span>
         </button>
         <button
-          class="section-main"
-          class:current={photos ? applePhotos?.active && !applePhotos.album : curDir === cat}
+          class="section-main ghost"
           class:import-dest={isImportDest(cat)}
           class:import-branch={isImportBranch(cat)}
           title={photos ? "Apple Photos" : cat}
-          aria-pressed={photos ? applePhotos?.active && !applePhotos.album : curDir === cat}
+          aria-current={(photos ? applePhotos?.active && !applePhotos.album : curDir === cat) ? "true" : undefined}
           disabled={photos && applePhotos?.busy}
           onclick={() => {
             if (!isCatExpanded(cat)) toggleCatExpanded(cat);
@@ -966,133 +891,15 @@
          `folderBrowser` STORY branch (CullView.swift:531-578). Brand cluster
          + tabs unchanged; this only ever swaps in over the SAME grid. -->
     <div class="story-body">
-      <div class="theme-row">
-        <span class="theme-row-label">Theme</span>
-        <div class="theme-select-wrap">
-          <select
-            value={currentThemeId}
-            onchange={onThemePick}
-            disabled={!curDir}
-            aria-label="Folder theme"
-          >
-            <option value="">Default</option>
-            {#each THEMES as t}
-              <option value={t.id}>{t.label}</option>
-            {/each}
-          </select>
-          <Icon name="caret-down" size="9px" class="select-caret" />
-        </div>
-      </div>
-
-      <div class="customize-block">
-        <span class="customize-label">Customize colors & fonts</span>
-        <div class="customize-fields">
-            <div class="field-row">
-              <span class="field-label">BACKGROUND</span>
-              <div class="color-picker-badge">
-                <label class="swatch-button" style="background: {previewBg};">
-                  <input
-                    type="color"
-                    value={previewBg}
-                    oninput={(e) => applyTheme({ darkBackground: e.currentTarget.value })}
-                    disabled={!curDir}
-                  />
-                </label>
-                <span class="hex-text">{previewBg.toUpperCase()}</span>
-                {#if storyTheme.darkBackground}
-                  <button
-                    type="button"
-                    class="field-reset"
-                    title="Reset to default background"
-                    onclick={() => applyTheme({ darkBackground: null })}
-                  >
-                    <Icon name="x" size="10px" />
-                  </button>
-                {/if}
-              </div>
-            </div>
-            <div class="field-row">
-              <span class="field-label">ACCENT</span>
-              <div class="color-picker-badge">
-                <label class="swatch-button" style="background: {previewAccent};">
-                  <input
-                    type="color"
-                    value={previewAccent}
-                    oninput={(e) => applyTheme({ darkAccent: e.currentTarget.value })}
-                    disabled={!curDir}
-                  />
-                </label>
-                <span class="hex-text">{previewAccent.toUpperCase()}</span>
-                {#if storyTheme.darkAccent}
-                  <button
-                    type="button"
-                    class="field-reset"
-                    title="Reset to default accent"
-                    onclick={() => applyTheme({ darkAccent: null })}
-                  >
-                    <Icon name="x" size="10px" />
-                  </button>
-                {/if}
-              </div>
-            </div>
-            <div class="field-row">
-              <span class="field-label">HEADERS</span>
-              <div class="custom-select-wrap">
-                <select
-                  value={storyTheme.fontHeader ?? ""}
-                  onchange={(e) => applyTheme({ fontHeader: e.currentTarget.value || null })}
-                  disabled={!curDir}
-                >
-                  {#each FONTS as f}
-                    <option value={f.value ?? ""}>{f.label}</option>
-                  {/each}
-                </select>
-                <Icon name="caret-down" size="9px" class="select-caret" />
-              </div>
-            </div>
-            <div class="field-row">
-              <span class="field-label">BODY</span>
-              <div class="custom-select-wrap">
-                <select
-                  value={storyTheme.fontText ?? ""}
-                  onchange={(e) => applyTheme({ fontText: e.currentTarget.value || null })}
-                  disabled={!curDir}
-                >
-                  {#each FONTS as f}
-                    <option value={f.value ?? ""}>{f.label}</option>
-                  {/each}
-                </select>
-                <Icon name="caret-down" size="9px" class="select-caret" />
-              </div>
-            </div>
-            <div class="field-row">
-              <span class="field-label">SCALE</span>
-              <div class="ratio-slider-wrap">
-                <input
-                  type="range"
-                  min="1.05"
-                  max="1.8"
-                  step="0.005"
-                  value={previewFontRatio}
-                  style="--f: {((previewFontRatio - 1.05) / (1.8 - 1.05)) * 100}%"
-                  oninput={(e) => applyTheme({ fontRatio: e.currentTarget.value })}
-                  disabled={!curDir}
-                />
-                <span class="hex-text">{previewFontRatio.toFixed(2)}</span>
-                {#if storyTheme.fontRatio}
-                  <button
-                    type="button"
-                    class="field-reset"
-                    title="Reset to default heading scale"
-                    onclick={() => applyTheme({ fontRatio: null })}
-                  >
-                    <Icon name="x" size="10px" />
-                  </button>
-                {/if}
-              </div>
-            </div>
-        </div>
-      </div>
+      <form class="story-theme" onsubmit={(e) => e.preventDefault()}>
+        <label for="story-theme-pick">Theme</label>
+        <select id="story-theme-pick" value={storyTheme.id ?? ""} onchange={onThemePick} disabled={!curDir}>
+          <option value="">Default</option>
+          {#each THEMES.filter((t) => t.id === DEFAULT_THEME || THEME_IDS.includes(String(t.id))) as t}
+            <option value={String(t.id)}>{t.label}</option>
+          {/each}
+        </select>
+      </form>
 
       <div class="story-spacer"></div>
       <div class="theme-inner">
@@ -1106,10 +913,10 @@
               <button class="publish-hero-btn" onclick={() => onPublishStory()} disabled={publishing}>
                 {#if publishing}
                   <Icon name="arrows-clockwise" size="11px" class="spin" />
-                  <span>Publishing…</span>
+                  <span>{storyPublished ? "Updating…" : "Publishing…"}</span>
                 {:else}
                   <Icon name="arrow-square-out" size="11px" />
-                  <span>Publish to Garden</span>
+                  <span>{storyPublished ? "Update on Garden" : "Publish to Garden"}</span>
                 {/if}
               </button>
             {/if}
@@ -1193,7 +1000,7 @@
       </div>
     </Popover>
     <span class="dir-spacer"></span>
-    <button class="chrome-btn" onclick={onShowSettings} title="Reveal settings">
+    <button class="ghost icon small" onclick={onShowSettings} title="Reveal settings">
       <Icon name="gear" size="12px" />
     </button>
   </div>
@@ -1290,14 +1097,9 @@
        --shadow-raised already draws the hairline ring, so the border is
        the theme's own --border (zero width in many themes), not a second
        hardcoded 1px on top of it. */
-    margin: var(--window-inset);
-    background: var(--color-surface-high);
-    border-radius: var(--pane-radius);
-    box-shadow: var(--shadow);
     display: flex;
     flex-direction: column;
     min-height: 0;
-    overflow: hidden;
   }
   nav.floating {
     height: min(480px, calc(100vh - 60px));
@@ -1316,32 +1118,16 @@
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-d2);
     /* Native traffic lights overlay the window top-left — start past them. */
-    padding: 0 16px 0 var(--window-controls-offset-sidebar, 78px);
-  }
-  .chrome-btn {
-    all: unset;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 12px;
-    height: 12px;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-  }
-  .chrome-btn:hover {
-    color: var(--color-foreground);
-  }
-  .chrome-btn.on {
-    color: var(--color-accent);
+    padding: 0 var(--space) 0 var(--window-controls-offset-sidebar, 78px);
   }
   /* circle.circle — a ring with a centred dot, accent when focus is on. */
   .focus-glyph {
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    border: 1px solid currentColor;
+    border: var(--stroke-width) solid currentColor;
     position: relative;
   }
   .focus-glyph::after {
@@ -1349,7 +1135,7 @@
     position: absolute;
     inset: 2px;
     border-radius: 50%;
-    border: 1px solid currentColor;
+    border: var(--stroke-width) solid currentColor;
   }
   .focus-glyph.on::after {
     background: currentColor;
@@ -1359,40 +1145,29 @@
      so trimming to it put the wordmark 1.5pt high (measured 2026-09-23,
      19.25 against the lights' 20.75). */
   .wordmark {
-    all: unset;
     cursor: pointer;
-    line-height: 1;
-    font-family: var(--font-header, sans-serif);
-    font-size: var(--scale-d3);
-    letter-spacing: 0.12em;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-  }
-  .wordmark:hover {
-    color: var(--color-foreground);
   }
 
-  /* The Frames / Editorial switch is the app's .seg (app.scss); this only
+  /* The Frames / Editorial switch is the framework's .btn-group; this only
      places it in the card. */
   .tabs {
-    margin: 0 12px 6px;
+    margin: 0 12px var(--space-d3);
     flex-shrink: 0;
   }
 
   .tree {
     flex: 1;
     overflow-y: auto;
-    padding: 8px 4px;
+    padding: var(--space-d2) var(--space-d4);
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 0;
   }
 
   .lib-row,
   .dir-row {
     display: flex;
     align-items: center;
-    border-radius: var(--radius);
-    cursor: pointer;
   }
   /* Every row in the tree — All Library, a catalogue, a folder — shares the
      same columns: a caret slot (--lead), the name, the count, and a trailing
@@ -1408,39 +1183,24 @@
   }
   .lib-row {
     gap: var(--row-gap);
-    padding: 4px 8px;
+    padding: var(--space-d5) var(--space-d2);
   }
   .lead {
     width: var(--lead);
     flex-shrink: 0;
   }
-  .lib-row.current {
-    background: var(--color-surface);
-  }
-  .lib-row:hover:not(.current) {
-    background: transparent;
-  }
   .lib-label {
-    font-family: var(--font-header, sans-serif);
-    font-size: var(--scale-d3);
-    font-weight: var(--font-weight-bold);
-    color: var(--color-foreground);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .lib-row.current .lib-label {
-    color: color-mix(in srgb, var(--color-foreground) 85%, transparent);
-  }
   .indexing {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
+    gap: var(--space-d5);
     color: var(--color-accent);
   }
   .idx-count {
-    font-family: var(--font-monospace, monospace);
-    font-size: 9px;
     font-variant-numeric: tabular-nums;
   }
   .indexing :global(.icon),
@@ -1453,7 +1213,6 @@
     }
   }
   .add-btn {
-    all: unset;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
@@ -1461,11 +1220,6 @@
     width: var(--trail);
     height: 14px;
     flex-shrink: 0;
-    border-radius: var(--radius);
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-  }
-  .add-btn:hover {
-    color: var(--color-foreground);
   }
   .add-btn:disabled {
     cursor: default;
@@ -1476,11 +1230,10 @@
     display: flex;
     align-items: center;
     gap: var(--row-gap);
-    padding: 4px 8px;
+    padding: var(--space-d5) var(--space-d2);
     margin-top: 0px;
   }
   .cat-disc {
-    all: unset;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
@@ -1488,30 +1241,16 @@
     width: var(--lead);
     height: 14px;
     flex-shrink: 0;
-    color: color-mix(in srgb, var(--color-foreground) 45%, transparent);
-    transition: color var(--duration-instant);
-  }
-  .cat-disc:hover {
-    color: var(--color-foreground);
   }
   .section-main {
-    all: unset;
     text-box: cap alphabetic;
     min-width: 0;
     cursor: pointer;
   }
   .section-name {
-    font-family: var(--font-header, sans-serif);
-    font-size: var(--scale-d3);
-    font-weight: var(--font-weight-bold);
-    color: var(--color-foreground);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-  .section-main.current .section-name,
-  .section-main:hover .section-name {
-    color: var(--color-foreground);
   }
   .section-main.import-dest .section-name,
   .dir-row.import-dest .dir-name {
@@ -1520,43 +1259,24 @@
 
   .dir-row {
     gap: var(--row-gap);
-    /* 6px, not 4: a taller target, easier to hit the folder you meant. */
-    padding: 6px 8px 6px calc(8px + (var(--depth) + 1) * var(--indent));
+    /* Tight: the name's own line box already gives a row its height, and with
+       6px above and below plus a gap between rows the tree read as a list of
+       separate buttons rather than one outline. */
+    padding: var(--space-d5) var(--space-d2) var(--space-d5) calc(var(--space-d2) + (var(--depth) + 1) * var(--indent));
     position: relative;
     transition: all var(--transition-fast);
   }
-  .dir-row.current {
-    background: var(--color-surface-low);
-  }
-  .dir-row:hover:not(.current) {
-    background: var(--color-surface-lower);
-  }
   /* A photo (or another folder) is being dragged over this folder — it will
      land here on drop. */
-  .dir-row.drop-target,
-  .lib-row.drop-target {
-    background: color-mix(in srgb, var(--color-accent) 18%, transparent);
-    box-shadow: inset 0 0 0 1px var(--color-accent);
-  }
   /* This folder is the one currently being dragged — it stays put (folders
      aren't reordered by dragging, only moved into another), just quieted so
      the row you're dragging FROM doesn't visually compete with the target. */
-  .dir-row.dragging {
-    opacity: 0.4;
-  }
   /* Inline rename / new-folder editor — same footprint as .dir-name so the
      row doesn't jump when it switches between text and input. */
   .dir-rename {
-    all: unset;
     flex: 1;
     min-width: 0;
-    font-family: var(--font-text, sans-serif);
-    font-size: var(--scale-d3);
-    color: var(--color-foreground);
-    background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
-    border: 1px solid color-mix(in srgb, var(--color-accent) 50%, transparent);
-    border-radius: var(--radius);
-    padding: 1px 4px;
+    padding: 1px var(--space-d4);
   }
   .disc {
     all: unset;
@@ -1571,7 +1291,7 @@
        2026-08-04). Padding widens the clickable area to 20x20 without
        shifting layout — the matching negative margin cancels the padding's
        footprint, so siblings sit exactly where they did before. */
-    padding: 6px;
+    padding: var(--space-d3);
     margin: -6px;
     display: inline-flex;
     align-items: center;
@@ -1582,10 +1302,6 @@
   .disc:hover,
   .disc.open {
     color: var(--color-foreground);
-  }
-  .disc.open + .dir-name {
-    color: var(--color-foreground);
-    font-weight: var(--font-weight-bold);
   }
   .disc :global(.icon) {
     transition: all var(--transition-fast);
@@ -1598,30 +1314,17 @@
   }
 
   .dir-name {
-    font-family: var(--font-text, sans-serif);
-    font-size: var(--scale-d3);
-    color: var(--color-muted);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     min-width: 0;
     transition: color var(--duration-instant);
   }
-  .dir-row.current .dir-name {
-    color: var(--color-foreground);
-    font-weight: 600;
-  }
-  .dir-row:hover .dir-name {
-    color: var(--color-foreground);
-  }
   .dir-spacer {
     flex: 1;
   }
   .dir-count {
-    font-family: var(--font-monospace, monospace);
-    font-size: 9px;
     font-variant-numeric: tabular-nums;
-    color: var(--color-subtle);
     flex-shrink: 0;
     /* Right-aligned in a fixed slot so every count shares one right edge. */
     min-width: 2.4em;
@@ -1647,47 +1350,26 @@
 
   .lib-section {
     flex-shrink: 0;
-    padding: 8px 12px 12px;
+    padding: var(--space-d2) 12px 12px;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--space-d3);
   }
   .lib-toggle {
-    all: unset;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    font-family: var(--font-header, sans-serif);
-    font-size: var(--scale-d3);
-    font-weight: var(--font-weight-bold);
-    color: var(--color-foreground);
-  }
-  .lib-toggle:hover {
-    color: var(--color-foreground);
   }
   .lib-note {
-    font-family: var(--font-text, sans-serif);
-    font-size: var(--scale-d3);
-    color: var(--color-foreground);
-    background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    padding: 6px;
+    padding: var(--space-d3);
     resize: vertical;
   }
   .lib-open-note {
-    all: unset;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    font-family: var(--font-text, sans-serif);
-    font-size: var(--scale-d3);
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-  }
-  .lib-open-note:hover {
-    color: var(--color-foreground);
+    gap: var(--space-d4);
   }
 
   .divider {
@@ -1697,47 +1379,20 @@
     flex-shrink: 0;
   }
 
-  .action-btn.open-page {
-    margin-top: 8px;
-    width: 100%;
-    background: transparent;
-    border: 1px solid var(--color-accent);
-    color: var(--color-accent);
-    font-family: var(--font-header, sans-serif);
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    padding: 6px 10px;
-    border-radius: var(--radius);
-    cursor: pointer;
-    text-align: center;
-    transition: all 0.15s var(--ease-standard);
-  }
-  .action-btn.open-page:hover {
-    background: var(--color-accent);
-    color: #ffffff;
-  }
-
   .account {
     position: relative;
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
+    gap: var(--space-d2);
+    padding: var(--space-d2) 12px;
   }
   .account-id {
-    all: unset;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-d2);
     min-width: 0;
-    font-family: var(--font-text, sans-serif);
-    font-size: var(--scale-d3);
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-  }
-  .account-id:hover {
-    color: var(--color-foreground);
   }
   /* The initial-in-a-circle avatar — accent-tinted, like Swift's. */
   .account-avatar {
@@ -1749,10 +1404,6 @@
     align-items: center;
     justify-content: center;
     background: color-mix(in srgb, var(--color-accent) 15%, transparent);
-    color: var(--color-accent);
-    font-family: var(--font-header, sans-serif);
-    font-size: 9px;
-    letter-spacing: 0.06em;
   }
   .account-name {
     color: color-mix(in srgb, var(--color-foreground) 85%, transparent);
@@ -1765,81 +1416,31 @@
     width: 196px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--space-d2);
     padding: 12px;
-  }
-  .pop-title {
-    font-family: var(--font-header, sans-serif);
-    font-size: var(--scale-d3);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
   }
   .pop-or {
     text-align: center;
-    font-family: var(--font-monospace, monospace);
-    font-size: 9px;
-    color: color-mix(in srgb, var(--color-foreground) 38%, transparent);
-  }
-  .pop-hint {
-    font-family: var(--font-text, sans-serif);
-    font-size: 10px;
-    line-height: 1.4;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
   }
   .pop-key {
-    font-family: var(--font-monospace, monospace);
-    font-size: var(--scale-d3);
-    color: var(--color-foreground);
-    background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    padding: 6px;
-    outline: none;
-  }
-  .pop-key:focus {
-    border-color: color-mix(in srgb, var(--color-foreground) 30%, transparent);
+    padding: var(--space-d3);
   }
   .pop-primary {
-    all: unset;
     box-sizing: border-box;
     cursor: pointer;
     text-align: center;
-    padding: 6px 8px;
-    border-radius: 999px;
-    background: var(--color-foreground);
-    color: var(--color-surface-high);
-    font-family: var(--font-header, sans-serif);
-    font-size: var(--scale-d3);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
+    padding: var(--space-d3) var(--space-d2);
   }
   .pop-primary:disabled {
     cursor: default;
     opacity: 0.35;
-  }
-  .pop-user {
-    font-family: var(--font-text, sans-serif);
-    font-size: 12px;
-    color: var(--color-foreground);
-  }
-  .pop-meta {
-    font-family: var(--font-monospace, monospace);
-    font-size: 9px;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
   }
   .pop-divider {
     height: 1px;
     background: var(--color-border);
   }
   .pop-danger {
-    all: unset;
     cursor: pointer;
-    font-family: var(--font-header, sans-serif);
-    font-size: var(--scale-d3);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--color-accent);
   }
 
   /* Editorial filter body (THEME + PINNED + RECENT) — replaces the folder
@@ -1858,161 +1459,6 @@
   .story-spacer {
     flex: 1;
   }
-  .theme-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .theme-row-label {
-    font-family: var(--font-header, sans-serif);
-    font-size: 10px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    opacity: 0.55;
-  }
-  .theme-select-wrap {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    min-width: 0;
-    flex: 1;
-    max-width: 60%;
-  }
-  .custom-select-wrap {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-  }
-  .theme-select-wrap select,
-  .custom-select-wrap select {
-    appearance: none;
-    -webkit-appearance: none;
-    width: 100%;
-    background: var(--color-surface-high, #222);
-    color: var(--color-foreground);
-    border: 1px solid var(--color-border, rgba(255, 255, 255, 0.12));
-    border-radius: var(--radius-sm, 6px);
-    padding: 3px 20px 3px 8px;
-    font-size: 10px;
-    cursor: pointer;
-    outline: none;
-    font-family: inherit;
-    transition: border-color 0.15s ease;
-  }
-  .custom-select-wrap select {
-    width: 120px;
-  }
-  .theme-select-wrap select:hover,
-  .custom-select-wrap select:hover {
-    border-color: rgba(255, 255, 255, 0.25);
-  }
-  .theme-select-wrap select:disabled {
-    opacity: 0.4;
-    cursor: default;
-  }
-  :global(.theme-select-wrap .select-caret),
-  :global(.custom-select-wrap .select-caret) {
-    position: absolute;
-    right: 7px;
-    pointer-events: none;
-    opacity: 0.6;
-  }
-
-  /* Fine-tune override — Francis: "the panel should offer the ability to
-     customize the style tokens like fonts and color" / "always expanded
-     tho" (a collapse toggle was tried first and dropped). */
-  .customize-block {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .customize-label {
-    display: block;
-    font-size: 10px;
-    opacity: 0.55;
-    padding: 2px 0;
-  }
-  .customize-fields {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 6px 0;
-  }
-  .field-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .field-label {
-    font-size: 9.5px;
-    letter-spacing: 0.08em;
-    opacity: 0.6;
-    font-weight: 500;
-  }
-  .color-picker-badge {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    background: var(--color-surface-high, #222);
-    border: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
-    border-radius: var(--radius-sm, 6px);
-    padding: 2px 6px 2px 3px;
-  }
-  .swatch-button {
-    position: relative;
-    width: 18px;
-    height: 18px;
-    border-radius: 4px;
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    cursor: pointer;
-    overflow: hidden;
-    display: inline-block;
-  }
-  .swatch-button input[type="color"] {
-    position: absolute;
-    top: -20px;
-    left: -20px;
-    width: 60px;
-    height: 60px;
-    opacity: 0;
-    cursor: pointer;
-  }
-  .hex-text {
-    font-family: var(--font-monospace, monospace);
-    font-size: 9.5px;
-    opacity: 0.85;
-  }
-  .field-reset {
-    all: unset;
-    cursor: pointer;
-    opacity: 0.5;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 1px;
-  }
-  .field-reset:hover {
-    opacity: 1;
-    color: var(--color-accent);
-  }
-  .ratio-slider-wrap {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex: 1;
-    max-width: 60%;
-  }
-  .ratio-slider-wrap input[type="range"] {
-    flex: 1;
-    min-width: 0;
-  }
-  .ratio-slider-wrap .hex-text {
-    flex-shrink: 0;
-    width: 2.6em;
-    text-align: right;
-  }
   .theme-inner {
     display: flex;
     flex-direction: column;
@@ -2021,10 +1467,9 @@
   .story-actions {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--space-d3);
   }
   .publish-hero-btn {
-    all: unset;
     box-sizing: border-box;
     display: flex;
     align-items: center;
@@ -2032,21 +1477,7 @@
     gap: 7px;
     width: 100%;
     padding: 7px 12px;
-    font-family: var(--font-header, sans-serif);
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    border-radius: var(--radius-sm, 6px);
     cursor: pointer;
-    background: var(--color-accent, #d6202c);
-    color: #ffffff;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    transition: all 0.15s var(--ease-standard);
-  }
-  .publish-hero-btn:hover:not(:disabled) {
-    filter: brightness(1.1);
-    box-shadow: 0 4px 12px rgba(214, 32, 44, 0.35);
   }
   .publish-hero-btn:disabled {
     opacity: 0.6;
@@ -2054,7 +1485,7 @@
   }
   .secondary-actions {
     display: flex;
-    gap: 6px;
+    gap: var(--space-d3);
   }
   .action-btn.secondary {
     flex: 1;
@@ -2062,55 +1493,30 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 5px;
-    padding: 5px 8px;
-    font-size: 9.5px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    border-radius: var(--radius-sm, 6px);
+    gap: var(--space-d3);
+    padding: var(--space-d3) var(--space-d2);
     cursor: pointer;
-    border: 1px solid var(--color-border, rgba(255, 255, 255, 0.12));
-    background: var(--color-surface-low, rgba(255, 255, 255, 0.04));
-    color: var(--color-foreground);
-    transition: all 0.15s ease;
-  }
-  .action-btn.secondary:hover:not(:disabled) {
-    background: var(--color-surface-high, rgba(255, 255, 255, 0.1));
-    border-color: rgba(255, 255, 255, 0.25);
   }
   .action-btn:disabled {
     opacity: 0.5;
     cursor: default;
   }
   .open-page-banner {
-    all: unset;
     box-sizing: border-box;
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 10px;
-    background: color-mix(in srgb, #4caf50 12%, transparent);
-    border: 1px solid color-mix(in srgb, #4caf50 35%, transparent);
-    border-radius: var(--radius-sm, 6px);
+    gap: var(--space-d3);
+    padding: var(--space-d3) 10px;
     cursor: pointer;
-    font-size: 10px;
-    color: #4caf50;
-    font-weight: 500;
-    transition: all 0.15s ease;
-  }
-  .open-page-banner:hover {
-    background: color-mix(in srgb, #4caf50 20%, transparent);
-    border-color: #4caf50;
   }
   :global(.banner-check) {
-    color: #4caf50;
+    color: var(--color-green);
   }
   :global(.banner-arrow) {
     margin-left: auto;
     opacity: 0.8;
   }
   .publish-status {
-    font-size: 10px;
     opacity: 0.6;
     margin: 0;
   }

@@ -3,9 +3,9 @@ import fs from "node:fs";
 import path from "node:path";
 
 /**
- * Every slider in the app draws its filled rail from `--f` (app.scss's
+ * Every slider in the app draws its filled rail from `--slider-value` (the framework's
  * input[type="range"] track gradient). A CSS rail cannot read its own value,
- * so an input that does not set `--f` shows the fill at 50% whatever its
+ * so an input that does not set `--slider-value` shows the fill at 50% whatever its
  * value — the Photo Size slider at 75% (Francis, 2026-09-28), the crop
  * angle, the heading-scale slider. This walks the source and fails on any
  * range input that forgets.
@@ -22,7 +22,7 @@ function svelteFiles(dir) {
 }
 
 describe("slider rails", () => {
-  it("every range input sets its --f fill", () => {
+  it("every range input sets its --slider-value fill", () => {
     const missing = [];
     for (const file of ROOTS.flatMap(svelteFiles)) {
       const src = fs.readFileSync(file, "utf8");
@@ -30,7 +30,7 @@ describe("slider rails", () => {
       // one not preceded by `=`, so an `(e) => ...` handler does not end it.
       for (const m of src.matchAll(/<input\b[\s\S]*?(?<!=)>/g)) {
         const tag = m[0];
-        if (tag.includes('type="range"') && !tag.includes("--f")) {
+        if (tag.includes('type="range"') && !tag.includes("--slider-value")) {
           const line = src.slice(0, m.index).split("\n").length;
           missing.push(`${path.relative(process.cwd(), file)}:${line}`);
         }

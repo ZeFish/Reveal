@@ -15,13 +15,18 @@
 mod anthropic;
 mod gemini;
 mod hash;
+/// Exposed for `examples/profile.rs` only.
+#[doc(hidden)]
+pub mod bench {
+    pub use crate::hash::{dhash, exposure_penalty, resize_gray, sharpness_variance};
+}
 mod prefilter;
 mod provider;
 mod rank;
 
 pub use anthropic::AnthropicRanker;
 pub use gemini::GeminiRanker;
-pub use prefilter::{prefilter, PhotoScore, PrefilterConfig};
+pub use prefilter::{prefilter, prefilter_with, PhotoScore, PrefilterConfig};
 pub use provider::AiProvider;
 pub use rank::{rank_all, RankCandidate, RankedResult, TagSuggester, VisionRanker};
 
@@ -72,4 +77,22 @@ pub fn embedded_preview_jpeg(path: &str, max_edge: u32) -> Option<Vec<u8>> {
         .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Jpeg)
         .ok()?;
     Some(buf)
+}
+
+/// `embedded_preview_jpeg` for many photos at once, four at a time (the same
+/// ceiling as the prefilter, for the same NAS reason), order preserved and
+/// unreadable frames dropped. Sequentially this was ~180 ms a photo — the
+/// survivors (up to 80) cost fifteen seconds before the first request left.
+pub fn embedded_previews(paths: &[String], max_edge: u32) -> Vec<(String, Vec<u8>)> {
+    use rayon::prelude::*;
+    let run = || {
+        paths
+            .par_iter()
+            .filter_map(|p| embedded_preview_jpeg(p, max_edge).map(|jpeg| (p.clone(), jpeg)))
+            .collect()
+    };
+    match rayon::ThreadPoolBuilder::new().num_threads(4).build() {
+        Ok(pool) => pool.install(run),
+        Err(_) => run(),
+    }
 }

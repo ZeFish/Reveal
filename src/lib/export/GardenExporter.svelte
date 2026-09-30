@@ -24,32 +24,21 @@
 <style>
   .export-target-card {
     padding: 1rem;
-    background: var(--color-surface-low);
+    background: var(--color-surface-dark-1);
     border-radius: 8px;
-    border: 1px solid var(--color-border);
+    border: var(--stroke-width) solid var(--color-border);
   }
   h3 {
-    font-family: var(--font-header, sans-serif);
-    font-size: 0.85rem;
     margin: 0 0 0.4rem;
   }
   .desc {
-    font-size: 0.75rem;
-    color: var(--color-muted);
     margin: 0 0 0.8rem;
   }
   .live-link {
-    font-family: var(--font-monospace, monospace);
-    font-size: 0.7rem;
-    color: var(--color-accent);
     margin: 0 0 1rem;
   }
   .publish-btn {
-    color: var(--color-accent);
-    border: 1px solid var(--color-accent);
-    background: transparent;
     padding: 0.4rem 1rem;
-    border-radius: var(--radius);
     cursor: pointer;
   }
   .publish-btn:disabled {

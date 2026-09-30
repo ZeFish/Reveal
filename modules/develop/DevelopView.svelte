@@ -636,7 +636,7 @@
 >
   {#if sourceOffline}
     <div
-      class="render-badge offline"
+      class="render-badge text-accent"
       role="status"
       title="This folder is unreachable — showing the cached copy"
     >
@@ -649,7 +649,7 @@
          is not something anyone finds (Francis: "j'ai pas d'animation de
          chargement"). -->
     <div class="render-badge" class:centred={!hasSomethingOnScreen}>
-      <span class="render-spinner"></span>
+      <span class="loader"></span>
     </div>
   {/if}
 
@@ -699,7 +699,7 @@
       class="photo-mat clip-overlay"
       style={matStyle}
     ></canvas>
-    <div class="clip-legend">
+    <div class="clip-legend hud">
       <span class="legend-item red">● Blown highlights</span>
       <span class="legend-item blue">● Blocked shadows</span>
     </div>
@@ -779,7 +779,7 @@
     /* The framework's own two presets rather than hand-rolled shadows, so the
        glass lifts the way every other raised surface in the app does. */
     box-shadow: var(--shadow-hover);
-    background: var(--color-surface-high, #000);
+    background: var(--color-surface-light-1);
   }
   .loupe canvas {
     width: 100%;
@@ -852,7 +852,7 @@
        its background under its padding), not a border — the hairline edge
        comes from the shadow. */
     padding: 12px;
-    background: var(--color-surface-high);
+    background: var(--color-surface-light-1);
     box-shadow: var(--shadow), var(--shadow-glow);
     transition: all var(--transition-fast);
     -webkit-user-drag: none;
@@ -898,7 +898,7 @@
   .crop-rect {
     position: absolute;
     box-sizing: border-box;
-    border: 1px solid rgba(255, 255, 255, 0.9);
+    border: var(--stroke-width) solid rgba(255, 255, 255, 0.9);
     box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55), 0 0 8px rgba(0, 0, 0, 0.5);
     cursor: move;
   }
@@ -1021,20 +1021,13 @@
     z-index: 10;
     display: flex;
     gap: 12px;
-    padding: 6px 14px;
-    background: rgba(0, 0, 0, 0.85);
-    backdrop-filter: blur(10px);
-    border-radius: 999px;
-    font-size: 0.72rem;
-    font-family: var(--font-header, sans-serif);
-    letter-spacing: 0.05em;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    padding: var(--space-d3) 14px;
   }
   .legend-item.red {
-    color: #ff453a;
+    color: var(--color-red);
   }
   .legend-item.blue {
-    color: #0a84ff;
+    color: var(--color-blue);
   }
 
   /* A flow item below the photo, not an overlay on it — see main.has-caption. */
@@ -1048,11 +1041,7 @@
     width: auto;
     max-width: 46rem;
     box-sizing: border-box;
-    padding: 0 4px;
-    color: var(--color-foreground, #fff);
-    font-family: var(--font-text, serif);
-    font-size: 15px;
-    line-height: 1.45;
+    padding: 0 var(--space-d4);
     text-align: center;
     white-space: pre-wrap;
   }
@@ -1067,13 +1056,7 @@
     min-height: 10rem;
     color: var(--color-muted);
   }
-  .fallback-name {
-    font-family: var(--font-monospace, monospace);
-    font-size: 0.8rem;
-  }
   .fallback-hint {
-    font-size: 0.68rem;
-    letter-spacing: 0.05em;
     opacity: 0.7;
   }
 
@@ -1128,37 +1111,11 @@
     left: 50%;
     transform: translate(-50%, -50%);
   }
-  .render-badge.centred .render-spinner {
-    width: 22px;
-    height: 22px;
-    border-width: 2px;
-  }
-  .render-badge.offline {
-    color: var(--color-accent);
-    opacity: 0.85;
-  }
   @keyframes badge-in {
     from {
       opacity: 0;
     }
   }
-  /* The theme's own ink, not white. Hardcoded white was invisible in a light
-     theme, which is why the busy mark read as "there is no busy mark"
-     (Francis, 2026-09-22) — it was spinning the whole time. */
-  .render-spinner {
-    width: 9px;
-    height: 9px;
-    border: 1.5px solid color-mix(in srgb, var(--color-foreground) 18%, transparent);
-    border-top-color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-  }
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
   .empty-stage {
     display: flex;
     flex-direction: column;
@@ -1167,20 +1124,10 @@
     color: color-mix(in srgb, var(--color-foreground) 28%, transparent);
     user-select: none;
   }
-  .empty-name {
-    font-family: var(--font-header, sans-serif);
-    font-size: 11px;
-    letter-spacing: 0.22em;
-    text-transform: uppercase;
-  }
   .empty-status {
-    font-family: var(--font-monospace, monospace);
-    font-size: 10px;
     opacity: 0.8;
   }
   .status {
-    color: var(--color-muted);
-    font-size: 0.8rem;
     margin: 0;
   }
 </style>

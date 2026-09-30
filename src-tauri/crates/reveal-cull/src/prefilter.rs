@@ -5,6 +5,7 @@
 //! "not obviously bad" — that judgment call stays with stage 2.
 
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use rayon::prelude::*;
 
@@ -89,10 +90,31 @@ const MAX_CONCURRENT_DECODES: usize = 4;
 /// sharpest few, and cap the survivor count. Returns survivors sorted
 /// best-first.
 pub fn prefilter(paths: &[String], cfg: &PrefilterConfig) -> Vec<PhotoScore> {
+    prefilter_with(paths, cfg, &|_| {}, &AtomicBool::new(false))
+}
+
+/// `prefilter` that reports how many photos are done (called from worker
+/// threads, so keep it cheap) and stops early when `cancel` flips. This is
+/// the slow stage on a real folder — ~100 ms a photo over the NAS, minutes
+/// for a few thousand — and it used to run silent and uninterruptible.
+pub fn prefilter_with(
+    paths: &[String],
+    cfg: &PrefilterConfig,
+    on_progress: &(dyn Fn(usize) + Sync),
+    cancel: &AtomicBool,
+) -> Vec<PhotoScore> {
+    let done = AtomicUsize::new(0);
     let score_all = || {
         paths
             .par_iter()
-            .filter_map(|p| score_one(p))
+            .filter_map(|p| {
+                if cancel.load(Ordering::Relaxed) {
+                    return None;
+                }
+                let scored = score_one(p);
+                on_progress(done.fetch_add(1, Ordering::Relaxed) + 1);
+                scored
+            })
             .filter(|s| s.sharpness >= cfg.min_sharpness && s.exposure_penalty <= cfg.max_exposure_penalty)
             .collect()
     };

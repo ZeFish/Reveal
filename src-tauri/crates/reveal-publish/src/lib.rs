@@ -203,6 +203,29 @@ impl GardenClient {
         }
     }
 
+    /// Is there already a note at this slug, and what state is it in?
+    /// `GET /publish/:slug` — 404 is an answer ("not published"), not an error.
+    pub fn get_note(&self, slug: &str) -> Result<Option<RemoteNote>, PublishError> {
+        let resp = match ureq::get(&format!("{}/publish/{slug}", self.api_url))
+            .set("x-api-key", &self.api_key)
+            .call()
+        {
+            Ok(r) => r,
+            Err(ureq::Error::Status(404, _)) => return Ok(None),
+            Err(e) => return Err(http_error("GET note", e)),
+        };
+        let v: serde_json::Value = resp
+            .into_json()
+            .map_err(|e| PublishError::Http(format!("note JSON invalid: {e}")))?;
+        Ok(Some(RemoteNote {
+            slug: slug.to_string(),
+            title: v["title"].as_str().unwrap_or_default().to_string(),
+            updated_at: v["updated_at"].as_str().map(str::to_string),
+            hash: v["hash"].as_str().unwrap_or_default().to_string(),
+            visibility: v["visibility"].as_str().map(str::to_string),
+        }))
+    }
+
     /// The public page for a slug (standard.garden profile URL).
     pub fn live_url(&self, slug: &str) -> String {
         format!("https://standard.garden/@{}/{slug}", self.username)
@@ -223,6 +246,32 @@ impl GardenClient {
         } else {
             format!("{}/{url}", self.api_url)
         }
+    }
+}
+
+/// What the server holds for a slug (`GET /publish/:slug`, minus the body).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RemoteNote {
+    pub slug: String,
+    pub title: String,
+    pub updated_at: Option<String>,
+    pub hash: String,
+    pub visibility: Option<String>,
+}
+
+/// The slug a published note's URL ends in — the last path segment of
+/// `https://standard.garden/@francis/summer-trip` (or of a custom-domain
+/// URL). `None` for a root/empty path, which names no slug.
+pub fn slug_from_url(url: &str) -> Option<String> {
+    let path = url.trim().split(['?', '#']).next()?.trim_end_matches('/');
+    let after_scheme = path.split_once("://").map_or(path, |(_, rest)| rest);
+    // Drop the host; what is left must have at least one path segment.
+    let (_, route) = after_scheme.split_once('/')?;
+    let last = route.rsplit('/').next()?;
+    if last.is_empty() || last.starts_with('@') {
+        None
+    } else {
+        Some(last.to_string())
     }
 }
 
@@ -252,6 +301,16 @@ fn hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn slug_from_a_published_url() {
+        assert_eq!(slug_from_url("https://standard.garden/@francis/summer-trip").as_deref(), Some("summer-trip"));
+        assert_eq!(slug_from_url("https://standard.garden/@francis/summer-trip/").as_deref(), Some("summer-trip"));
+        assert_eq!(slug_from_url("https://francisfontaine.com/summer-trip?x=1#top").as_deref(), Some("summer-trip"));
+        assert_eq!(slug_from_url("https://standard.garden/@francis").as_deref(), None);
+        assert_eq!(slug_from_url("https://francisfontaine.com/").as_deref(), None);
+        assert_eq!(slug_from_url("").as_deref(), None);
+    }
 
     #[test]
     fn slug_matches_plugin_rule() {

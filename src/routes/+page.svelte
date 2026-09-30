@@ -45,8 +45,8 @@
   import Alert from "@stnd/ui/Alert.svelte";
   import { AppController } from "$lib/controllers/AppController.js";
   import { extractGardenUrl } from "$lib/story.js";
-  import { storyTheme, colorScheme, updateStoryTheme, contrastInk, getFontFamilyWithFallback, currentThemeFontPackages, currentThemeId } from "$lib/story-theme.svelte.js";
-  import { loadFontPackages, measureThemeTokens } from "$lib/app-theme.js";
+  import { storyTheme, setStoryTheme, themeFromColors } from "$lib/story-theme.svelte.js";
+  import { applyFolderTheme } from "$lib/app-theme.js";
 
   // ---- shared shapes (plain-JS JSDoc typing — no runtime effect) -----------------
   /** A catalogue frame row, as returned by `index_frames` / `list_dir`. */
@@ -462,99 +462,28 @@
   /** @type {Recipe | null} */ let copiedRecipe = $state(null);
   /** @type {string | null} */ let importDir = $state(null); // chosen import folder (null → fall back to root)
 
-  // Folder mood — the SAME story-theme tokens the Editorial/Garden preview
-  // already reads from `<folder>/<folder-name>.md` frontmatter (the sidebar's
-  // theme dropdown writes them via story_set_theme), now also driving Reveal's own working
-  // chrome, not just the exported-preview canvas. A wedding folder and a
-  // corporate-shoot folder can carry their own theme note and the app itself
-  // shifts mood while you're in them — reusing the existing per-folder file
-  // rather than inventing a second theming mechanism.
+  // Folder mood: the Garden theme the folder's story note names in `theme:`
+  // (the Editorial picker writes it). <html> already carries the app's
+  // data-theme; a folder just swaps which theme sits there, so colours, type,
+  // radius and light/dark all come from the framework. Leaving the folder puts
+  // the app's own back.
   $effect(() => {
     const dir = library.curDir;
     if (!isTauri || !dir) {
-      updateStoryTheme({ darkBackground: null, darkAccent: null, fontHeader: null, fontText: null });
+      setStoryTheme(null);
       return;
     }
     invoke("story_load_theme", { dir }).then((t) => {
       if (library.curDir !== dir) return; // folder changed again before this resolved
-      updateStoryTheme({
-        darkBackground: t.darkBackground,
-        darkAccent: t.darkAccent,
-        fontHeader: t.fontHeader,
-        fontText: t.fontText,
-      });
-      // A saved theme only carries font NAMES ("Forrest") — the fontPackages
-      // array that actually loads their @font-face CSS lives on the curated
-      // theme entry, not the folder's note, so it has to be looked back up.
-      const pkgs = currentThemeFontPackages();
-      if (pkgs.length) loadFontPackages(pkgs);
+      const id = t.theme ?? themeFromColors(t.legacyDarkBackground, t.legacyDarkAccent);
+      setStoryTheme(id);
+      // A note that still names its theme by colour moves to `theme:`, and the
+      // custom colour / font keys go with it.
+      if (!t.theme && id) invoke("story_set_theme", { dir, theme: id }).catch(() => {});
     });
   });
-
-  // The folder-theme override below only ever carried the DARK half of the
-  // 8 theme tokens ThemeTokens actually models (darkBackground/darkAccent),
-  // so a themed folder stayed visibly dark even after toggling the system
-  // to light mode — "l" (toggleAppearance) flips the OS/webview's
-  // prefers-color-scheme, which the framework's own :root rules follow
-  // fine, but this override doesn't unless it ALSO knows which scheme is
-  // active. story.rs's set_theme mirrors light_background = derived
-  // foreground of dark_background, light_foreground = dark_background —
-  // reproduced here with the same contrastInk helper rather than fetching
-  // the light_* fields separately, since they're always that exact swap.
-  // colorScheme.prefersDark is the shared singleton (story-theme.svelte.js)
-  // — StoryView's own preview canvas needs the exact same signal, so it
-  // isn't duplicated as a second local matchMedia listener here.
-  let appThemed = $derived(!!storyTheme.darkBackground);
-  let appBg = $derived(
-    !storyTheme.darkBackground
-      ? undefined
-      : colorScheme.prefersDark
-        ? storyTheme.darkBackground
-        : contrastInk(storyTheme.darkBackground)
-  );
-  let appFg = $derived(
-    !storyTheme.darkBackground
-      ? undefined
-      : colorScheme.prefersDark
-        ? contrastInk(storyTheme.darkBackground)
-        : storyTheme.darkBackground
-  );
-  let appAccent = $derived(storyTheme.darkAccent ?? undefined);
-  let appFontHeader = $derived(storyTheme.fontHeader ? getFontFamilyWithFallback(storyTheme.fontHeader, true) : undefined);
-  let appFontText = $derived(storyTheme.fontText ? getFontFamilyWithFallback(storyTheme.fontText, false) : undefined);
-  // --font-ratio (heading modular scale) is independent of the background/
-  // accent theme, so this is unconditional. Written here mainly to keep the
-  // token present should any Reveal chrome start consuming --optical-ratio/
-  // --scale-* later — today NONE of Reveal's own components size off those
-  // (every .svelte file hardcodes px), so this override is currently inert
-  // inside the app itself. Its real consumer is the published Garden page:
-  // story_set_theme already writes font-ratio into the note's frontmatter,
-  // which Garden's own site DOES render typography from.
-  let appFontRatio = $derived(storyTheme.fontRatio ?? undefined);
-
-  // Extends the same "app-wide mood" mechanism above (colors, fonts) to a
-  // themed folder's actual shape — its curated theme's real CSS
-  // (packages/themes/<id>/<id>.scss) also carries radius, derived the same
-  // way colors are, which garden-themes.generated.json never modeled.
-  // Reported live after this SAME fix already landed for the Editorial
-  // preview: "back in grid and we lose it" — the grid never got it because
-  // that fix only touched StoryView. measureThemeTokens (app-theme.js)
-  // resolves it off a real, offscreen element carrying the theme's
-  // data-theme attribute (this framework's own radius/color derivation
-  // only resolves at :root by design, not at a nested scope) — see its own
-  // comment for why reconfiguring that package-wide isn't the fix here.
-  let appThemeId = $derived(currentThemeId());
-  /** @type {Record<string, string>} */
-  let appMeasuredRadius = $state({});
   $effect(() => {
-    const id = appThemeId;
-    if (!id) {
-      appMeasuredRadius = {};
-      return;
-    }
-    measureThemeTokens(id, ["--radius", "--radius-sm", "--radius-lg"]).then((tokens) => {
-      if (appThemeId === id) appMeasuredRadius = tokens;
-    });
+    applyFolderTheme(storyTheme.id);
   });
 
   let minRating = $state(0);
@@ -578,7 +507,7 @@
   let autoImport = $state(false);
   // AI cull (walk-away card→cull→export): mirrors autoImport's hydrate-at-
   // boot pattern, but sourced from the generic preferences bag rather than
-  // a dedicated ShellPrefs field (see SettingsModal's "AI CULL" section).
+  // a dedicated ShellPrefs field (see SettingsPanel's "AI & Automation" section).
   // Two independent outcomes, not one master switch: marking picks into the
   // story (the `q` quick-collection) and exporting JPEGs to the Desktop can
   // each be on or off on their own.
@@ -726,6 +655,43 @@
   /** @type {string | null} */ let liveUrl = $state(null);
   let storyContent = $state("");
   let gardenUrl = $derived(extractGardenUrl(storyContent) || liveUrl);
+  // Is this folder's story already on the Garden? Asked of the server (the
+  // note may have been published from another machine, or before the folder
+  // was renamed), so publishing reads as an update to the note that exists
+  // rather than a new publication. Null = not known / not applicable.
+  let storyRemote = $state(/** @type {{ published: boolean, slug: string, url: string, updated_at: string | null } | null} */ (null));
+  const storyPublished = $derived(!!storyRemote?.published);
+  const publishVerb = $derived(storyPublished ? "Mettre à jour" : "Publier");
+  // The page to open for "view the published note". The server's answer wins
+  // when we have one: a stale local garden-url (note since deleted) must not
+  // keep claiming "Live", and a note published elsewhere gets its link even
+  // without a local stamp. The stamp's own URL is preferred for the address
+  // (it may be the custom domain); the computed one fills in when absent.
+  const publishedUrl = $derived(
+    storyRemote ? (storyRemote.published ? gardenUrl || storyRemote.url : null) : gardenUrl,
+  );
+  $effect(() => {
+    const d = library.dir;
+    const eligible = isTauri && d && storySet.size > 0 && gardenAccount?.signed_in;
+    void gardenUrl; // a fresh publish stamps garden-url: ask again
+    if (!eligible) {
+      storyRemote = null;
+      return;
+    }
+    let stale = false;
+    const timer = setTimeout(async () => {
+      try {
+        const status = await invoke("story_publish_status", { dir: d });
+        if (!stale) storyRemote = status;
+      } catch {
+        if (!stale) storyRemote = null; // offline or signed out: fall back to the plain wording
+      }
+    }, 400);
+    return () => {
+      stale = true;
+      clearTimeout(timer);
+    };
+  });
 
   /** @type {Record<string, number>} */ let scrollOffsets = $state({});
   /** @type {[string, string][]} */ let installedEditors = $state([]);
@@ -1044,7 +1010,7 @@
         }
       });
       on("cull-failed", (e) => {
-        notify(`AI Culling : ${e.payload.message}`, 6000);
+        notify(e.payload.message === "cancelled" ? "AI Culling stopped" : `AI Culling : ${e.payload.message}`, 6000);
         if (activity.progress?.verb === "cull") setProgress(null);
         if (cullTaskId) {
           updateActivity(cullTaskId, { phase: String(e.payload.message), status: "failed" });
@@ -1257,6 +1223,8 @@
           applyRecipeToFrames(presetRecipe, targets);
         });
         on("toggle-render-queue-requested", () => setQueueOpen());
+        // Help ▸ Keyboard Shortcuts: the menu emitted this, nothing listened.
+        on("toggle-shortcuts-requested", () => (shortcutsOpen = !shortcutsOpen));
         on("menu-export-requested", () => {
           if (currentMode === "dev" && photoPath && recipe) exportCurrent();
           else exportSelection();
@@ -1772,10 +1740,10 @@
   // The one derivation every other surface reads, and the selection positions
   // resolved against it, plus the preferences that shape it.
   /**
-   * Masonry lays out with CSS `column-count`, and CSS columns cannot be
-   * windowed — you cannot know which items are in view — so unlike the
-   * uniform grid it puts EVERY photo in the DOM at once. That is the whole
-   * reason for the ceiling: not the layout, the absence of virtualisation.
+   * Masonry is not windowed — unlike the uniform grid it puts EVERY photo in
+   * the DOM at once (column heights are known, so windowing is possible, but
+   * nobody has written it). That is the whole reason for the ceiling: not the
+   * layout, the absence of virtualisation.
    */
   const MASONRY_LIMIT = 500;
   const masonryTooBig = $derived(library.frames.length > MASONRY_LIMIT);
@@ -2181,7 +2149,8 @@
     try {
       for (const r of library.roots) await invoke("scan_root", { path: r });
       await refreshDirs();
-      if (library.curDir) openDir(library.curDir);
+      // Same folder, fresh rows — the rating/collection filter stays on.
+      if (library.curDir) openDir(library.curDir, true, false, true);
       else if (library.dirs.length) openDir(library.dirs[library.dirs.length - 1].dir);
     } finally {
       scanning = false;
@@ -2196,7 +2165,7 @@
     try {
       await invoke(library.roots.includes(path) ? "scan_root" : "scan_folder", { path });
       await refreshDirs();
-      if (library.curDir?.startsWith(path)) await openDir(library.curDir);
+      if (library.curDir?.startsWith(path)) await openDir(library.curDir, true, false, true);
       hold(`Reindexed ${path.split("/").pop()}`);
     } catch (error) {
       hold(`Could not reindex folder: ${error}`);
@@ -2307,7 +2276,7 @@
         for (const d of srcDirs) await invoke("scan_folder", { path: d });
       } catch (_) {}
       await refreshDirs();
-      if (library.curDir) await openDir(library.curDir);
+      if (library.curDir) await openDir(library.curDir, true, false, true);
       clearSelection();
     } finally {
       setProgress(null);
@@ -2432,8 +2401,9 @@
    * @param {string} dir
    * @param {boolean} [restoreMode] Apple Photos only — authorize interactively (true) or stay silent (false, startup)
    * @param {boolean} [restoreSession] re-enter Develop on whichever photo was open last time, instead of always landing in Grid
+   * @param {boolean} [keepFilters] reload THIS folder under the filters already set (rating threshold, collection) instead of starting from the full contact sheet
    */
-  async function openDir(dir, restoreMode = true, restoreSession = false) {
+  async function openDir(dir, restoreMode = true, restoreSession = false, keepFilters = false) {
     if (dir?.startsWith(APPLE_PHOTOS_ROOT)) {
       await openApplePhotos(dir.slice(APPLE_PHOTOS_ROOT.length), { authorize: restoreMode });
       return;
@@ -2450,10 +2420,15 @@
     // stale load through.
     const open = beginOpen({ curDir: dir });
     session.setLastDirectory(dir);
-    // Folder switch always starts with the full contact sheet.
-    minRating = 0;
-    filterStory = false;
-    previewFilter = false;
+    // Folder switch always starts with the full contact sheet — unless the
+    // caller is only re-querying this folder under a filter it just set. The
+    // rating menu used to go through here and wipe its own choice: every
+    // "≥ N ★" reset to "Show all" before the query ran.
+    if (!keepFilters) {
+      minRating = 0;
+      filterStory = false;
+      previewFilter = false;
+    }
     debug = "invoke…";
     /** @type {RevealWindow} */ (window).__log?.(`openDir start dir=${dir} minRating=${JSON.stringify(minRating)}`);
     try {
@@ -2755,10 +2730,10 @@
     if (!d || !storySet.size || !gardenAccount?.signed_in || activity.anyRunning) return;
     liveUrl = null;
     setProgress({ verb: "publication", done: 0, total: storySet.size, current: "" });
-    publishTaskId = startActivity("publish", `Publier l'histoire · ${storySet.size} photos`, storySet.size);
+    publishTaskId = startActivity("publish", `${publishVerb} l'histoire · ${storySet.size} photos`, storySet.size);
     try {
       liveUrl = await invoke("publish_story", { dir: d, dryRun: false });
-      notify("published ✓", 2000);
+      notify(storyPublished ? "updated ✓" : "published ✓", 2000);
       updateActivity(publishTaskId, { done: storySet.size, phase: "Complete", status: "completed" });
     } catch (e) {
       notify(`erreur : ${e}`, 5000);
@@ -2838,6 +2813,10 @@
     invoke("cancel_import").catch(() => {});
   }
 
+  function stopCull() {
+    invoke("cancel_cull").catch(() => {});
+  }
+
   /**
    * Cull one just-imported day-folder down to `aiCullTarget` frames — Rust
    * does prefilter -> vision ranking -> (story marking and/or Desktop
@@ -2900,8 +2879,9 @@
         current: `${added} added`, phase: "Complete", status: "completed",
       });
     } catch (error) {
-      notify(`AI Culling : ${error}`, 6000);
-      updateActivity(cullTaskId, { phase: String(error), status: "failed" });
+      const stopped = String(error) === "cancelled";
+      notify(stopped ? "AI Culling stopped" : `AI Culling : ${error}`, 6000);
+      updateActivity(cullTaskId, stopped ? { phase: "Stopped", status: "cancelled" } : { phase: String(error), status: "failed" });
     } finally {
       setProgress(null);
       releaseActive(cullTaskId);
@@ -3398,9 +3378,18 @@
       (e.target instanceof Element && e.target.closest("[role='menu'], [role='dialog'], [contenteditable='true']"))) return;
     if (["INPUT", "SELECT", "TEXTAREA"].includes(/** @type {HTMLElement} */ (e.target).tagName)) return;
     // Catalogue/disclosure buttons own native activation. Space/Enter must
-    // not simultaneously open a photo or enter quick look/fullscreen.
-    if (["Enter", " "].includes(e.key) && e.target instanceof Element &&
-      e.target.closest("button, [role='button']")) return;
+    // not simultaneously open a photo or enter quick look/fullscreen. A grid
+    // cell is role="button" for the screen reader, but Space on it is the
+    // quick-look shortcut, not an activation — the cell used to swallow it,
+    // so Space did nothing as soon as a photo had focus.
+    //
+    // Only a button the user reached by KEYBOARD owns the key: a sidebar row
+    // that merely kept focus after a click (or after the folder opened) must
+    // not turn Space into a no-op for the photos you are looking at.
+    if (["Enter", " "].includes(e.key) && e.target instanceof Element) {
+      const owner = e.target.closest("button, [role='button']:not(.cell)");
+      if (owner?.matches(":focus-visible")) return;
+    }
 
     // Every mode-dependent decision below reads through this controller
     // instead of comparing `currentMode` inline — one place to look when a
@@ -3631,7 +3620,13 @@
         // photo and pressing space switched to Develop still showing the
         // previous photo's pixels and recipe under the new photo's name
         // (Francis, 2026-09-22). `handleSpace()` never reads photoPath.
-        if (!selection.paths.size && !view[sel]) return;
+        // Nothing picked yet (just opened the app): Space looks at the first
+        // photo rather than doing nothing.
+        if (!view[sel]?.path) {
+          if (!view.length) return;
+          selectOnly(view, 0);
+          focusAt(view, 0);
+        }
         if (!view[sel]?.path) return;
       }
       applyWorkflowResult(controller.handleSpace());
@@ -4208,7 +4203,7 @@
   /** @param {number} n */
   function setMinRating(n) {
     minRating = n;
-    if (library.curDir) openDir(library.curDir);
+    if (library.curDir) openDir(library.curDir, true, false, true);
   }
 
   /** @type {[string, number][]} */
@@ -4272,10 +4267,12 @@
   <div
     class="window-controls-zone"
     class:dev={currentMode === "dev"}
+    data-reveal-host
   >
+    <!-- In Develop the lights hide until the pointer reaches the corner. -->
     <div
       class="window-controls"
-      class:dev={currentMode === "dev"}
+      data-reveal={currentMode === "dev" ? "" : undefined}
       aria-label="Window controls"
     >
       <button class="window-close" onclick={closeMainWindow} aria-label="Close window"></button>
@@ -4288,17 +4285,7 @@
 {#if currentMode === "cull"}
   <div
     class="cull"
-    class:themed={appThemed}
     role="presentation"
-    style:--color-background={appBg}
-    style:--color-foreground={appFg}
-    style:--color-accent={appAccent}
-    style:--font-header={appFontHeader}
-    style:--font-text={appFontText}
-    style:--font-ratio={appFontRatio}
-    style:--radius={appMeasuredRadius["--radius"]}
-    style:--radius-sm={appMeasuredRadius["--radius-sm"]}
-    style:--radius-lg={appMeasuredRadius["--radius-lg"]}
   >
     <div class="body">
       {#if sidebarVisible}
@@ -4348,6 +4335,8 @@
           onExportLocalStory={exportLocalStory}
           publishing={!!activity.progress}
           publishStatus={status}
+          {storyPublished}
+          gardenUrl={publishedUrl}
         />
       {/if}
       {#if sidebarPeek && !sidebarVisible}
@@ -4411,7 +4400,8 @@
             onExportLocalStory={exportLocalStory}
             publishing={!!activity.progress}
             publishStatus={status}
-            {gardenUrl}
+            gardenUrl={publishedUrl}
+            {storyPublished}
           />
         </div>
       {/if}
@@ -4422,7 +4412,7 @@
           {#if !sidebarVisible}
             <div class="brand-cluster">
               <button
-                class="chrome-btn"
+                class="ghost icon small"
                 onclick={toggleSidebar}
                 onmouseenter={openSidebarPeek}
                 onmouseleave={scheduleSidebarPeekClose}
@@ -4431,14 +4421,14 @@
                 <Icon name="sidebar-simple" size="12px" />
               </button>
               <button
-                class="chrome-btn"
-                class:on={layouts[currentMode].focus}
+                class="ghost icon small"
+                aria-pressed={layouts[currentMode].focus}
                 onclick={toggleFocusMode}
                 title="Focus mode — dims the background (o)"
               >
                 <span class="focus-glyph" class:on={layouts[currentMode].focus}></span>
               </button>
-              <button class="chrome-btn" onclick={toggleAppearance} title="Toggle system light / dark mode (l)">
+              <button class="ghost icon small" onclick={toggleAppearance} title="Toggle system light / dark mode (l)">
                 <Icon name="circle-half" size="12px" />
               </button>
               <button class="wordmark" onclick={() => (shortcutsOpen = true)} title="Keyboard shortcuts">
@@ -4448,13 +4438,13 @@
           {/if}
 
           <!-- Star filter -->
-          <Dropdown label="Filter by rating" triggerClass={`rail-btn star-filter-btn ${minRating > 0 || filterStory ? "on" : ""}`}>
+          <Dropdown label="Filter by rating" triggerClass={`ghost ${minRating > 0 || filterStory ? "secondary" : ""}`}>
             {#snippet trigger()}
               <Icon name="star" size="12px" />
               {#if minRating > 0}
-                <span class="rail-badge">{minRating}★</span>
+                <span class="badge">{minRating}★</span>
               {:else if filterStory}
-                <span class="rail-badge">Q</span>
+                <span class="badge">Q</span>
               {/if}
             {/snippet}
                 <DropdownItem
@@ -4477,7 +4467,7 @@
           </Dropdown>
 
           <!-- Sort -->
-          <Dropdown label="Sort photos" triggerClass="rail-btn">
+          <Dropdown label="Sort photos" triggerClass="ghost icon">
             {#snippet trigger()}
               <Icon name="arrows-down-up" size="12px" />
             {/snippet}
@@ -4562,12 +4552,7 @@
               {/if}
               <span class="chip-label">Importing</span>
               <span class="chip-count">{activity.progress.done}/{activity.progress.total}</span>
-              <span class="chip-bar">
-                <span
-                  class="chip-fill"
-                  style="width: {activity.progress.total ? (activity.progress.done / activity.progress.total) * 100 : 0}%"
-                ></span>
-              </span>
+              <progress class="chip-bar" value={activity.progress.done} max={activity.progress.total || 1}></progress>
               <button class="chip-stop" onclick={stopImport} title="Stop the import">
                 <Icon name="x" size="9px" />
               </button>
@@ -4580,18 +4565,39 @@
             <span class="export-chip">
               <span class="chip-label">Developing</span>
               <span class="chip-count">{activity.progress.done}/{activity.progress.total}</span>
-              <span class="chip-bar">
-                <span
-                  class="chip-fill"
-                  style="width: {activity.progress.total ? (activity.progress.done / activity.progress.total) * 100 : 0}%"
-                ></span>
-              </span>
+              <progress class="chip-bar" value={activity.progress.done} max={activity.progress.total || 1}></progress>
             </span>
+          {/if}
+
+          <!-- The AI cull chip — same treatment as import, with the stop the
+               backend has had all along (`cancel_cull`) and nothing offered. -->
+          {#if activity.progress && activity.progress.verb === "cull"}
+            <span class="export-chip">
+              <span class="chip-label">AI Culling</span>
+              <span class="chip-count">{activity.progress.done}/{activity.progress.total}</span>
+              <progress class="chip-bar" value={activity.progress.done} max={activity.progress.total || 1}></progress>
+              <button class="chip-stop" onclick={stopCull} title="Stop the AI cull">
+                <Icon name="x" size="9px" />
+              </button>
+            </span>
+          {/if}
+
+          <!-- View the note this collection is published as. Only when it
+               exists: the server confirmed it (or we just published it). -->
+          {#if publishedUrl}
+            <button
+              class="ghost icon"
+              onclick={() => invoke("open_path", { path: publishedUrl })}
+              title="View the published note on Garden"
+              aria-label="View the published note on Garden"
+            >
+              <Icon name="arrow-square-out" size="12px" />
+            </button>
           {/if}
 
           {#if (library.curDir || library.folder) && view.length}
             <button
-              class="rail-btn"
+              class="ghost icon"
               onclick={exportSelection}
               disabled={!!activity.progress}
               title={selection.paths.size > 1 ? (selection.paths.size === view.length ? `Export all photos (${view.length}) (r)` : `Export the ${selection.paths.size} selected photos (r)`) : `Export the selected photo (r)`}
@@ -4604,7 +4610,7 @@
           <Popover bind:open={layoutMenuOpen} label="Grid layout" align="end">
           {#snippet trigger(/** @type {import('svelte/elements').HTMLButtonAttributes} */ attributes)}
             <button
-              class="rail-btn"
+              class="ghost icon"
               {...attributes}
               aria-label="Grid layout"
               title="Grid layout"
@@ -4613,12 +4619,12 @@
             </button>
           {/snippet}
               <div class="layout-controls">
-                {#if gardenUrl}
+                {#if publishedUrl}
                   <button
                     class="std-menu-item"
                     onclick={() => {
                       layoutMenuOpen = false;
-                      if (gardenUrl) invoke("open_path", { path: gardenUrl });
+                      if (publishedUrl) invoke("open_path", { path: publishedUrl });
                     }}
                   >
                     <span class="item-label">Ouvrir sur le web</span>
@@ -4635,7 +4641,7 @@
                     }}
                     disabled={!!activity.progress}
                   >
-                    <span class="item-label">Publier l'histoire ({storySet.size})</span>
+                    <span class="item-label">{publishVerb} l'histoire ({storySet.size})</span>
                     <Icon name="lightning" size="10px" />
                   </button>
                 {/if}
@@ -4653,15 +4659,14 @@
                     <Icon name="lightning" size="10px" />
                   </button>
                 {/if}
-                {#if gardenUrl || storySet.size || ((library.curDir || library.folder) && view.length)}
+                {#if publishedUrl || storySet.size || ((library.curDir || library.folder) && view.length)}
                   <div class="std-menu-separator"></div>
                 {/if}
                 <span class="pop-label">Colonnes</span>
                 <div class="pop-grid">
                   {#each [1, 2, 3, 4, 5, 6, 8, 10, 12] as n}
                     <button
-                      class="pop-chip"
-                      class:on={cols === n}
+                      aria-pressed={cols === n}
                       onclick={() => {
                         cols = n;
                         saveGridPrefs();
@@ -4694,8 +4699,7 @@
                   <div class="pop-grid three">
                     {#each aspects as [label, a]}
                       <button
-                        class="pop-chip"
-                        class:on={Math.abs(cellAspect - a) < 0.001}
+                        aria-pressed={Math.abs(cellAspect - a) < 0.001}
                         onclick={() => {
                           cellAspect = a;
                           saveGridPrefs();
@@ -4724,7 +4728,7 @@
                   step="0.25"
                   bind:value={marginScale}
                   aria-label="Grid margin"
-                  style="--f: {pct(marginScale, 0.25, 6)}"
+                  style="--slider-value: {pct(marginScale, 0.25, 6)}"
                   onchange={saveGridPrefs}
                 />
               </div>
@@ -4782,7 +4786,8 @@
       {installedEditors}
       {copiedRecipe}
       {storySet}
-      {gardenUrl}
+      gardenUrl={publishedUrl}
+      {storyPublished}
       {stem}
       onClose={closePhotoMenu}
       onOpenPhoto={(/** @type {string} */ p) => openPhoto(p)}
@@ -4798,7 +4803,7 @@
       onDevelopToVault={preferences.obsidian_enabled ? (/** @type {string} */ p) => developFromMenu(p, true) : undefined}
       onCull={applePhotosActive ? undefined : cullCurrentFolder}
       onPublishStory={publishStory}
-      onOpenGardenUrl={() => { if (gardenUrl) invoke("open_path", { path: gardenUrl }); }}
+      onOpenGardenUrl={() => { if (publishedUrl) invoke("open_path", { path: publishedUrl }); }}
     />
     {#if false && layouts[currentMode].focus}
       <div class="focus-overlay" aria-hidden="true"></div>
@@ -4828,18 +4833,8 @@
   {@const showDockedPanel = isTauri && recipe && layouts.dev.devPanel && !layouts.dev.detached}
   <div
     class="app"
-    class:themed={appThemed}
     role="presentation"
     style="grid-template-columns: {showDockedPanel ? '1fr 17rem' : (layouts.dev.devPanel && !isTauri) ? '1fr 19.5rem' : '1fr'};"
-    style:--color-background={appBg}
-    style:--color-foreground={appFg}
-    style:--color-accent={appAccent}
-    style:--font-header={appFontHeader}
-    style:--font-text={appFontText}
-    style:--font-ratio={appFontRatio}
-    style:--radius={appMeasuredRadius["--radius"]}
-    style:--radius-sm={appMeasuredRadius["--radius-sm"]}
-    style:--radius-lg={appMeasuredRadius["--radius-lg"]}
     onmousedown={startWindowDrag}
   >
     <DevelopView
@@ -4900,7 +4895,7 @@
               </label>
               <label class="row">
                 <span>EXPOSITION</span>
-                <input type="range" min="-3" max="3" step="0.1" bind:value={recipe.exposure_ev} style="--f: {pct(recipe.exposure_ev, -3, 3)}" oninput={() => edited(true)} onchange={() => edited(false)} />
+                <input type="range" min="-3" max="3" step="0.1" bind:value={recipe.exposure_ev} style="--slider-value: {pct(recipe.exposure_ev, -3, 3)}" oninput={() => edited(true)} onchange={() => edited(false)} />
                 <code>{fmt(recipe.exposure_ev)}</code>
               </label>
             </div>
@@ -4956,7 +4951,7 @@
                   max="3"
                   step="0.05"
                   value={-(recipe?.print_exposure_ev ?? 0)}
-                  style="--f: {pct(-(recipe?.print_exposure_ev ?? 0), -3, 3)}"
+                  style="--slider-value: {pct(-(recipe?.print_exposure_ev ?? 0), -3, 3)}"
                   oninput={(e) => {
                     if (recipe) recipe.print_exposure_ev = -Number(e.currentTarget.value);
                     edited(true);
@@ -4970,27 +4965,27 @@
               </label>
               <label class="row">
                 <span>BLANCS</span>
-                <input type="range" min="-1" max="1" step="0.05" bind:value={recipe.whites} style="--f: {pct(recipe.whites, -1, 1)}" oninput={() => edited(true)} onchange={() => edited(false)} />
+                <input type="range" min="-1" max="1" step="0.05" bind:value={recipe.whites} style="--slider-value: {pct(recipe.whites, -1, 1)}" oninput={() => edited(true)} onchange={() => edited(false)} />
                 <code>{fmt(recipe.whites)}</code>
               </label>
               <label class="row">
                 <span>HAUTES LUM.</span>
-                <input type="range" min="-1" max="1" step="0.05" bind:value={recipe.highlights} style="--f: {pct(recipe.highlights, -1, 1)}" oninput={() => edited(true)} onchange={() => edited(false)} />
+                <input type="range" min="-1" max="1" step="0.05" bind:value={recipe.highlights} style="--slider-value: {pct(recipe.highlights, -1, 1)}" oninput={() => edited(true)} onchange={() => edited(false)} />
                 <code>{fmt(recipe.highlights)}</code>
               </label>
               <label class="row">
                 <span>TONS MOYENS</span>
-                <input type="range" min="-1" max="1" step="0.05" bind:value={recipe.midtones} style="--f: {pct(recipe.midtones, -1, 1)}" oninput={() => edited(true)} onchange={() => edited(false)} />
+                <input type="range" min="-1" max="1" step="0.05" bind:value={recipe.midtones} style="--slider-value: {pct(recipe.midtones, -1, 1)}" oninput={() => edited(true)} onchange={() => edited(false)} />
                 <code>{fmt(recipe.midtones)}</code>
               </label>
               <label class="row">
                 <span>OMBRES</span>
-                <input type="range" min="-1" max="1" step="0.05" bind:value={recipe.shadows} style="--f: {pct(recipe.shadows, -1, 1)}" oninput={() => edited(true)} onchange={() => edited(false)} />
+                <input type="range" min="-1" max="1" step="0.05" bind:value={recipe.shadows} style="--slider-value: {pct(recipe.shadows, -1, 1)}" oninput={() => edited(true)} onchange={() => edited(false)} />
                 <code>{fmt(recipe.shadows)}</code>
               </label>
               <label class="row">
                 <span>HL RECOVERY</span>
-                <input type="range" min="0" max="1" step="0.05" bind:value={recipe.rolloff} style="--f: {pct(recipe.rolloff, 0, 1)}" oninput={() => edited(true)} onchange={() => edited(false)} />
+                <input type="range" min="0" max="1" step="0.05" bind:value={recipe.rolloff} style="--slider-value: {pct(recipe.rolloff, 0, 1)}" oninput={() => edited(true)} onchange={() => edited(false)} />
                 <code>{fmt(recipe.rolloff)}</code>
               </label>
             </div>
@@ -5019,12 +5014,12 @@
               </label>
               <label class="row">
                 <span>FILTRE Y</span>
-                <input type="range" min="-30" max="30" step="1" bind:value={recipe.y_shift} style="--f: {pct(recipe.y_shift, -30, 30)}" oninput={() => edited(true)} onchange={() => edited(false)} />
+                <input type="range" min="-30" max="30" step="1" bind:value={recipe.y_shift} style="--slider-value: {pct(recipe.y_shift, -30, 30)}" oninput={() => edited(true)} onchange={() => edited(false)} />
                 <code>{fmt(recipe.y_shift)}</code>
               </label>
               <label class="row">
                 <span>FILTRE M</span>
-                <input type="range" min="-30" max="30" step="1" bind:value={recipe.m_shift} style="--f: {pct(recipe.m_shift, -30, 30)}" oninput={() => edited(true)} onchange={() => edited(false)} />
+                <input type="range" min="-30" max="30" step="1" bind:value={recipe.m_shift} style="--slider-value: {pct(recipe.m_shift, -30, 30)}" oninput={() => edited(true)} onchange={() => edited(false)} />
                 <code>{fmt(recipe.m_shift)}</code>
               </label>
             </div>
@@ -5041,27 +5036,27 @@
             <div class="section-content">
               <label class="row">
                 <span>GRAIN</span>
-                <input type="range" min="0" max="1" step="0.05" bind:value={recipe.grain} style="--f: {pct(recipe.grain, 0, 1)}" oninput={() => edited(true)} onchange={() => edited(false)} />
+                <input type="range" min="0" max="1" step="0.05" bind:value={recipe.grain} style="--slider-value: {pct(recipe.grain, 0, 1)}" oninput={() => edited(true)} onchange={() => edited(false)} />
                 <code>{fmt(recipe.grain)}</code>
               </label>
               <label class="row">
                 <span>HALATION</span>
-                <input type="range" min="0" max="1" step="0.05" bind:value={recipe.halation} style="--f: {pct(recipe.halation, 0, 1)}" oninput={() => edited(true)} onchange={() => edited(false)} />
+                <input type="range" min="0" max="1" step="0.05" bind:value={recipe.halation} style="--slider-value: {pct(recipe.halation, 0, 1)}" oninput={() => edited(true)} onchange={() => edited(false)} />
                 <code>{fmt(recipe.halation)}</code>
               </label>
               <label class="row">
                 <span>TAILLE HALO</span>
-                <input type="range" min="0.5" max="1.5" step="0.05" bind:value={recipe.halation_size} style="--f: {pct(recipe.halation_size, 0.5, 1.5)}" oninput={() => edited(true)} onchange={() => edited(false)} />
+                <input type="range" min="0.5" max="1.5" step="0.05" bind:value={recipe.halation_size} style="--slider-value: {pct(recipe.halation_size, 0.5, 1.5)}" oninput={() => edited(true)} onchange={() => edited(false)} />
                 <code>{fmt(recipe.halation_size)}</code>
               </label>
               <label class="row">
                 <span>DIFFUSION</span>
-                <input type="range" min="0" max="0.5" step="0.05" bind:value={recipe.diffusion} style="--f: {pct(recipe.diffusion, 0, 0.5)}" oninput={() => edited(true)} onchange={() => edited(false)} />
+                <input type="range" min="0" max="0.5" step="0.05" bind:value={recipe.diffusion} style="--slider-value: {pct(recipe.diffusion, 0, 0.5)}" oninput={() => edited(true)} onchange={() => edited(false)} />
                 <code>{fmt(recipe.diffusion)}</code>
               </label>
               <label class="row">
                 <span>SHARPNESS</span>
-                <input type="range" min="0" max="1" step="0.05" bind:value={recipe.sharpen} style="--f: {pct(recipe.sharpen, 0, 1)}" oninput={() => edited(true)} onchange={() => edited(false)} />
+                <input type="range" min="0" max="1" step="0.05" bind:value={recipe.sharpen} style="--slider-value: {pct(recipe.sharpen, 0, 1)}" oninput={() => edited(true)} onchange={() => edited(false)} />
                 <code>{fmt(recipe.sharpen)}</code>
               </label>
             </div>
@@ -5069,7 +5064,7 @@
         </section>
       </aside>
     {:else if showDockedPanel}
-      <div class="docked-panel-frame">
+      <div class="docked-panel-frame pane">
       <DevelopPanel
         {photoPath}
         {picked}
@@ -5180,34 +5175,6 @@
     align-items: center;
     gap: var(--space);
     max-width: 80vw;
-    font-family: var(--font-monospace);
-    font-size: 12px;
-  }
-  .render-badge {
-    position: absolute;
-    top: 20px;
-    right: 20px;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 14px;
-    background: rgba(18, 18, 18, 0.85);
-    backdrop-filter: blur(12px);
-    border-radius: 999px;
-    color: rgba(255, 255, 255, 0.9);
-    font-size: 11px;
-    letter-spacing: 0.04em;
-    z-index: 100;
-    pointer-events: none;
-    box-shadow: var(--shadow);
-  }
-  .render-spinner {
-    width: 10px;
-    height: 10px;
-    border: 2px solid rgba(255, 255, 255, 0.25);
-    border-top-color: #ffffff;
-    border-radius: 50%;
-    animation: render-spin 0.6s linear infinite;
   }
   @keyframes render-spin {
     to {
@@ -5224,52 +5191,6 @@
     z-index: 1;
     overflow: hidden;
   }
-  /* Folder mood (.cull and .app) — re-derives the surface/border scale from
-     the folder's own --color-background/--color-foreground with the SAME
-     formulas as packages/styles/_standard-02-color.scss. Custom properties
-     are resolved where they are declared, so the framework's :root scale
-     (and our :root --canvas) keep the APP theme's colours; a folder theme
-     has to state them again here. Gated behind .themed so an unthemed
-     folder's surfaces come straight from the framework.
-
-     Both schemes, as the framework does. This block used to apply the
-     dark-mode formulas in light too (surface 6% toward the foreground,
-     elevation toward the foreground), which in a light theme put every
-     "raised" panel BELOW the canvas — the sidebar darker than the photos.
-
-     `background`/`color` are painted here explicitly: nothing under .cull/
-     .app draws with --color-background itself (only `html` does, per
-     _standard-07-base.scss), and custom properties don't inherit upward. */
-  .cull.themed,
-  .app.themed {
-    --color-surface: color-mix(in srgb, var(--color-foreground) 3%, var(--color-background));
-    --color-border: color-mix(in srgb, var(--color-foreground) 14%, transparent);
-    --color-surface-light-1: color-mix(in srgb, white 4%, var(--color-background));
-    --color-surface-light-2: color-mix(in srgb, white 9%, var(--color-background));
-    --color-surface-light-3: color-mix(in srgb, white 16%, var(--color-background));
-    --color-surface-dark-1: color-mix(in srgb, black 4%, var(--color-background));
-    --color-surface-dark-2: color-mix(in srgb, black 9%, var(--color-background));
-    --color-surface-dark-3: color-mix(in srgb, black 16%, var(--color-background));
-    --color-surface-low: color-mix(in srgb, var(--color-foreground) 3%, var(--color-surface));
-    --color-surface-lowest: color-mix(in srgb, var(--color-foreground) 3%, var(--color-surface-low));
-    --color-surface-lower: color-mix(in srgb, var(--color-foreground) 3%, transparent);
-    --color-surface-high: color-mix(in srgb, white 50%, var(--color-surface));
-    --color-surface-highest: color-mix(in srgb, white 50%, var(--color-surface-high));
-    --canvas: linear-gradient(var(--color-surface-lower), var(--color-surface-lower))
-      var(--color-background);
-    background: var(--color-background);
-    color: var(--color-foreground);
-  }
-  @media (prefers-color-scheme: dark) {
-    .cull.themed,
-    .app.themed {
-      --color-surface-low: color-mix(in srgb, black 3%, var(--color-surface));
-      --color-surface-lowest: color-mix(in srgb, black 7%, var(--color-surface-low));
-      --color-surface-lower: color-mix(in srgb, black 7%, transparent);
-      --color-surface-high: color-mix(in srgb, var(--color-foreground) 3%, var(--color-surface));
-      --color-surface-highest: color-mix(in srgb, var(--color-foreground) 3%, var(--color-surface-high));
-    }
-  }
   .window-controls-zone {
     position: fixed;
     top: 0;
@@ -5283,69 +5204,6 @@
   }
   .window-controls-zone.fullscreen {
     display: none !important;
-  }
-  .window-controls {
-    display: flex;
-    gap: 8px;
-    transition: opacity var(--duration-standard) var(--ease-soft);
-  }
-  /* In develop mode: hide traffic lights unless hovering the corner area */
-  .window-controls.dev {
-    opacity: 0;
-    pointer-events: none;
-  }
-  .window-controls-zone:hover .window-controls.dev {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  /* Default resting state across all modes: subtle, muted dots */
-  .window-controls button {
-    all: unset;
-    box-sizing: border-box;
-    position: relative;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    cursor: default;
-    background: var(--color-foreground, #8a8a8a);
-    opacity: 0.35;
-    transition: opacity var(--duration-instant) var(--ease-soft), background-color var(--duration-instant) var(--ease-soft);
-  }
-
-  /* When hovering anywhere over the traffic light group: reveal full system colors & glyphs */
-  .window-controls:has(button:hover) button {
-    opacity: 1;
-  }
-  .window-controls:has(button:hover) .window-close {
-    background: #ff5f57;
-  }
-  .window-controls:has(button:hover) .window-minimize {
-    background: #febc2e;
-  }
-  .window-controls:has(button:hover) .window-zoom {
-    background: #28c840;
-  }
-
-  .window-controls:has(button:hover) button::after {
-    position: absolute;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    color: rgb(0 0 0 / 55%);
-    font-family: sans-serif;
-    font-size: 8px;
-    font-weight: 700;
-    line-height: 1;
-  }
-  .window-controls:has(button:hover) .window-close::after {
-    content: "×";
-  }
-  .window-controls:has(button:hover) .window-minimize::after {
-    content: "−";
-  }
-  .window-controls:has(button:hover) .window-zoom::after {
-    content: "+";
   }
   @keyframes fullscreen-fade-in {
     from {
@@ -5362,7 +5220,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    background: var(--color-background, #0e0e0e);
+    background: var(--color-background);
     cursor: zoom-out;
     animation: fullscreen-fade-in 180ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
   }
@@ -5371,9 +5229,6 @@
     bottom: 24px;
     left: 50%;
     transform: translateX(-50%);
-    color: var(--color-accent);
-    font-size: 12px;
-    letter-spacing: 0.08em;
   }
   .cull > .body {
     flex: 1;
@@ -5390,15 +5245,6 @@
     pointer-events: none;
     background: rgba(0, 0, 0, 0.18);
     backdrop-filter: grayscale(1) blur(18px);
-  }
-  .import {
-    color: var(--color-accent);
-    border-color: var(--color-accent);
-  }
-  .progress {
-    font-family: var(--font-monospace, monospace);
-    font-size: 0.65rem;
-    color: var(--color-accent);
   }
 
   .body {
@@ -5441,7 +5287,7 @@
     flex-wrap: nowrap;
     white-space: nowrap;
     gap: 12px;
-    padding: 0 16px;
+    padding: 0 var(--space);
     position: relative;
     z-index: 20;
   }
@@ -5456,30 +5302,14 @@
   .brand-cluster {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    margin-right: 4px;
-  }
-  .chrome-btn {
-    all: unset;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 12px;
-    height: 12px;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-  }
-  .chrome-btn:hover {
-    color: var(--color-foreground);
-  }
-  .chrome-btn.on {
-    color: var(--color-accent);
+    gap: var(--space-d2);
+    margin-right: var(--space-d4);
   }
   .focus-glyph {
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    border: 1px solid currentColor;
+    border: var(--stroke-width) solid currentColor;
     position: relative;
   }
   .focus-glyph::after {
@@ -5487,7 +5317,7 @@
     position: absolute;
     inset: 2px;
     border-radius: 50%;
-    border: 1px solid currentColor;
+    border: var(--stroke-width) solid currentColor;
   }
   .focus-glyph.on::after {
     background: currentColor;
@@ -5497,52 +5327,10 @@
      so trimming to it put the wordmark 1.5pt high (measured 2026-09-23,
      19.25 against the lights' 20.75). */
   .wordmark {
-    all: unset;
     cursor: pointer;
-    line-height: 1;
-    font-family: var(--font-header, sans-serif);
-    font-size: var(--scale-d3);
-    letter-spacing: 0.12em;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-  }
-  .wordmark:hover {
-    color: var(--color-foreground);
   }
 
-  .rail :global(.rail-btn) {
-    all: unset;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 16px;
-    height: 16px;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-  }
-  .rail :global(.rail-btn:hover) {
-    color: var(--color-foreground);
-  }
-  .rail :global(.rail-btn.star-filter-btn) {
-    width: auto;
-    gap: 3px;
-    padding: 1px 4px;
-    border-radius: var(--radius);
-  }
-  .rail-badge {
-    font-family: var(--font-monospace, monospace);
-    font-size: 9px;
-    font-weight: 600;
-    line-height: 1;
-    padding: 1px 3.5px;
-    background: color-mix(in srgb, var(--color-foreground) 15%, transparent);
-    color: var(--color-foreground);
-    border-radius: 3px;
-  }
   .frame-count {
-    font-family: var(--font-monospace, monospace);
-    font-size: var(--scale-d3);
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
     flex-shrink: 0;
   }
   .rail-spacer {
@@ -5550,22 +5338,11 @@
     min-width: 12px;
   }
   .rail-action {
-    all: unset;
     box-sizing: border-box;
     cursor: pointer;
     flex-shrink: 0;
-    font-family: var(--font-monospace, monospace);
-    font-size: var(--scale-d3);
-    letter-spacing: 0.02em;
-    line-height: 1;
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-  }
-  .rail-action:hover:not(:disabled) {
-    color: var(--color-foreground);
   }
   .rail-action:disabled {
-    color: color-mix(in srgb, var(--color-foreground) 22%, transparent);
     cursor: default;
   }
 
@@ -5574,14 +5351,7 @@
     min-width: 208px;
     display: flex;
     flex-direction: column;
-    gap: 6px;
-  }
-  /* Same rule as the framework's .std-menu-separator — thickness and
-     spacing from its tokens, not restated in px. */
-  .pop-divider {
-    height: var(--stroke-width);
-    background: var(--color-border);
-    margin: var(--space-d4) 0;
+    gap: var(--space-d3);
   }
   /* A menu row that cannot be chosen, and the count that says why. Dimmed
      rather than hidden: the option still belongs in the list, it just is not
@@ -5592,53 +5362,34 @@
     pointer-events: auto; /* keep the title tooltip reachable */
   }
   .item-note {
-    font-family: var(--font-monospace, monospace);
-    font-size: 9px;
-    color: color-mix(in srgb, var(--color-foreground) 50%, transparent);
     white-space: nowrap;
   }
   .pop-label {
-    font-family: var(--font-header, sans-serif);
-    font-size: 9px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-    padding: 0 8px;
+    padding: 0 var(--space-d2);
   }
   .pop-grid {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
-    gap: 2px;
-    padding: 0 4px;
+    gap: var(--space-d8);
+    padding: 0 var(--space-d4);
   }
   .pop-grid.three {
     grid-template-columns: repeat(3, 1fr);
   }
-  .pop-chip {
-    all: unset;
-    cursor: pointer;
-    text-align: center;
-    padding: 3px 0;
-    border-radius: var(--radius);
-    font-family: var(--font-monospace, monospace);
-    font-size: var(--scale-d3);
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-  }
-  .pop-chip.on {
-    background: var(--color-foreground);
-    color: var(--color-background);
-  }
   .pop-slider {
     width: auto;
-    margin: 0 8px 4px;
-    accent-color: var(--color-accent);
+    margin: 0 var(--space-d2) var(--space-d4);
   }
 
   /* The live export chip — the one place a count rides the chrome in red. */
   .export-chip {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-d3);
+    flex-shrink: 0;
+  }
+  .chip-bar {
+    width: 40px;
     flex-shrink: 0;
   }
   .chip-thumb {
@@ -5649,45 +5400,13 @@
     flex-shrink: 0;
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-foreground) 15%, transparent);
   }
-  .chip-label {
-    font-family: var(--font-header, sans-serif);
-    font-size: 9px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-  }
-  .chip-count {
-    font-family: var(--font-monospace, monospace);
-    font-size: 9px;
-    color: var(--color-foreground);
-  }
-  .chip-bar {
-    width: 40px;
-    height: 2px;
-    border-radius: 1px;
-    background: color-mix(in srgb, var(--color-foreground) 14%, transparent);
-    overflow: hidden;
-  }
-  .chip-fill {
-    display: block;
-    height: 100%;
-    background: var(--color-accent);
-    transition: width var(--duration-standard) var(--ease-soft);
-  }
   .chip-stop {
-    all: unset;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 14px;
     height: 14px;
-    border-radius: var(--radius);
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
-  }
-  .chip-stop:hover {
-    color: var(--color-accent);
-    background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
   }
 
   .empty {
@@ -5705,13 +5424,13 @@
     height: 100vh;
     position: relative;
     z-index: 1;
-    /* body's own background-image (a --color-surface-low wash, see
+    /* body's own background-image (a --color-surface-dark-1 wash, see
        +layout.svelte) is lighter than DevelopView's <main>, which paints
        --color-background over its own column — leaving the docked panel's
        margin gutter, uncovered by either, showing that lighter body tone.
        Paint the whole grid one flat shade so both columns' gutters match.
        The canvas sits one step BELOW the app's ground (--color-background,
-       the sidebar's): --color-surface-lower is the framework's "sunk" wash,
+       the sidebar's): --color-surface-dark-2 is the framework's "sunk" wash,
        foreground-tinted in light and black in dark, so it darkens in both
        themes. Layered over the ground so the result is opaque. */
     background: var(--canvas);
@@ -5726,7 +5445,7 @@
     max-width: calc(100% - (var(--space) * 2));
     max-height: calc(100% - (var(--space) * 2));
     padding: var(--space);
-    background: var(--color-surface-high);
+    background: var(--color-surface-light-1);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
   }
@@ -5742,56 +5461,12 @@
     background: transparent;
     box-shadow: none;
   }
-  /* Graceful stand-in when the loupe image can't decode/load (NAS drop, a junk
-     file that slipped in, a moved original) — a quiet glyph + the name, never
-     the browser's broken-image icon. */
-  .photo-mat-failed {
-    min-width: 14rem;
-    min-height: 10rem;
-  }
-  .photo-fallback {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.55rem;
-    padding: 2rem;
-    color: var(--color-foreground);
-    opacity: 0.5;
-    text-align: center;
-  }
-  .fallback-name {
-    font-family: var(--font-monospace, monospace);
-    font-size: 0.8rem;
-    word-break: break-all;
-  }
-  .fallback-hint {
-    font-size: 0.68rem;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    opacity: 0.7;
-  }
-  .preview-status {
-    position: absolute;
-    left: 50%;
-    bottom: 1rem;
-    transform: translateX(-50%);
-    margin: 0;
-    padding: 0.45rem 0.7rem;
-    border-radius: 999px;
-    background: var(--color-surface-high);
-    box-shadow: var(--shadow-raised), var(--shadow-lift);
-    color: var(--color-foreground);
-    font-family: var(--font-monospace, monospace);
-    font-size: 0.68rem;
-    white-space: nowrap;
-  }
 
   /* the panel is a floating card, not a flat column */
   aside {
     margin: 2.2rem 0.9rem 0.9rem 0;
     padding: 1.1rem 1rem;
-    background: var(--color-surface-high);
+    background: var(--color-surface-light-1);
     border-radius: 10px;
     box-shadow: var(--shadow-raised), var(--shadow-lift);
     overflow-y: auto;
@@ -5815,19 +5490,12 @@
        resolve against the full track and then ADD them, pushing the panel
        16px past the bottom of the window (Francis, 2026-09-22: "il descend
        plus bas que l'app"). */
-    margin: var(--window-inset);
-    border-radius: var(--pane-radius);
-    box-shadow: var(--shadow);
-    overflow: hidden;
     min-height: 0;
     /* Matches nav's own self-painted background (Sidebar.svelte) exactly —
        relying on DevelopPanel's child .panel to fill this instead left the
        frame's own edges reading with none of nav's "floating card" look. */
-    background: var(--color-surface-high);
   }
   .file {
-    font-family: var(--font-monospace, monospace);
-    font-size: 0.66rem;
     opacity: 0.6;
     margin: 0;
     overflow-wrap: anywhere;
@@ -5838,13 +5506,7 @@
     gap: 0.5rem;
   }
   aside h2 {
-    font-family: var(--font-header, sans-serif);
-    font-size: 0.85rem;
-    border-bottom: none;
     padding: 0;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    font-weight: 700;
     margin: 0 0 0.15rem;
     opacity: 0.75;
   }
@@ -5870,8 +5532,6 @@
     justify-self: start;
   }
   .row code {
-    font-family: var(--font-monospace, monospace);
-    font-size: 0.62rem;
     text-align: right;
     opacity: 0.8;
     /* The grid already pins this column, so the track can't resize; this just
@@ -5880,81 +5540,23 @@
   }
   input[type="range"] {
     width: 100%;
-    accent-color: var(--color-accent);
   }
   textarea {
-    font-family: var(--font-text, sans-serif);
-    font-size: 0.75rem;
-    color: var(--color-foreground);
-    background: var(--color-surface-low);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
     padding: 0.4rem 0.5rem;
     resize: vertical;
   }
   .status {
-    font-family: var(--font-monospace, monospace);
     opacity: 0.6;
-  }
-
-  .story-composer {
-    flex: 1;
-    min-height: 0;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-  .composer-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1rem 1.5rem;
-    border-bottom: 1px solid var(--color-border);
-    background: var(--color-surface-high);
-  }
-  .composer-actions {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-  }
-  .dest-select {
-    background: var(--color-surface-low);
-    color: var(--color-foreground);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    padding: 0.4rem 0.8rem;
-    font-size: 0.72rem;
-    font-family: var(--font-header, sans-serif);
-    cursor: pointer;
-    outline: none;
-  }
-  .publish-btn {
-    color: var(--color-accent);
-    border-color: var(--color-accent);
-  }
-  .composer-status {
-    font-family: var(--font-monospace, monospace);
-    font-size: 0.68rem;
-    color: color-mix(in srgb, var(--color-foreground) 60%, transparent);
-    max-width: 22rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .composer-status.ok {
-    color: var(--color-accent);
   }
 
   /* Collapsible sections in develop panel */
   .collapsible {
-    border: 1px solid var(--color-border);
+    border: var(--stroke-width) solid var(--color-border);
     border-radius: 8px;
-    background: var(--color-surface-low);
+    background: var(--color-surface-dark-1);
     overflow: hidden;
   }
   .section-toggle {
-    all: unset;
     cursor: pointer;
     box-sizing: border-box;
     width: 100%;
@@ -5962,22 +5564,13 @@
     justify-content: space-between;
     align-items: center;
     padding: 0.6rem 0.8rem;
-    font-family: var(--font-header, sans-serif);
-    font-size: 0.75rem;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    color: var(--color-foreground);
     opacity: 0.85;
-    background: var(--color-surface-high);
-    border-bottom: 1px solid var(--color-border);
     user-select: none;
   }
   .section-toggle:hover {
     opacity: 1;
-    background: var(--color-surface-low);
   }
   .section-toggle .chevron {
-    font-size: 0.55rem;
     opacity: 0.5;
   }
   .section-content {
@@ -5993,22 +5586,14 @@
     justify-content: space-between;
     align-items: center;
     padding: 1rem 1.5rem;
-    border-bottom: 1px solid var(--color-border);
-    background: var(--color-surface-low);
+    border-bottom: var(--stroke-width) solid var(--color-border);
+    background: var(--color-surface-dark-1);
   }
   .modal-header h3 {
-    font-family: var(--font-header, sans-serif);
-    font-size: 0.82rem;
-    letter-spacing: 0.12em;
     margin: 0;
-    color: var(--color-foreground);
   }
   .close-btn {
-    background: none;
-    border: none;
-    color: var(--color-foreground);
     cursor: pointer;
-    font-size: 1rem;
     opacity: 0.6;
   }
   .close-btn:hover {
@@ -6025,114 +5610,20 @@
   .modal-body textarea {
     width: 100%;
     height: 15rem;
-    background: var(--color-background);
-    color: var(--color-foreground);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
     padding: 1rem;
-    font-family: var(--font-monospace, monospace);
-    font-size: 0.82rem;
     resize: none;
-    outline: none;
   }
   .modal-footer {
     display: flex;
     justify-content: flex-end;
     gap: 1rem;
     padding: 1rem 1.5rem;
-    border-top: 1px solid var(--color-border);
-    background: var(--color-surface-low);
+    border-top: var(--stroke-width) solid var(--color-border);
+    background: var(--color-surface-dark-1);
   }
   .modal-footer button {
     padding: 0.4rem 1.2rem;
-    border-radius: var(--radius);
-    font-size: 0.72rem;
-    font-family: var(--font-header, sans-serif);
-    background: var(--color-accent);
-    color: #fff;
-    border: none;
     cursor: pointer;
-  }
-  .modal-footer button.secondary {
-    background: var(--color-surface-low);
-    color: var(--color-foreground);
-    border: 1px solid var(--color-border);
-  }
-
-  /* Render queue list */
-  .queue-list {
-    gap: 0.8rem;
-  }
-  .queue-cancel {
-    margin-left: auto;
-    margin-right: 0.75rem;
-    padding: 0.3rem 0.65rem;
-    border: 1px solid color-mix(in srgb, var(--color-accent) 42%, var(--color-border));
-    border-radius: 999px;
-    background: transparent;
-    color: var(--color-accent);
-    font-family: var(--font-monospace, monospace);
-    font-size: 0.62rem;
-    cursor: pointer;
-  }
-  .queue-item {
-    background: var(--color-surface-low);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    padding: 0.8rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-  }
-  .queue-item.active {
-    border-color: color-mix(in srgb, var(--color-accent) 42%, var(--color-border));
-  }
-  .queue-item-meta {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.68rem;
-    font-family: var(--font-monospace, monospace);
-  }
-  .queue-time {
-    opacity: 0.5;
-  }
-  .queue-name {
-    font-weight: bold;
-    color: var(--color-foreground);
-  }
-  .queue-activity.progress-bar {
-    width: 100%;
-    height: 4px;
-    background: var(--color-background);
-    border-radius: var(--radius);
-    overflow: hidden;
-  }
-  .progress-fill {
-    height: 100%;
-    background: var(--color-accent);
-    transition: width 0.2s var(--ease-standard);
-  }
-  .queue-status {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.62rem;
-    font-family: var(--font-header, sans-serif);
-    opacity: 0.7;
-  }
-  .queue-phase {
-    font-family: var(--font-monospace, monospace);
-    font-size: 0.6rem;
-    color: color-mix(in srgb, var(--color-foreground) 48%, transparent);
-  }
-  .queue-phase.error {
-    color: var(--color-accent);
-  }
-  .empty-queue {
-    text-align: center;
-    font-size: 0.72rem;
-    font-family: var(--font-monospace, monospace);
-    opacity: 0.5;
-    padding: 2rem 0;
   }
 
   /* Editor select in dev panel */
@@ -6141,14 +5632,7 @@
   }
   .editor-select {
     width: 100%;
-    background: var(--color-surface-low);
-    color: var(--color-foreground);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
     padding: 0.3rem 0.5rem;
-    font-size: 0.68rem;
-    font-family: var(--font-header, sans-serif);
-    outline: none;
     cursor: pointer;
   }
 </style>

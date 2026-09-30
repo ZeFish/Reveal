@@ -43,7 +43,7 @@
         max={PHOTO_SIZE_MAX}
         step="5"
         value={photoScale}
-        style="--f: {((photoScale - PHOTO_SIZE_MIN) / (PHOTO_SIZE_MAX - PHOTO_SIZE_MIN)) * 100}%"
+        style="--slider-value: {((photoScale - PHOTO_SIZE_MIN) / (PHOTO_SIZE_MAX - PHOTO_SIZE_MIN)) * 100}%"
         oninput={(e) => {
           photoScale = Number(e.currentTarget.value);
           onPhotoScaleChanged(photoScale);
@@ -52,18 +52,16 @@
       <span class="val mono">{photoScale}%</span>
     </div>
     <div class="engine-row">
-      <div class="seg" role="group" aria-label="Engine">
+      <div class="btn-group" role="group" aria-label="Engine">
         <button
           type="button"
-          class="seg-btn"
-          class:on={!developEngine}
+          aria-pressed={!developEngine}
           onclick={() => engineChanged("none")}
         >None</button>
         {#each engines as e}
           <button
             type="button"
-            class="seg-btn ghost"
-            class:on={developEngine === e.id}
+            aria-pressed={developEngine === e.id}
             onclick={() => engineChanged(e.id)}
           >{e.label}</button>
         {/each}
@@ -107,23 +105,15 @@
   .sec-body {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-  }
-
-  .din {
-    font-family: var(--font-header, sans-serif);
-    font-size: var(--scale-d3);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
+    gap: var(--space-d2);
   }
 
   .frow {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding-bottom: 6px;
-    border-bottom: 1px solid color-mix(in srgb, var(--color-foreground) 8%, transparent);
+    gap: var(--space-d2);
+    padding-bottom: var(--space-d3);
+    border-bottom: var(--stroke-width) solid color-mix(in srgb, var(--color-foreground) 8%, transparent);
   }
   .frow-label {
     width: 90px;
@@ -136,27 +126,23 @@
     min-width: 0;
   }
   .val {
-    width: 36px;
+    min-width: 36px;
+    white-space: nowrap;
     flex-shrink: 0;
-    font-size: 10px;
     text-align: right;
-    color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
     font-variant-numeric: tabular-nums;
-  }
-  .mono {
-    font-family: var(--font-monospace, monospace);
   }
 
   /* Segmented control for the engine switch */
   .engine-row {
-    padding-bottom: 6px;
-    border-bottom: 1px solid color-mix(in srgb, var(--color-foreground) 8%, transparent);
+    padding-bottom: var(--space-d3);
+    border-bottom: var(--stroke-width) solid color-mix(in srgb, var(--color-foreground) 8%, transparent);
   }
   .engine-scope {
     transition: opacity var(--duration-fast);
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--space-d3);
   }
   .engine-scope.inactive {
     opacity: 0.35;
@@ -169,19 +155,17 @@
      This panel is dense enough to need a smaller footprint than either
      provides by default. */
   .panel-btn {
-    padding: 6px 0;
-    font-size: 10px;
-    letter-spacing: 0.1em;
+    padding: var(--space-d3) 0;
   }
   .btn-row {
     display: flex;
-    gap: 8px;
+    gap: var(--space-d2);
   }
   .half {
     flex: 1;
     width: auto;
   }
   .mt {
-    margin-top: 16px;
+    margin-top: var(--space);
   }
 </style>

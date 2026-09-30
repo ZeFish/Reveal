@@ -326,7 +326,7 @@
     height: 44px;
     border-radius: var(--radius-sm, 3px);
     background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
-    border: 1px solid color-mix(in srgb, var(--color-foreground) 10%, transparent);
+    border: var(--stroke-width) solid color-mix(in srgb, var(--color-foreground) 10%, transparent);
     overflow: hidden;
     cursor: pointer;
     transition: height var(--duration-fast, 0.12s) var(--ease-soft, ease);
