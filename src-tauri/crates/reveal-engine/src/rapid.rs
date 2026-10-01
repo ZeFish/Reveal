@@ -462,8 +462,8 @@ const XYZ_TO_PROPHOTO: [[f32; 3]; 3] = [
 /// were sRGB-shaped while the multiply happens in ProPhoto, whose very wide
 /// red primary needs almost no boost to warm an image: at 7188 K the correct
 /// red gain is 1.043, not the 1.225 that model applied. That excess red on
-/// top of a blue sky is what Francis saw as "beaucoup vers le magenta, pas le
-/// chaud" (2026-09-22).
+/// top of a blue sky is what Francis saw as "a lot toward magenta, not
+/// warm" (2026-09-22).
 ///
 /// Now: convert both the base and target temperature to a white point on the
 /// locus, take each to ProPhoto, and divide.

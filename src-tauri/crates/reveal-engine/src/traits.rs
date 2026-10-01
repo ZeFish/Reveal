@@ -60,7 +60,7 @@ pub enum EngineControl {
     ///
     /// The HSL matrix is 8 bands × 3 channels; laid out flat that was 24
     /// sliders in a column, which no one can aim at (Francis, 2026-09-22:
-    /// "aucunement agréable à utiliser"). Lightroom and RapidRAW both solve
+    /// "not at all pleasant to use"). Lightroom and RapidRAW both solve
     /// it the same way — swatches, then three sliders — and the same shape
     /// serves zone tone (3 zones × 3 channels), so it's declared here once
     /// rather than special-cased per group label in the frontend.

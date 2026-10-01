@@ -78,7 +78,7 @@ pub(crate) async fn story_stems(dir: String) -> Vec<String> {
 }
 
 /// Which of these folders carry a story note with photos — the sidebar's
-/// red "cette journée a une histoire" dots (Swift: `folderHasStory`).
+/// red "this day has a story" dots (Swift: `folderHasStory`).
 #[tauri::command]
 pub(crate) async fn story_dirs(dirs: Vec<String>) -> Vec<String> {
     dirs.into_iter()
@@ -142,7 +142,7 @@ pub(crate) async fn story_set_pinned(dir: String, pinned: bool, pinned_at: Optio
     note.save().map_err(|e| e.to_string())
 }
 
-/// Scan folders for story notes — feeds the ÉPINGLÉES + RÉCENTES lists.
+/// Scan folders for story notes — feeds the PINNED + RECENT lists.
 #[tauri::command]
 pub(crate) async fn list_story_notes(dirs: Vec<String>) -> Vec<story::StoryNoteInfo> {
     story::list_story_notes(&dirs)
@@ -428,7 +428,7 @@ pub(crate) fn resolve_story_target(
 }
 
 /// Is this folder's story already on the Garden? Drives the menu wording
-/// ("Publier" vs "Mettre à jour") without publishing anything.
+/// ("Publish" vs "Update") without publishing anything.
 #[derive(serde::Serialize)]
 pub(crate) struct StoryPublishStatus {
     published: bool,
@@ -586,7 +586,7 @@ pub(crate) async fn publish_story(
         }
         let live = client.put_note(&slug, &title, &content).map_err(|e| e.to_string())?;
         let _ = story::stamp_garden_url(dirp, &live);
-        eprintln!("{}: {live}", if updating { "mis à jour" } else { "publié" });
+        eprintln!("{}: {live}", if updating { "updated" } else { "published" });
         Ok(live)
     })
     .await
@@ -650,7 +650,7 @@ pub(crate) async fn publish_photo(
             .put_note(&slug, &stem, &content)
             .map_err(|e| e.to_string())?;
         let live = client.live_url(&slug);
-        eprintln!("publié: {live}");
+        eprintln!("published: {live}");
         Ok(live)
     })
     .await

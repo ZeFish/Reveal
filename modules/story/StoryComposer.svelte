@@ -460,7 +460,7 @@
     {#if !blocks.length}
       <div class="empty">
         <Icon name="stack-simple" size="32px" />
-        <p>Glisse ou clique une photo de la pellicule pour commencer l'histoire.</p>
+        <p>Drag or click a photo from the film roll to start the story.</p>
       </div>
     {:else if blocks.filter((b) => b.isPhoto).length > 1}
       <div class="row-tools">
@@ -470,7 +470,7 @@
           </button>
         {/if}
         <button class="split-all-btn" onclick={sortByDate} title="Reorder photos chronologically">
-          <Icon name="arrows-down-up" size="12px" /><span>Chronologie</span>
+          <Icon name="arrows-down-up" size="12px" /><span>By date</span>
         </button>
       </div>
     {/if}
@@ -510,7 +510,7 @@
       >
         <!-- Hover the space between two rows to drop a paragraph in there. -->
         <button class="gap-add small" data-reveal onclick={() => addProseAt(r)} title="Insert a paragraph here">
-          <Icon name="plus" size="10px" /><span>Paragraphe</span>
+          <Icon name="plus" size="10px" /><span>Paragraph</span>
         </button>
       </div>
 
@@ -685,7 +685,7 @@
     <div class="roll pane">
       <div class="roll-header">
         <Icon name="stack-simple" size="13px" />
-        <span class="roll-title">PELLICULE · {frames.length}</span>
+        <span class="roll-title">FILM ROLL · {frames.length}</span>
       </div>
       <div class="roll-strip">
         {#each frames as f (f.path)}
@@ -700,7 +700,7 @@
             ondragend={onDragEnd}
             onclick={() => addPhoto(f.name)}
             onkeydown={(e) => e.key === "Enter" && addPhoto(f.name)}
-            title={`Ajouter ${f.name}`}
+            title={`Add ${f.name}`}
           >
             <img src={thumbUrl(f.path, f.previewVersion ?? 0)} alt={f.name} loading="lazy" draggable="false" />
             {#if storySet.has(s)}

@@ -67,7 +67,7 @@
 
   <section class="section">
     <div class="section-title">
-      <span class="din">Redressement</span>
+      <span class="din">Straighten</span>
       <button class="reset-btn" onclick={() => setAngle(0)}>0°</button>
     </div>
     <div class="slider-row">
@@ -88,14 +88,14 @@
 
   <section class="section">
     <div class="section-title">
-      <span class="din">Orientation & Miroir</span>
+      <span class="din">Orientation & Mirror</span>
     </div>
     <div class="btn-group">
       <button
         class="action-btn"
         aria-pressed={recipe?.flip_h}
         onclick={() => toggleFlip("h")}
-        title="Miroir horizontal"
+        title="Mirror horizontally"
       >
         <Icon name="flip-horizontal" size="14px" />
         <span>Horizontal</span>
@@ -104,7 +104,7 @@
         class="action-btn"
         aria-pressed={recipe?.flip_v}
         onclick={() => toggleFlip("v")}
-        title="Miroir vertical"
+        title="Mirror vertically"
       >
         <Icon name="flip-vertical" size="14px" />
         <span>Vertical</span>

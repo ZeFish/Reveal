@@ -4,7 +4,7 @@ fn main() {
     let vault = std::env::args().nth(1).expect("usage: check <vault>");
     let c = reveal_publish::GardenClient::from_vault(std::path::Path::new(&vault)).unwrap();
     eprintln!("api={} user={}", c.api_url, c.username);
-    // un hash qui n'existe certainement pas — on attend {exists:false}
+    // a hash that certainly does not exist — we expect {exists:false}
     let fake = "0".repeat(64);
     let url = format!("{}/publish/attachment?hash={fake}&ext=jpg", c.api_url);
     eprintln!("GET {url}");

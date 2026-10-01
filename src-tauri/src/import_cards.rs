@@ -105,7 +105,7 @@ pub(crate) async fn import_card(
                     ) {
                         Ok(out) => out,
                         Err(e) => {
-                            eprintln!("import: aperçu de {dest_path} : {e:#}");
+                            eprintln!("import: preview of {dest_path}: {e:#}");
                             continue;
                         }
                     };
@@ -130,14 +130,14 @@ pub(crate) async fn import_card(
             if !dest_path.is_empty() {
                 if let Some(recipe) = &default_import_recipe {
                     if let Err(e) = write_recipe_to_sidecar(std::path::Path::new(dest_path), recipe) {
-                        eprintln!("import: échec de l'application du preset par défaut à {dest_path} : {e}");
+                        eprintln!("import: could not apply the default preset to {dest_path}: {e}");
                     }
                 }
                 // Seed the local cache from the card, which is mounted and
                 // fast right now, so the frames you just shot browse at local
                 // speed instead of each one costing a first NAS round trip
-                // (Francis: "les dernières photos importées doivent être
-                // cachées"). The camera's own preview is the right source
+                // (Francis: "the last photos imported should be
+                // cached"). The camera's own preview is the right source
                 // here — nothing is developed yet.
                 if let Ok(preview) = reveal_decode::extract_thumb_preview(std::path::Path::new(path)) {
                     // At grid size: this is the camera's own JPEG, seeding the
@@ -187,13 +187,13 @@ pub(crate) async fn import_card(
         let _ = preview_worker.join();
         let stats = stats?;
         eprintln!(
-            "import: {} copiés, {} skippés, {} échoués, {} Mo, {} ms{}",
+            "import: {} copied, {} skipped, {} failed, {} MB, {} ms{}",
             stats.copied,
             stats.skipped,
             stats.failed,
             stats.bytes / 1_048_576,
             stats.ms,
-            if stats.cancelled { " (arrêté)" } else { "" }
+            if stats.cancelled { " (stopped)" } else { "" }
         );
         Ok(stats)
     })

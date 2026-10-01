@@ -236,7 +236,7 @@ fn parse_stems(content: &str) -> Vec<String> {
     out
 }
 
-/// One story note's metadata for the sidebar's ÉPINGLÉES / RÉCENTES lists.
+/// One story note's metadata for the sidebar's PINNED / RECENT lists.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoryNoteInfo {
@@ -251,7 +251,7 @@ pub struct StoryNoteInfo {
 
 /// Scan the given folders for story notes. Returns one `StoryNoteInfo` per
 /// folder whose note exists AND has at least one photo embed. Folders with no
-/// note, or an empty note, are skipped. Used to populate ÉPINGLÉES + RÉCENTES.
+/// note, or an empty note, are skipped. Used to populate PINNED + RECENT.
 //
 // Wired into the app in a later task (Tauri IPC); exercised by tests today,
 // so silence the transitional dead-code lint on the lib target.
@@ -355,7 +355,7 @@ mod tests {
 
     #[test]
     fn parse_and_rewrite() {
-        let c = "---\npublish: true\n---\n\n![[A001.jpg]]\n![[B002.jpg|légende]]\ntexte\n";
+        let c = "---\npublish: true\n---\n\n![[A001.jpg]]\n![[B002.jpg|caption]]\ntext\n";
         assert_eq!(parse_stems(c), vec!["A001", "B002"]);
     }
 

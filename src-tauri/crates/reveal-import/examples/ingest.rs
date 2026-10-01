@@ -20,7 +20,7 @@ fn main() {
     )
     .unwrap();
     eprintln!(
-        "{} copiés, {} skippés, {} échoués, {} octets, dossiers: {:?}",
+        "{} copied, {} skipped, {} failed, {} bytes, folders: {:?}",
         s.copied, s.skipped, s.failed, s.bytes, s.folders
     );
 }

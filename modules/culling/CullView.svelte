@@ -80,7 +80,7 @@
              but it's a small text link off in a thin top bar; a brand new
              user's eyes are on THIS screen, so the real call-to-action
              belongs here too (reproduced 2026-08-03, portability audit). -->
-        <p>ajoute un dossier de photos pour commencer</p>
+        <p>Add a folder of photos to begin</p>
         <button class="add-library" onclick={() => onAddLibraryFolder()} disabled={!isTauri || scanning}>
           {scanning ? "indexing…" : "Add a folder"}
         </button>
@@ -91,7 +91,7 @@
             : "index your library or open a folder"}
         </p>
       {/if}
-      {#if !isTauri}<p><em>ouvre l'app Tauri</em></p>{/if}
+      {#if !isTauri}<p><em>Open the Tauri app</em></p>{/if}
       {#if debug}<p class="debug"><em>{debug}</em></p>{/if}
     </hgroup>
   </div>

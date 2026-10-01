@@ -328,13 +328,13 @@
         <div class="footer-row">
           <div></div>
           <button class="ghost-cancel-btn" onclick={() => { getCurrentWindow().hide(); invoke("reveal_main_window"); }}>
-            Ouvrir Reveal
+            Open Reveal
           </button>
         </div>
       </div>
     {:else}
       <div class="content empty">
-        <p>En attente de carte...</p>
+        <p>Waiting for a card…</p>
       </div>
     {/if}
   </div>

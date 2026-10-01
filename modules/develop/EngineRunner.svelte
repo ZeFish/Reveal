@@ -84,7 +84,7 @@
   // a "bw" channel_model profile (it collapses a family of push/pull density
   // curves to the selected one) — every color profile ignores the value
   // entirely. Confirmed by reading the dependency's source after Francis
-  // reported "Durée" doing nothing on Kodak Gold 200 / Kodachrome 64 (both
+  // reported "Duration" doing nothing on Kodak Gold 200 / Kodachrome 64 (both
   // color) — not a wiring bug, just a control that's a no-op outside B&W.
   let isBw = $derived(films.find((f) => f.name === recipe.film)?.is_bw ?? false);
 

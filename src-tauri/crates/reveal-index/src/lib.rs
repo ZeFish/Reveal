@@ -838,7 +838,7 @@ mod dimension_tests {
             .iter()
             .filter(|r| r.width.is_some())
             .count();
-        eprintln!("après réindexage : {sized} photos avec dimensions");
+        eprintln!("after reindexing: {sized} photos with dimensions");
         let _ = std::fs::remove_file(&db);
         assert!(sized > 0, "a rescan left the sizes empty");
     }
@@ -872,10 +872,10 @@ mod dimension_tests {
             }
             if want != r.rating {
                 wrong += 1;
-                eprintln!("   écart : {} index={} sidecar={}", r.name, r.rating, want);
+                eprintln!("   mismatch: {} index={} sidecar={}", r.name, r.rating, want);
             }
         }
-        eprintln!("{} photos · {with_sidecar} avec sidecar · {rated} notées · {wrong} écarts", rows.len());
+        eprintln!("{} photos · {with_sidecar} with sidecar · {rated} rated · {wrong} mismatches", rows.len());
         let _ = std::fs::remove_file(&db);
         assert_eq!(wrong, 0);
     }
@@ -894,7 +894,7 @@ mod dimension_tests {
         index.add_root(&dir).expect("add_root");
         let stats = index.scan(Path::new(&dir)).expect("scan");
         let rows = index.frames(&dir, 0).expect("frames");
-        eprintln!("scanné {} fichiers en {} ms", stats.added, stats.ms);
+        eprintln!("scanned {} files in {} ms", stats.added, stats.ms);
 
         let sized: Vec<_> = rows.iter().filter(|r| r.width.is_some()).collect();
         let portrait = sized.iter().filter(|r| r.height > r.width).count();

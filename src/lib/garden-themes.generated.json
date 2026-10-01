@@ -81,7 +81,7 @@
     },
     {
       "id": "calm",
-      "label": "Calme (Anti-Surcharge)",
+      "label": "Calm (Anti-Overload)",
       "darkBackground": "#1e1d1b",
       "darkAccent": "#6f8c7e",
       "fontHeader": "Quicksand",
@@ -117,20 +117,6 @@
       ]
     },
     {
-      "id": "contrast",
-      "label": "Contraste Élevé",
-      "darkBackground": "#000000",
-      "darkAccent": "#ffff00",
-      "fontHeader": "Inter",
-      "fontText": "Sohne",
-      "fontPackages": [
-        "atkinson-hyperlegible-next",
-        "inter",
-        "oktah",
-        "sohne"
-      ]
-    },
-    {
       "id": "dev",
       "label": "Dev",
       "darkBackground": "#1c1c1b",
@@ -158,7 +144,7 @@
     },
     {
       "id": "dyslexia",
-      "label": "Dyslexie",
+      "label": "Dyslexia",
       "darkBackground": "#242526",
       "darkAccent": "#1f6690",
       "fontHeader": "Atkinson Hyperlegible Next",
@@ -231,6 +217,20 @@
       ]
     },
     {
+      "id": "contrast",
+      "label": "High Contrast",
+      "darkBackground": "#000000",
+      "darkAccent": "#ffff00",
+      "fontHeader": "Inter",
+      "fontText": "Sohne",
+      "fontPackages": [
+        "atkinson-hyperlegible-next",
+        "inter",
+        "oktah",
+        "sohne"
+      ]
+    },
+    {
       "id": "humanist",
       "label": "Humanist",
       "darkBackground": "#262626",
@@ -273,7 +273,7 @@
     },
     {
       "id": "manifeste",
-      "label": "Manifeste",
+      "label": "Manifesto",
       "darkBackground": "#1b1a18",
       "darkAccent": "#9ecaa3",
       "fontHeader": "Tiempos Headline",

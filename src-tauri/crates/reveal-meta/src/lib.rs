@@ -236,8 +236,8 @@ mod tests {
     fn roundtrip() {
         let s = Sidecar {
             rating: Some(3),
-            description: Some("un café & <deux>".into()),
-            tags: vec!["famille".into(), "été".into()],
+            description: Some("a café & <two>".into()),
+            tags: vec!["family".into(), "café".into()],
             engine: Some("spektrafilm-rs".into()),
             engine_settings: Some(serde_json::json!({
                 "film": "kodak_gold_200", "paper": "kodak_portra_endura",

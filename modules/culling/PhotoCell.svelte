@@ -230,7 +230,7 @@
     ></button>
 
     {#if isExporting || isRendering}
-      <span class="loader render-badge" title={isExporting ? "Export en cours…" : "Rendu en cours…"}></span>
+      <span class="loader render-badge" title={isExporting ? "Export en cours…" : "Rendering…"}></span>
     {/if}
 
     </div>

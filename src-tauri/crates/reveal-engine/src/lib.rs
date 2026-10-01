@@ -394,7 +394,7 @@ pub struct ProfileEntry {
     /// spektrafilm-rs's `resolve_for_render` actually varies by development
     /// time (it collapses a family of push/pull density curves to the
     /// selected one); every color profile ignores development_time
-    /// entirely, so the "Durée" slider is a no-op there by design.
+    /// entirely, so the "Duration" slider is a no-op there by design.
     pub is_bw: bool,
 }
 

@@ -95,10 +95,10 @@
       </button>
     </div>
     <div class="frow">
-      <span class="din frow-label">Taille</span>
+      <span class="din frow-label">Size</span>
       <span class="spacer"></span>
       <select class="panel-select" bind:value={exportEdge} onchange={exportSettingsChanged}>
-        <option value={0}>Plein</option>
+        <option value={0}>Full</option>
         <option value={4096}>4096</option>
         <option value={2048}>2048</option>
         <option value={1600}>1600</option>
@@ -120,7 +120,7 @@
       />
     </div>
     <button class="secondary panel-btn" onclick={() => onExport()} disabled={!photoPath}>Export</button>
-    <button class="outline panel-btn" onclick={() => onExportDaily()} disabled={!photoPath}>Note du jour (Obsidian)</button>
+    <button class="outline panel-btn" onclick={() => onExportDaily()} disabled={!photoPath}>Daily note (Obsidian)</button>
     <div class="frow">
       <span class="din frow-label">Allow download</span>
       <span class="spacer"></span>

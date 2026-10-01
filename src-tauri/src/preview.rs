@@ -483,7 +483,7 @@ pub(crate) const GRID_PREVIEW_EDGE: u32 = 768;
 /// Where a photo's local render lives: photo, size, version.
 ///
 /// No recipe in the key — the cache is the `.preview.jpg` kept locally
-/// (Francis: "la cache est le .preview.jpg mais local"), and the path has to
+/// (Francis: "the cache is the .preview.jpg but local"), and the path has to
 /// be computable from a navigation request, which knows a path and a size and
 /// never a recipe.
 ///

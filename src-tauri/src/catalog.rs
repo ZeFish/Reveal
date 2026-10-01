@@ -120,7 +120,7 @@ pub(crate) async fn scan_root(
         let _ = app.emit("index-progress", serde_json::json!({ "done": true }));
         if let Ok(s) = &stats {
             eprintln!(
-                "scan {path}: {} frames ({} nouveaux, {} retirés), {} dossiers, {} ms",
+                "scan {path}: {} frames ({} new, {} removed), {} folders, {} ms",
                 s.frames, s.added, s.removed, s.dirs, s.ms
             );
         }
@@ -219,7 +219,7 @@ pub(crate) async fn move_photo(path: String, dest_dir: String) -> Result<String,
                 }
             }
         }
-        eprintln!("déplacé: {} → {}", src.display(), new_path.display());
+        eprintln!("moved: {} → {}", src.display(), new_path.display());
         Ok(new_path.to_string_lossy().into_owned())
     })
     .await
@@ -277,7 +277,7 @@ pub(crate) async fn rename_dir(path: String, new_name: String) -> Result<String,
             let _ = std::fs::rename(&old_note, &new_note);
         }
 
-        eprintln!("renommé: {} → {}", src.display(), dest.display());
+        eprintln!("renamed: {} → {}", src.display(), dest.display());
         Ok(dest.to_string_lossy().into_owned())
     })
     .await
@@ -297,7 +297,7 @@ pub(crate) async fn create_dir(parent_dir: String, name: String) -> Result<Strin
             return Err(format!("\u{201c}{name}\u{201d} already exists"));
         }
         std::fs::create_dir(&dest).map_err(|e| format!("creation failed: {e}"))?;
-        eprintln!("créé: {}", dest.display());
+        eprintln!("created: {}", dest.display());
         Ok(dest.to_string_lossy().into_owned())
     })
     .await
@@ -344,7 +344,7 @@ pub(crate) async fn move_dir(path: String, dest_parent_dir: String) -> Result<St
 
         match std::fs::rename(&src, &dest) {
             Ok(()) => {
-                eprintln!("déplacé: {} → {}", src.display(), dest.display());
+                eprintln!("moved: {} → {}", src.display(), dest.display());
                 Ok(dest.to_string_lossy().into_owned())
             }
             Err(e) => Err(format!(
@@ -474,7 +474,7 @@ pub(crate) async fn index_frames(
     min_rating: u8,
 ) -> Result<Vec<reveal_index::FrameRow>, String> {
     // The frames() query walks the whole `frames` table (LIKE filters over
-    // ~22k rows for "toute la bibliothèque"). As a SYNC command this ran on the
+    // ~22k rows for "the whole library"). As a SYNC command this ran on the
     // main thread and froze the entire UI for the duration. Clone the Arc and
     // hand the blocking SQLite work to a worker so the main thread stays live.
     let idx = index.0.clone();

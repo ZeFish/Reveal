@@ -90,15 +90,9 @@ impl DailyNote {
 
     /// Initial note template when the day file does not exist yet.
     fn template(dt: &DateTime<Local>) -> String {
-        const MONTHS_FR: [&str; 12] = [
-            "janvier", "février", "mars", "avril", "mai", "juin",
-            "juillet", "août", "septembre", "octobre", "novembre", "décembre",
-        ];
         let iso = dt.format("%Y-%m-%d").to_string();
         let day = dt.day();
-        let month_idx = (dt.month() as usize).saturating_sub(1).min(11);
-        let month_fr = MONTHS_FR[month_idx];
-        let human = format!("{day} {month_fr}");
+        let human = format!("{day} {}", dt.format("%B"));
 
         format!(
             "---\ntitle:\naliases:\ncreated: {iso}\nmodified: {iso}\ntags: [log]\ntype: note\npublish: false\nvisibility: private\n---\n# {human}\n\n"

@@ -661,7 +661,7 @@
   // rather than a new publication. Null = not known / not applicable.
   let storyRemote = $state(/** @type {{ published: boolean, slug: string, url: string, updated_at: string | null } | null} */ (null));
   const storyPublished = $derived(!!storyRemote?.published);
-  const publishVerb = $derived(storyPublished ? "Mettre à jour" : "Publier");
+  const publishVerb = $derived(storyPublished ? "Update" : "Publish");
   // The page to open for "view the published note". The server's answer wins
   // when we have one: a stale local garden-url (note since deleted) must not
   // keep claiming "Live", and a note published elsewhere gets its link even
@@ -2646,7 +2646,7 @@
       await invoke("open_in_editor", { filePath: view[sel].path, appPath });
       notify("Opened successfully ✓", 2000);
     } catch (e) {
-      notify(`erreur : ${e}`, 5000);
+      notify(`Error: ${e}`, 5000);
     }
   }
 
@@ -2730,13 +2730,13 @@
     if (!d || !storySet.size || !gardenAccount?.signed_in || activity.anyRunning) return;
     liveUrl = null;
     setProgress({ verb: "publication", done: 0, total: storySet.size, current: "" });
-    publishTaskId = startActivity("publish", `${publishVerb} l'histoire · ${storySet.size} photos`, storySet.size);
+    publishTaskId = startActivity("publish", `${publishVerb} story · ${storySet.size} photos`, storySet.size);
     try {
       liveUrl = await invoke("publish_story", { dir: d, dryRun: false });
       notify(storyPublished ? "updated ✓" : "published ✓", 2000);
       updateActivity(publishTaskId, { done: storySet.size, phase: "Complete", status: "completed" });
     } catch (e) {
-      notify(`erreur : ${e}`, 5000);
+      notify(`Error: ${e}`, 5000);
       updateActivity(publishTaskId, { phase: String(e), status: "failed" });
     } finally {
       setProgress(null);
@@ -2752,7 +2752,7 @@
     if (!dest) return;
     liveUrl = null;
     setProgress({ verb: "export", done: 0, total: storySet.size, current: "" });
-    const jobId = startActivity("export", `Exporter l'histoire · ${storySet.size} photos`, storySet.size);
+    const jobId = startActivity("export", `Export story · ${storySet.size} photos`, storySet.size);
     try {
       await invoke("export_local_story", {
         dir: d,
@@ -2763,7 +2763,7 @@
       notify("exported ✓", 2000);
       updateActivity(jobId, { done: storySet.size, current: dest, phase: "Complete", status: "completed" });
     } catch (e) {
-      notify(`erreur : ${e}`, 5000);
+      notify(`Error: ${e}`, 5000);
       updateActivity(jobId, { phase: String(e), status: "failed" });
     } finally {
       setProgress(null);
@@ -3029,7 +3029,7 @@
   async function exportToDailyNote(targetPath, customRecipe) {
     const target = targetPath || photoPath || view[sel]?.path;
     if (!target) return;
-    notify("Vers le journal…", 10000);
+    notify("Sending to the daily note…", 10000);
     try {
       const rec = customRecipe || (target === photoPath ? recipe : null);
       const notePath = await invoke("export_to_daily_note", {
@@ -3040,10 +3040,10 @@
       });
       const noteName = notePath.split("/").slice(-2).join("/");
       const filename = target.split("/").pop();
-      notify(`Dans le journal → ${noteName} (${filename}) ✓`, 4000);
+      notify(`Daily note → ${noteName} (${filename}) ✓`, 4000);
       openInObsidian(notePath);
     } catch (e) {
-      notify(`Journal export failed: ${e}`, 5000);
+      notify(`Daily note export failed: ${e}`, 5000);
     }
   }
 
@@ -3061,7 +3061,7 @@
 
     // The activity indicator carries "Journal · N photos" for the duration —
     // no second running message needed.
-    const jobId = startActivity("publish", `Journal · ${targets.length} photos`, targets.length);
+    const jobId = startActivity("publish", `Daily note · ${targets.length} photos`, targets.length);
     try {
       const notePath = await invoke("export_batch_to_daily_note", {
         paths: targets,
@@ -3069,11 +3069,11 @@
         borderFrac: exportBorder ? 0.04 : 0,
       });
       const noteName = notePath.split("/").slice(-2).join("/");
-      notify(`Dans le journal → ${targets.length} photos dans ${noteName} ✓`, 4000);
+      notify(`Daily note → ${targets.length} photos in ${noteName} ✓`, 4000);
       updateActivity(jobId, { done: targets.length, current: noteName, phase: "Complete", status: "completed" });
       openInObsidian(notePath);
     } catch (e) {
-      notify(`Journal export failed: ${e}`, 5000);
+      notify(`Daily note export failed: ${e}`, 5000);
       updateActivity(jobId, { phase: String(e), status: "failed" });
     } finally {
       releaseActive(jobId);
@@ -3254,7 +3254,7 @@
     if (!recipeToApply || !targetFrames.length || activity.progress) return;
     const snapshot = { ...recipeToApply };
     setProgress({ verb: "Applying settings", done: 0, total: targetFrames.length, current: "" });
-    const jobId = startActivity("develop", `Synchroniser ${targetFrames.length} photo(s)`, targetFrames.length);
+    const jobId = startActivity("develop", `Apply settings to ${targetFrames.length} photo(s)`, targetFrames.length);
     try {
       for (const [i, frame] of targetFrames.entries()) {
         patchProgress({ current: frame.name });
@@ -3712,8 +3712,8 @@
   // Parking a decode costs a 35 MB write; releasing it throws that away.
   // Doing either on every mode switch turned grid → dev → grid → dev into
   // write-delete-write-delete, and the decodes behind it kept six cores busy
-  // long after the navigation stopped (Francis, 2026-09-22: "j'ai passé d'une
-  // photo à l'autre rapidement... grille dev, grille dev").
+  // long after the navigation stopped (Francis, 2026-09-22: "I went from one
+  // photo to the next quickly... dev, grid, dev, grid").
   //
   // So both wait to see whether you meant it. Flipping back and forth now
   // does no work at all: the pending action is simply cancelled, and
@@ -3946,8 +3946,8 @@
         // switching Rapid → Spektra blanks the photo for the whole ~2.5s the
         // film simulation takes, and the busy spinner only appears after
         // 400ms — so what you actually see is an empty frame (Francis:
-        // "passer de rapid à spektra me fais d'abord enlever la photo pour
-        // attendre"). The previous render stays up until there is something
+        // "switching from rapid to spektra first makes the photo
+        // disappear while I wait"). The previous render stays up until there is something
         // better to put in its place.
         const bytes = await invoke("develop_preview", { path, recipe: snap, maxPx: px });
         const url = URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" }));
@@ -4627,7 +4627,7 @@
                       if (publishedUrl) invoke("open_path", { path: publishedUrl });
                     }}
                   >
-                    <span class="item-label">Ouvrir sur le web</span>
+                    <span class="item-label">Open on the web</span>
                     <Icon name="arrow-square-out" size="10px" />
                   </button>
                 {/if}
@@ -4662,7 +4662,7 @@
                 {#if publishedUrl || storySet.size || ((library.curDir || library.folder) && view.length)}
                   <div class="std-menu-separator"></div>
                 {/if}
-                <span class="pop-label">Colonnes</span>
+                <span class="pop-label">Columns</span>
                 <div class="pop-grid">
                   {#each [1, 2, 3, 4, 5, 6, 8, 10, 12] as n}
                     <button
@@ -4865,7 +4865,7 @@
     />
     {#if recipe && layouts.dev.devPanel && !isTauri}
       <aside>
-        <button class="open" onclick={() => switchMode("cull")}>← Grille (g)</button>
+        <button class="open" onclick={() => switchMode("cull")}>← Grid (g)</button>
         {#if picked}
           <p class="file">
             {picked}{renderMs ? ` · ${renderMs} ms` : ""}{status ? ` · ${status}` : ""}
@@ -4873,7 +4873,7 @@
           {#if installedEditors.length}
             <div class="editor-select-container">
               <select class="editor-select" onchange={(e) => openInEditor(/** @type {HTMLSelectElement} */ (e.currentTarget).value)} value="">
-                <option value="" disabled selected>Ouvrir dans...</option>
+                <option value="" disabled selected>Open in…</option>
                 {#each installedEditors as [name, path]}
                   <option value={path}>{name}</option>
                 {/each}
@@ -4890,11 +4890,11 @@
           {#if baseOpen}
             <div class="section-content">
               <label class="row check">
-                <span>AUTO-EXPO</span>
+                <span>AUTO EXPOSURE</span>
                 <input type="checkbox" role="switch" bind:checked={recipe.auto_exposure} onchange={() => edited()} />
               </label>
               <label class="row">
-                <span>EXPOSITION</span>
+                <span>EXPOSURE</span>
                 <input type="range" min="-3" max="3" step="0.1" bind:value={recipe.exposure_ev} style="--slider-value: {pct(recipe.exposure_ev, -3, 3)}" oninput={() => edited(true)} onchange={() => edited(false)} />
                 <code>{fmt(recipe.exposure_ev)}</code>
               </label>
@@ -4915,9 +4915,9 @@
         <section>
           <h2>Export</h2>
           <label class="row">
-            <span>TAILLE</span>
+            <span>SIZE</span>
             <select bind:value={exportEdge} onchange={saveExportPrefs}>
-              <option value={0}>Plein</option>
+              <option value={0}>Full</option>
               <option value={4096}>4096</option>
               <option value={2048}>2048</option>
               <option value={1600}>1600</option>
@@ -4925,10 +4925,10 @@
             </select>
           </label>
           <label class="row check">
-            <span>BORDURE</span>
+            <span>BORDER</span>
             <input type="checkbox" role="switch" bind:checked={exportBorder} />
           </label>
-          <button onclick={() => exportCurrent()}>Exporter cette photo</button>
+          <button onclick={() => exportCurrent()}>Export this photo</button>
         </section>
 
         <!-- Section: Tone -->
@@ -4940,7 +4940,7 @@
           {#if tonalityOpen}
             <div class="section-content">
               <label class="row">
-                <span>TIRAGE</span>
+                <span>PRINT</span>
                 <!-- Inverted control only (see the dev-panel `slider` snippet):
                      right = brighter. More enlarger exposure physically darkens
                      the print, so the stored value is the negation of what's
@@ -4964,22 +4964,22 @@
                 <code>{fmt(-(recipe?.print_exposure_ev ?? 0))}</code>
               </label>
               <label class="row">
-                <span>BLANCS</span>
+                <span>WHITES</span>
                 <input type="range" min="-1" max="1" step="0.05" bind:value={recipe.whites} style="--slider-value: {pct(recipe.whites, -1, 1)}" oninput={() => edited(true)} onchange={() => edited(false)} />
                 <code>{fmt(recipe.whites)}</code>
               </label>
               <label class="row">
-                <span>HAUTES LUM.</span>
+                <span>HIGHLIGHTS</span>
                 <input type="range" min="-1" max="1" step="0.05" bind:value={recipe.highlights} style="--slider-value: {pct(recipe.highlights, -1, 1)}" oninput={() => edited(true)} onchange={() => edited(false)} />
                 <code>{fmt(recipe.highlights)}</code>
               </label>
               <label class="row">
-                <span>TONS MOYENS</span>
+                <span>MIDTONES</span>
                 <input type="range" min="-1" max="1" step="0.05" bind:value={recipe.midtones} style="--slider-value: {pct(recipe.midtones, -1, 1)}" oninput={() => edited(true)} onchange={() => edited(false)} />
                 <code>{fmt(recipe.midtones)}</code>
               </label>
               <label class="row">
-                <span>OMBRES</span>
+                <span>SHADOWS</span>
                 <input type="range" min="-1" max="1" step="0.05" bind:value={recipe.shadows} style="--slider-value: {pct(recipe.shadows, -1, 1)}" oninput={() => edited(true)} onchange={() => edited(false)} />
                 <code>{fmt(recipe.shadows)}</code>
               </label>
@@ -4995,7 +4995,7 @@
         <!-- Section: Film -->
         <section class="collapsible">
           <button class="section-toggle" onclick={() => filmOpen = !filmOpen}>
-            <span>FILM & PAPIER</span>
+            <span>FILM & PAPER</span>
             <span class="chevron">{filmOpen ? "▼" : "▶"}</span>
           </button>
           {#if filmOpen}
@@ -5007,18 +5007,18 @@
                 </select>
               </label>
               <label class="row">
-                <span>PAPIER</span>
+                <span>PAPER</span>
                 <select bind:value={recipe.paper} onchange={() => edited()}>
                   {#each papers as p}<option value={p.name}>{p.label}</option>{/each}
                 </select>
               </label>
               <label class="row">
-                <span>FILTRE Y</span>
+                <span>Y FILTER</span>
                 <input type="range" min="-30" max="30" step="1" bind:value={recipe.y_shift} style="--slider-value: {pct(recipe.y_shift, -30, 30)}" oninput={() => edited(true)} onchange={() => edited(false)} />
                 <code>{fmt(recipe.y_shift)}</code>
               </label>
               <label class="row">
-                <span>FILTRE M</span>
+                <span>M FILTER</span>
                 <input type="range" min="-30" max="30" step="1" bind:value={recipe.m_shift} style="--slider-value: {pct(recipe.m_shift, -30, 30)}" oninput={() => edited(true)} onchange={() => edited(false)} />
                 <code>{fmt(recipe.m_shift)}</code>
               </label>
@@ -5045,7 +5045,7 @@
                 <code>{fmt(recipe.halation)}</code>
               </label>
               <label class="row">
-                <span>TAILLE HALO</span>
+                <span>HALO SIZE</span>
                 <input type="range" min="0.5" max="1.5" step="0.05" bind:value={recipe.halation_size} style="--slider-value: {pct(recipe.halation_size, 0.5, 1.5)}" oninput={() => edited(true)} onchange={() => edited(false)} />
                 <code>{fmt(recipe.halation_size)}</code>
               </label>

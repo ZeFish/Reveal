@@ -5,7 +5,7 @@ fn main() {
     let idx = reveal_index::Index::open(std::path::Path::new(&db)).unwrap();
     let s = idx.scan(std::path::Path::new(&root)).unwrap();
     eprintln!(
-        "{} frames ({} nouveaux, {} retirés), {} dossiers, {} ms",
+        "{} frames ({} new, {} removed), {} folders, {} ms",
         s.frames, s.added, s.removed, s.dirs, s.ms
     );
     for d in idx.dirs().unwrap() {

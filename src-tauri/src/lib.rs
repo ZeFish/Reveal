@@ -66,8 +66,7 @@ struct ShellPrefs {
     focus_mode: bool,
     /// The folder photos import into. When `None`, the import flow falls
     /// back to `roots[0]` (the primary catalogue root) — preserving the
-    /// pre-choice behavior. Set via the sidebar's "Définir comme dossier
-    /// d'import" context-menu action.
+    /// pre-choice behavior. Set via the sidebar's "Set as import folder" context-menu action.
     import_dir: Option<String>,
     /// A saved preset's name, applied automatically to every photo as it
     /// lands from a card import. `None` = imported photos keep no recipe
@@ -164,8 +163,8 @@ pub fn show_import_panel(app: &tauri::AppHandle) {
                 // Tall enough for the thumbnail row (64px thumb + its own
                 // padding) plus the progress/footer rows beneath it — the
                 // old 108px was sized before those rows existed and was
-                // clipping them (Francis: "sa hauteur devrait être celle
-                // pour fitter avec l'aperçu").
+                // clipping them (Francis: "its height should be the one
+                // that fits the preview").
                 let logical_size = tauri::LogicalSize::new(396.0, 148.0);
                 let physical_size = logical_size.to_physical::<u32>(scale_factor);
                 let screen_size = monitor.size();
@@ -679,7 +678,7 @@ fn toggle_macos_appearance() -> Result<(), String> {
 
     #[cfg(not(target_os = "macos"))]
     {
-        Err("Cette commande est disponible seulement sur macOS".into())
+        Err("This command is only available on macOS".into())
     }
 }
 
@@ -690,21 +689,21 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let shell_prefs = read_shell_prefs(app.handle());
 
     let show = MenuItem::with_id(app, "show", "Contact Sheet", true, None::<&str>)?;
-    let import = MenuItem::with_id(app, "import-card", "Importer depuis la carte", true, None::<&str>)?;
+    let import = MenuItem::with_id(app, "import-card", "Import from card", true, None::<&str>)?;
     
-    let auto_import = CheckMenuItemBuilder::new("Basculer import auto")
+    let auto_import = CheckMenuItemBuilder::new("Toggle auto import")
         .id("auto-import")
         .checked(shell_prefs.auto_import)
         .build(app)?;
 
-    let focus = CheckMenuItemBuilder::new("Mode Focus")
+    let focus = CheckMenuItemBuilder::new("Focus mode")
         .id("focus")
         .checked(shell_prefs.focus_mode)
         .build(app)?;
 
-    let appearance = MenuItem::with_id(app, "appearance", "Basculer clair/sombre", true, None::<&str>)?;
-    let hide = MenuItem::with_id(app, "hide", "Masquer Reveal", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quitter", true, None::<&str>)?;
+    let appearance = MenuItem::with_id(app, "appearance", "Toggle light/dark", true, None::<&str>)?;
+    let hide = MenuItem::with_id(app, "hide", "Hide Reveal", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit Reveal", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &import, &auto_import, &focus, &appearance, &hide, &quit])?;
 
     app.manage(TrayMenuState {
@@ -823,8 +822,8 @@ fn toggle_auto_import(app: tauri::AppHandle) -> Result<ShellPrefs, String> {
     Ok(prefs)
 }
 
-/// Set the folder photos import into (the sidebar's "Définir comme dossier
-/// d'import" action). An empty/blank path clears the choice, falling back
+/// Set the folder photos import into (the sidebar's "Set as import folder"
+/// action). An empty/blank path clears the choice, falling back
 /// to `roots[0]`. The sidebar's accent dot reacts via `shell-prefs-changed`.
 #[tauri::command]
 fn set_import_dir(app: tauri::AppHandle, path: Option<String>) -> Result<ShellPrefs, String> {
@@ -1643,8 +1642,8 @@ pub fn run() {
                     // grid. Restoring a session fires ~120 cell requests and
                     // then opens one photo; on a loaded NAS a cell took 4-6s
                     // here, so the one image the photographer is waiting for
-                    // sat behind all of them (Francis: "j'ai la photo, mais
-                    // ça a été très long"). There is at most one of these at
+                    // sat behind all of them (Francis: "I have the photo, but
+                    // it took very long"). There is at most one of these at
                     // a time, so it skips the queue entirely.
                     let priority = request.uri().query()
                         .is_some_and(|q| q.split('&').any(|kv| kv == "priority=1"));
