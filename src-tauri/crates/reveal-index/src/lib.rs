@@ -31,6 +31,20 @@ pub enum IndexError {
     Sql(#[from] rusqlite::Error),
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
+    /// A library may not sit inside another, nor contain one. The text is
+    /// written to be shown to the person as it is.
+    #[error("{0}")]
+    Nested(String),
+}
+
+/// A path in one spelling. macOS reaches the data volume both directly and
+/// through firmlinks (`/System/Volumes/Data/mnt/x` is `/mnt/x`); only the
+/// second is what a person types.
+fn normal_form(path: &str) -> &str {
+    path.strip_prefix("/System/Volumes/Data")
+        .filter(|rest| rest.starts_with('/'))
+        .unwrap_or(path)
+        .trim_end_matches('/')
 }
 
 #[derive(serde::Serialize)]
@@ -142,6 +156,26 @@ impl Index {
             }
             let _ = conn.execute("DELETE FROM meta WHERE key='root'", []);
         }
+        // Libraries do not nest. A database from before that rule can hold one
+        // inside another ("Capture" inside "ffp-production"). The inner one
+        // adds nothing: the outer lists every photo beneath it. It goes from
+        // the list; no photo row is touched.
+        {
+            let roots: Vec<String> = {
+                let mut stmt = conn.prepare("SELECT path FROM roots")?;
+                let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+                rows.flatten().collect()
+            };
+            for inner in &roots {
+                let inner_n = normal_form(inner);
+                let held = roots.iter().any(|outer| {
+                    outer != inner && inner_n.starts_with(&format!("{}/", normal_form(outer)))
+                });
+                if held {
+                    conn.execute("DELETE FROM roots WHERE path=?1", [inner])?;
+                }
+            }
+        }
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -221,6 +255,57 @@ impl Index {
         Ok(out)
     }
 
+    /// The library that already holds `path`: a root equal to it or above it.
+    /// The longest match wins, if roots nest from before nesting was forbidden.
+    ///
+    /// Compared in a normal form, because macOS has two spellings of one place:
+    /// `/mnt/x` and `/System/Volumes/Data/mnt/x`. A folder picker returns one and
+    /// an older preference holds the other; they are the same folder.
+    pub fn library_covering(&self, path: &str) -> Result<Option<String>, IndexError> {
+        let p = normal_form(path);
+        Ok(self
+            .roots()?
+            .into_iter()
+            .filter(|r| {
+                let r = normal_form(r);
+                p == r || p.starts_with(&format!("{r}/"))
+            })
+            .max_by_key(|r| r.len()))
+    }
+
+    /// Whether `path` may become a library of its own. Libraries do not nest:
+    /// a folder already inside one is already in the library (it shows there),
+    /// and a folder that contains one would swallow it.
+    ///
+    /// An existing root is always fine; that is a rescan, not an addition.
+    pub fn check_can_add_root(&self, path: &str) -> Result<(), IndexError> {
+        let roots = self.roots()?;
+        let p = normal_form(path);
+        if roots.iter().any(|r| normal_form(r) == p) {
+            return Ok(());
+        }
+        let name = |s: &str| s.rsplit('/').find(|x| !x.is_empty()).unwrap_or(s).to_string();
+        if let Some(outer) = roots.iter().find(|r| {
+            let r = normal_form(r);
+            p.starts_with(&format!("{r}/"))
+        }) {
+            return Err(IndexError::Nested(format!(
+                "\u{201c}{}\u{201d} is already part of the library \u{201c}{}\u{201d}, where its photos show. Libraries can\u{2019}t be nested, so it isn\u{2019}t added again.",
+                name(path),
+                name(outer)
+            )));
+        }
+        if let Some(inner) = roots.iter().find(|r| normal_form(r).starts_with(&format!("{p}/"))) {
+            return Err(IndexError::Nested(format!(
+                "\u{201c}{}\u{201d} contains the library \u{201c}{}\u{201d}. Libraries can\u{2019}t be nested: remove \u{201c}{}\u{201d} first, then add this folder.",
+                name(path),
+                name(inner),
+                name(inner)
+            )));
+        }
+        Ok(())
+    }
+
     /// The registered root that contains `path` (longest match wins for
     /// nested roots) — used to validate a subtree rescan against the set.
     pub fn root_containing(&self, path: &str) -> Result<Option<String>, IndexError> {
@@ -265,6 +350,11 @@ impl Index {
         update_root: bool,
         on_progress: &mut impl FnMut(usize, usize),
     ) -> Result<ScanStats, IndexError> {
+        // A scan that registers its path as a library is how a library is added.
+        // Refuse before walking anything if that would nest one in another.
+        if update_root {
+            self.check_can_add_root(&root.to_string_lossy())?;
+        }
         let t = std::time::Instant::now();
         let mut stack = vec![root.to_path_buf()];
         let mut dirs = 0usize;
@@ -1006,6 +1096,86 @@ mod root_tests {
         drop(index);
         let index = Index::open(&db).unwrap(); // the restart
         assert!(index.roots().unwrap().is_empty(), "the removed library came back");
+        let _ = std::fs::remove_file(&db);
+    }
+
+    // ---- libraries do not nest ---------------------------------------------
+
+    #[test]
+    fn a_library_cannot_be_added_inside_another() {
+        let (index, db) = temp_index("no-nest-inside");
+        index.add_root("/nas/ffp").unwrap();
+        let err = index.check_can_add_root("/nas/ffp/Personelle/Capture").unwrap_err();
+        assert!(err.to_string().contains("already part of the library"), "{err}");
+        assert!(err.to_string().contains("ffp"));
+        let _ = std::fs::remove_file(&db);
+    }
+
+    #[test]
+    fn a_library_cannot_swallow_another() {
+        let (index, db) = temp_index("no-nest-contains");
+        index.add_root("/nas/ffp/Capture").unwrap();
+        let err = index.check_can_add_root("/nas/ffp").unwrap_err();
+        assert!(err.to_string().contains("contains the library"), "{err}");
+        assert!(err.to_string().contains("remove"));
+        let _ = std::fs::remove_file(&db);
+    }
+
+    #[test]
+    fn rescanning_a_library_and_adding_a_sibling_are_fine() {
+        let (index, db) = temp_index("nest-ok");
+        index.add_root("/nas/ffp").unwrap();
+        assert!(index.check_can_add_root("/nas/ffp").is_ok(), "an existing root is a rescan");
+        assert!(index.check_can_add_root("/nas/ffp-2").is_ok(), "a shared prefix is not containment");
+        assert!(index.check_can_add_root("/nas/other").is_ok());
+        let _ = std::fs::remove_file(&db);
+    }
+
+    #[test]
+    fn the_two_spellings_of_one_mac_folder_are_one_folder() {
+        let (index, db) = temp_index("spellings");
+        index.add_root("/System/Volumes/Data/mnt/ffp").unwrap();
+        assert!(index.check_can_add_root("/mnt/ffp/Capture").is_err());
+        assert!(index.check_can_add_root("/mnt/ffp").is_ok());
+        assert_eq!(
+            index.library_covering("/mnt/ffp/Capture/2026").unwrap().as_deref(),
+            Some("/System/Volumes/Data/mnt/ffp")
+        );
+        assert_eq!(index.library_covering("/mnt/ffp-2/x").unwrap(), None);
+        let _ = std::fs::remove_file(&db);
+    }
+
+    #[test]
+    fn a_scan_that_would_nest_refuses_before_walking() {
+        let (index, db) = temp_index("scan-refuses");
+        let outer = std::env::temp_dir().join(format!("reveal-nest-{}", std::process::id()));
+        let inner = outer.join("inner");
+        std::fs::create_dir_all(&inner).unwrap();
+        index.add_root(&outer.to_string_lossy()).unwrap();
+        let err = index.scan(&inner).err().expect("nesting must be refused");
+        assert!(matches!(err, IndexError::Nested(_)));
+        assert_eq!(index.roots().unwrap().len(), 1, "no second library was registered");
+        let _ = std::fs::remove_dir_all(&outer);
+        let _ = std::fs::remove_file(&db);
+    }
+
+    #[test]
+    fn opening_a_database_that_nests_libraries_flattens_it_without_losing_a_photo() {
+        let (index, db) = temp_index("flatten");
+        index.add_root("/nas/ffp").unwrap();
+        index.add_root("/nas/ffp/Personelle/Capture").unwrap();
+        index.add_root("/nas/elsewhere").unwrap();
+        put(&index, "/nas/ffp/Personelle/Capture/2026/a.RAF");
+        put(&index, "/nas/ffp/Other/b.RAF");
+        put(&index, "/nas/elsewhere/c.RAF");
+        drop(index);
+
+        let reopened = Index::open(&db).unwrap();
+        assert_eq!(
+            reopened.roots().unwrap(),
+            vec!["/nas/ffp".to_string(), "/nas/elsewhere".to_string()]
+        );
+        assert_eq!(count(&reopened), 3, "no photo was touched");
         let _ = std::fs::remove_file(&db);
     }
 }

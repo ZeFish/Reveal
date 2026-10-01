@@ -141,7 +141,7 @@ pub(crate) async fn scan_folder(
     // just the single legacy pointer.
     let containing = index
         .0
-        .root_containing(&path)
+        .library_covering(&path)
         .map_err(|e| e.to_string())?;
     if containing.is_none() {
         return Err("Folder is outside every indexed catalogue".to_string());
@@ -389,8 +389,10 @@ pub(crate) async fn add_catalog_root(
     index: tauri::State<'_, IndexState>,
     path: String,
 ) -> Result<reveal_index::ScanStats, String> {
+    // Libraries do not nest: refuse before registering anything.
+    index.0.check_can_add_root(&path).map_err(|e| e.to_string())?;
     index.0.add_root(&path).map_err(|e| e.to_string())?;
-    // `scan_root` sets meta.root + re-registers (idempotent) and walks the tree.
+    // `scan_root` re-registers (idempotent) and walks the tree.
     scan_root(app, index, path).await
 }
 

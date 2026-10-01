@@ -5,7 +5,7 @@
   import { session, openFolderSession } from "$lib/session.js";
   import {
     library, beginOpen, appendFrames, refreshFrames, clearFrames, refreshLoadedFrames, leaveFolder,
-    setRoots, setDirs, setLoading, dirLabel, rootCovering,
+    setRoots, setDirs, setLoading, dirLabel,
   } from "$lib/library.svelte.js";
   import {
     activity, notify, hold, dismiss,
@@ -978,6 +978,7 @@
         }
       });
       on("import-failed", (e) => {
+        lastImportFailureAt = Date.now();
         setProgress(null);
         notify(`Import failed: ${e.payload.message}`, 6000);
       });
@@ -2092,6 +2093,9 @@
       await invoke("scan_root", { path });
       await refreshDirs();
       if (library.dirs.length) openDir(library.dirs[library.dirs.length - 1].dir);
+    } catch (error) {
+      // Libraries do not nest, and a refused folder says why.
+      notify(String(error), 9000);
     } finally {
       scanning = false;
     }
@@ -2772,14 +2776,16 @@
   }
 
   // ---- importing from a memory card ----------------------------------------------
+  let lastImportFailureAt = 0;
   /** @param {Card} card */
   async function importCard(card) {
-    // Prefer the explicitly-chosen import folder; fall back to the primary
-    // catalogue root when none is set (preserves the pre-choice behavior).
-    let archive = importDir ?? library.root;
+    // The explicitly-chosen import folder, else the primary library. An import
+    // never creates a library: the destination has to be inside one (the Rust
+    // side checks, and says so if it is not).
+    const archive = importDir ?? library.root;
     if (!archive) {
-      archive = await invoke("pick_folder");
-      if (!archive) return;
+      notify("Add a library first: photos are imported into one.", 6000);
+      return;
     }
     setProgress({ verb: "import", done: 0, total: card.raw_count, current: "" });
     lastImportedFolder = null;
@@ -2787,11 +2793,9 @@
     ejectableCard = null;
     try {
       const stats = await invoke("import_card", { dcim: card.dcim, archive });
-      // `scan_root` registers its path as a library. An archive already inside
-      // one (the import folder is usually a subfolder of a library) is only
-      // reconciled in place: registering it would resurrect a library that
-      // was removed, which is what importing into "Capture" kept doing.
-      await invoke(rootCovering(archive, library.roots) ? "scan_folder" : "scan_root", { path: archive });
+      // Reconcile the import folder in place. (`scan_root` would register it as
+      // a library of its own, which an import must never do.)
+      await invoke("scan_folder", { path: archive }).catch(() => {});
       await refreshDirs();
       if (stats.folders.length) {
         lastImportedFolder = stats.folders[stats.folders.length - 1];
@@ -2806,6 +2810,10 @@
       // A real removable card (has a volume mount point) can now be ejected —
       // the ingest loop's last step, offered in the rail rather than forced.
       if (card.volume) ejectableCard = card;
+    } catch (error) {
+      // A refusal from the Rust side has already been announced by the
+      // `import-failed` event; anything else has not.
+      if (Date.now() - lastImportFailureAt > 1500) notify(`Import failed: ${error}`, 7000);
     } finally {
       setProgress(null);
       importingCard = null;

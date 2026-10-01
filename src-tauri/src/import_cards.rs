@@ -59,6 +59,22 @@ pub(crate) async fn import_card(
         show_import_panel(&app);
         return Err(msg);
     }
+    // An import never creates a library. The destination must already be
+    // inside one, so what arrives shows up where the person looks for it. If it
+    // is not, say so now, before a single photo is copied.
+    if index_state.0.library_covering(&archive).ok().flatten().is_none() {
+        let msg = format!(
+            "The import folder \u{201c}{}\u{201d} is not inside any of your libraries, so nothing was imported. Choose an import folder inside a library, or add its folder as a library first.",
+            archive_path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| archive.clone())
+        );
+        import_state.0.lock().unwrap().remove(&dcim);
+        let _ = app.emit(
+            "import-failed",
+            serde_json::json!({ "dcim": dcim, "message": msg }),
+        );
+        show_import_panel(&app);
+        return Err(msg);
+    }
     // Fresh stop flag for this run (the HUD's stop button flips it).
     cancel_state.0.store(false, std::sync::atomic::Ordering::Relaxed);
 
