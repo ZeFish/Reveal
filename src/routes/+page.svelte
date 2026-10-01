@@ -5,7 +5,7 @@
   import { session, openFolderSession } from "$lib/session.js";
   import {
     library, beginOpen, appendFrames, refreshFrames, clearFrames, refreshLoadedFrames, leaveFolder,
-    setRoots, setDirs, setLoading, dirLabel,
+    setRoots, setDirs, setLoading, dirLabel, rootCovering,
   } from "$lib/library.svelte.js";
   import {
     activity, notify, hold, dismiss,
@@ -2787,7 +2787,11 @@
     ejectableCard = null;
     try {
       const stats = await invoke("import_card", { dcim: card.dcim, archive });
-      await invoke("scan_root", { path: archive });
+      // `scan_root` registers its path as a library. An archive already inside
+      // one (the import folder is usually a subfolder of a library) is only
+      // reconciled in place: registering it would resurrect a library that
+      // was removed, which is what importing into "Capture" kept doing.
+      await invoke(rootCovering(archive, library.roots) ? "scan_folder" : "scan_root", { path: archive });
       await refreshDirs();
       if (stats.folders.length) {
         lastImportedFolder = stats.folders[stats.folders.length - 1];

@@ -13,6 +13,7 @@
   // shares no memory with it.
   import Icon from "$lib/components/Icon.svelte";
   import ManualLink from "$lib/components/ManualLink.svelte";
+  import { removeLibraryNote } from "$lib/library.svelte.js";
   import Dropdown from "@stnd/ui/Dropdown.svelte";
   import DropdownItem from "@stnd/ui/DropdownItem.svelte";
   import Alert from "@stnd/ui/Alert.svelte";
@@ -995,7 +996,7 @@
   open={!!libToRemove}
   title={libToRemove ? `Remove “${libToRemove.path.split("/").pop()}” from Reveal?` : ""}
   description={libToRemove
-    ? `No photo is deleted — the ${libToRemove.frames.toLocaleString("en-CA")} files stay exactly where they are on disk. Reveal forgets this library, along with the ratings, captions and story marks its catalogue holds for them. Adding the folder back and reindexing restores the photos, not those marks.`
+    ? removeLibraryNote(libToRemove.path, (libraries ?? []).map((l) => l.path), libToRemove.frames)
     : ""}
   confirmLabel="Remove library" cancelLabel="Keep it" intent="danger"
   onconfirm={confirmRemoveLibrary} oncancel={() => { libToRemove = null; }} />

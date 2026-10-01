@@ -9,6 +9,8 @@ import {
   leaveFolder,
   setRoots,
   dirLabel,
+  rootCovering,
+  removeLibraryNote,
 } from "./library.svelte.js";
 
 /** @param {string[]} names */
@@ -152,5 +154,47 @@ describe("labelling a directory", () => {
   it("does not treat a prefix as containment", () => {
     setRoots(["/mnt/ffp"]);
     expect(dirLabel("/mnt/ffp-production/x")).toBe("x");
+  });
+});
+
+describe("which root covers a folder", () => {
+  const roots = ["/nas/ffp", "/nas/ffp/Personelle/Capture", "/nas/other"];
+
+  it("is the root itself, or the root it sits inside", () => {
+    expect(rootCovering("/nas/other", roots)).toBe("/nas/other");
+    expect(rootCovering("/nas/other/2026/09", roots)).toBe("/nas/other");
+  });
+
+  it("prefers the nearest root when roots nest", () => {
+    expect(rootCovering("/nas/ffp/Personelle/Capture/2026", roots)).toBe("/nas/ffp/Personelle/Capture");
+    expect(rootCovering("/nas/ffp/Personelle", roots)).toBe("/nas/ffp");
+  });
+
+  it("is null for a folder no root holds, even one that merely shares a prefix", () => {
+    expect(rootCovering("/nas/ffp-extra", roots)).toBeNull();
+    expect(rootCovering("/elsewhere", roots)).toBeNull();
+    expect(rootCovering(null, roots)).toBeNull();
+  });
+
+  it("can ask which root holds a root: what would keep its photos if it were removed", () => {
+    expect(rootCovering("/nas/ffp/Personelle/Capture", roots, { strictly: true })).toBe("/nas/ffp");
+    expect(rootCovering("/nas/other", roots, { strictly: true })).toBeNull();
+  });
+});
+
+describe("the remove-library confirmation", () => {
+  const roots = ["/nas/ffp", "/nas/ffp/Personelle/Capture"];
+
+  it("says nothing leaves when the library sits inside another", () => {
+    const text = removeLibraryNote("/nas/ffp/Personelle/Capture", roots, 73656);
+    expect(text).toContain("Nothing leaves your library");
+    expect(text).toContain("“ffp”");
+    expect(text).not.toContain("forgets");
+  });
+
+  it("says what is forgotten, and what brings it back, when it does not", () => {
+    const text = removeLibraryNote("/nas/ffp", roots, 32430);
+    expect(text).toContain("32,430 photos");
+    expect(text).toContain(".xmp");
   });
 });

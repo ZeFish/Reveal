@@ -183,6 +183,54 @@ export function setRoots(roots) {
   state.roots = roots;
 }
 
+/**
+ * The library root that contains `path` (or is `path`), or null. The longest
+ * wins when roots nest, as "Capture" does inside "ffp-production".
+ *
+ * The question behind it: is this folder already part of the library? A folder
+ * that is must be reconciled in place; registering it again would make it a
+ * library of its own.
+ * @param {string | null | undefined} path
+ * @param {string[]} roots
+ * @param {{ strictly?: boolean }} [opts] `strictly`: a root other than `path` itself
+ * @returns {string | null}
+ */
+export function rootCovering(path, roots, { strictly = false } = {}) {
+  if (!path) return null;
+  let best = null;
+  for (const root of roots) {
+    if (strictly && root === path) continue;
+    if (path === root || path.startsWith(`${root}/`)) {
+      if (best === null || root.length > best.length) best = root;
+    }
+  }
+  return best;
+}
+
+/**
+ * What the "Remove library" confirmation says. Two cases, and the difference
+ * is what the person needs to know before pressing the button.
+ *
+ * - A library that sits inside another one loses nothing: its photos stay in
+ *   the outer library's index. Only its listing as a library of its own goes.
+ * - Otherwise the photos leave the index. Everything that matters about them
+ *   lives in files that stay put (the .xmp sidecars, the folders' story notes),
+ *   so adding the folder back brings it all back.
+ * @param {string} path
+ * @param {string[]} roots every registered library
+ * @param {number} [frames] how many photos it holds, if known
+ * @returns {string}
+ */
+export function removeLibraryNote(path, roots, frames) {
+  const outer = rootCovering(path, roots, { strictly: true });
+  if (outer) {
+    const name = outer.split("/").pop() || outer;
+    return `Nothing leaves your library: this folder sits inside “${name}”, which keeps all of its photos. Reveal only stops listing it as a library of its own. No file is touched.`;
+  }
+  const count = frames === undefined ? "photos" : `${frames.toLocaleString("en-CA")} photos`;
+  return `No file is deleted. Reveal forgets this library and its ${count} from its index. Ratings, captions and tags live in each photo's .xmp file and stories in each folder's note, so adding the folder back and reindexing brings everything back.`;
+}
+
 /** @param {any[]} dirs */
 export function setDirs(dirs) {
   state.dirs = dirs;

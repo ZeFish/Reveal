@@ -19,6 +19,8 @@
   import { THEME_IDS, DEFAULT_THEME } from "$lib/app-theme.js";
   import { APPLE_PHOTOS_ROOT, photoCollectionAncestors } from "./applePhotosTree.js";
 
+  import { removeLibraryNote } from "$lib/library.svelte.js";
+
   let {
     root,
     roots = [], // every catalogue root — one tree each; falls back to [root]
@@ -1012,7 +1014,7 @@
 <AlertDialog
   open={!!libraryToRemove}
   title={libraryToRemove ? `Remove “${libraryToRemove.name}” from Reveal?` : ""}
-  description="No photo is deleted — the files stay exactly where they are on disk. Reveal forgets this library, along with the ratings, captions and story marks its catalogue holds for them. Adding the folder back and reindexing restores the photos, not those marks."
+  description={libraryToRemove ? removeLibraryNote(libraryToRemove.path, roots) : ""}
   confirmLabel="Remove library" cancelLabel="Keep it" intent="danger"
   onconfirm={() => { const l = libraryToRemove; libraryToRemove = null; if (l) onRemoveLibrary(l.path); }}
   oncancel={() => { libraryToRemove = null; }} />
