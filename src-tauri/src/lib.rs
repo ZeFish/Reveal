@@ -1953,6 +1953,7 @@ pub fn run() {
             catalog::pick_folder,
             catalog::list_dir,
             catalog::set_rating,
+            catalog::tidy_plan,
             catalog::scan_root,
             catalog::scan_folder,
             catalog::add_catalog_root,

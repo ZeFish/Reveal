@@ -51,6 +51,7 @@
     onOpenLibrary,
     onRescan,
     onRescanDir,
+    onTidyFolder = () => {},
     /** @type {(path: string) => Promise<void> | void} */
     onRemoveLibrary = () => {},
     onRevealDir,
@@ -1046,6 +1047,10 @@
       {folderMenu?.path === importDir ? "✓ Active import folder" : "Set as import folder"}
     </MenuItem>
     <MenuItem label="Reindex folder" onclick={() => runFolderAction(onRescanDir)} disabled={scanning} />
+    <MenuItem
+      label="Tidy folder…"
+      onclick={() => runFolderAction(/** @type {(path: string) => void} */ (onTidyFolder))}
+    />
 
     <MenuSeparator />
 

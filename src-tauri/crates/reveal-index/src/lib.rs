@@ -626,6 +626,19 @@ impl Index {
         })
     }
 
+    /// Capture times already read for the frames under `dir` (unix seconds,
+    /// omitting those with no date). Lets a caller skip opening files whose date
+    /// the index holds already; over a network mount that is most of the cost.
+    pub fn capture_times_under(&self, dir: &str) -> Result<std::collections::HashMap<String, i64>, IndexError> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT path, capture_at FROM frames
+             WHERE capture_at > 0 AND (dir = ?1 OR substr(dir, 1, length(?1) + 1) = ?1 || '/')",
+        )?;
+        let rows = stmt.query_map([dir], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
+        Ok(rows.flatten().collect())
+    }
+
     /// Folders holding frames, with counts — Francis's folders are dates,
     /// so lexical order = chronological.
     pub fn dirs(&self) -> Result<Vec<DirRow>, IndexError> {

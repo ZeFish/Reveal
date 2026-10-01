@@ -487,3 +487,183 @@ pub(crate) async fn index_frames(
     eprintln!("index_frames min={min_rating} → {} rows", rows.len());
     Ok(rows)
 }
+
+// ---------------------------------------------------------------------- tidy
+
+/// One destination folder in a tidy plan.
+#[derive(serde::Serialize)]
+pub(crate) struct TidyGroup {
+    to_dir: String,
+    count: usize,
+    /// How many of them, by reason: (reason, count).
+    reasons: Vec<(String, usize)>,
+    /// Where they are now: (folder, count), the biggest few.
+    from_dirs: Vec<(String, usize)>,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct TidyConflict {
+    from: String,
+    to: String,
+    why: String,
+}
+
+/// A tidy plan, shaped to be read by a person: counted, grouped, and capped so
+/// a hundred thousand photos do not become a hundred thousand rows.
+#[derive(serde::Serialize)]
+pub(crate) struct TidyView {
+    root: String,
+    base: String,
+    pattern: String,
+    summary: reveal_import::tidy::Summary,
+    groups: Vec<TidyGroup>,
+    more_groups: usize,
+    /// Named folders whose photos are left alone: (folder, photos).
+    kept: Vec<(String, usize)>,
+    conflicts: Vec<TidyConflict>,
+    more_conflicts: usize,
+    /// Photos with no capture date (a few names, for recognising them).
+    undated: Vec<String>,
+}
+
+const TIDY_MAX_GROUPS: usize = 400;
+const TIDY_MAX_ROWS: usize = 200;
+
+fn tidy_view(plan: reveal_import::tidy::TidyPlan) -> TidyView {
+    use reveal_import::tidy::{Reason, Verdict};
+    use std::collections::BTreeMap;
+    let name = |p: &std::path::Path| p.to_string_lossy().into_owned();
+    let folder_of = |p: &std::path::Path| p.parent().map(name).unwrap_or_default();
+
+    let mut groups: BTreeMap<String, (usize, BTreeMap<&'static str, usize>, BTreeMap<String, usize>)> = BTreeMap::new();
+    let mut kept: BTreeMap<String, usize> = BTreeMap::new();
+    let mut conflicts = Vec::new();
+    let mut more_conflicts = 0usize;
+    let mut undated = Vec::new();
+
+    for item in &plan.items {
+        match &item.verdict {
+            Verdict::Move { reason } => {
+                let to = item.to.as_deref().map(folder_of).unwrap_or_default();
+                let g = groups.entry(to).or_default();
+                g.0 += 1;
+                let r = match reason {
+                    Reason::WrongPlace => "right day, wrong place",
+                    Reason::WrongDay => "filed under another day",
+                    Reason::NotFiled => "not in a day folder",
+                };
+                *g.1.entry(r).or_default() += 1;
+                *g.2.entry(folder_of(&item.from)).or_default() += 1;
+            }
+            Verdict::Kept { folder } => *kept.entry(folder.clone()).or_default() += 1,
+            Verdict::Conflict { why } => {
+                if conflicts.len() < TIDY_MAX_ROWS {
+                    conflicts.push(TidyConflict {
+                        from: name(&item.from),
+                        to: item.to.as_deref().map(name).unwrap_or_default(),
+                        why: why.clone(),
+                    });
+                } else {
+                    more_conflicts += 1;
+                }
+            }
+            Verdict::Undated => {
+                if undated.len() < TIDY_MAX_ROWS {
+                    undated.push(name(&item.from));
+                }
+            }
+            Verdict::InPlace => {}
+        }
+    }
+
+    let total_groups = groups.len();
+    let groups: Vec<TidyGroup> = groups
+        .into_iter()
+        .take(TIDY_MAX_GROUPS)
+        .map(|(to_dir, (count, reasons, from))| {
+            let mut from_dirs: Vec<(String, usize)> = from.into_iter().collect();
+            from_dirs.sort_by(|a, b| b.1.cmp(&a.1));
+            from_dirs.truncate(3);
+            TidyGroup {
+                to_dir,
+                count,
+                reasons: reasons.into_iter().map(|(k, v)| (k.to_string(), v)).collect(),
+                from_dirs,
+            }
+        })
+        .collect();
+
+    let mut kept: Vec<(String, usize)> = kept.into_iter().collect();
+    kept.sort_by(|a, b| b.1.cmp(&a.1));
+
+    TidyView {
+        root: name(&plan.root),
+        base: name(&plan.base),
+        pattern: plan.pattern.clone(),
+        summary: plan.summary.clone(),
+        more_groups: total_groups.saturating_sub(groups.len()),
+        groups,
+        kept,
+        conflicts,
+        more_conflicts,
+        undated,
+    }
+}
+
+/// What it would take to file `dir`'s photos by the import rule, as a plan.
+/// Reads only: no file is moved, written or deleted.
+///
+/// The rule's folders live under `base`: the import folder when there is one,
+/// else the library that holds `dir`. Dates come from the index when it has them
+/// and from the files when it does not. Progress goes out as `tidy-progress`.
+#[tauri::command]
+pub(crate) async fn tidy_plan(
+    app: tauri::AppHandle,
+    index: tauri::State<'_, IndexState>,
+    dir: String,
+) -> Result<TidyView, String> {
+    let idx = index.0.clone();
+    let library = idx
+        .library_covering(&dir)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "This folder is not inside any of your libraries, so there is nothing to tidy it into.".to_string())?;
+    let pattern = load_preferences(app.clone())
+        .get("date_folders")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or(reveal_import::DEFAULT_DATE_FORMAT)
+        .to_string();
+    // The archive the import files into, if it is inside a library; else the library itself.
+    let base = read_shell_prefs(&app)
+        .import_dir
+        .filter(|d| idx.library_covering(d).ok().flatten().is_some() && std::path::Path::new(d).is_dir())
+        .unwrap_or(library);
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = std::path::PathBuf::from(&dir);
+        let (raws, others) = reveal_import::tidy::find_photos(&root);
+        let dates = idx.capture_times_under(&dir).unwrap_or_default();
+        let progress_app = app.clone();
+        let photos = reveal_import::tidy::read_photos(
+            raws,
+            &|p: &std::path::Path| dates.get(p.to_string_lossy().as_ref()).copied(),
+            &move |done, total| {
+                let _ = progress_app.emit("tidy-progress", serde_json::json!({ "done": done, "total": total }));
+            },
+        );
+        let cfg = reveal_import::tidy::Config {
+            root: &root,
+            base: std::path::Path::new(&base),
+            pattern: &pattern,
+            now: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0),
+        };
+        let plan = reveal_import::tidy::plan(&cfg, photos, others, &|p: &std::path::Path| p.exists());
+        let _ = app.emit("tidy-progress", serde_json::json!({ "done": true }));
+        Ok(tidy_view(plan))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}

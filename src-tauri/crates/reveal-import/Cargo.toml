@@ -11,3 +11,7 @@ chrono = "0.4"
 serde = { version = "1", features = ["derive"] }
 thiserror.workspace = true
 sha2 = "0.10"
+rayon = "1"
+
+[dev-dependencies]
+rusqlite.workspace = true

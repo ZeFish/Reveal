@@ -11,6 +11,8 @@ use std::path::{Path, PathBuf};
 
 use chrono::TimeZone;
 
+pub mod tidy;
+
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Debug, thiserror::Error)]
@@ -131,7 +133,7 @@ pub const DEFAULT_DATE_FORMAT: &str = "%Y/%Y-%m-%d";
 /// would otherwise happily accept `/etc` or `../..` and write outside the
 /// archive entirely. If nothing survives, fall back to the default rather
 /// than dumping every import loose in the archive root.
-fn dated_dir(archive: &Path, format: &str, day: chrono::DateTime<chrono::Local>) -> PathBuf {
+pub fn dated_dir(archive: &Path, format: &str, day: chrono::DateTime<chrono::Local>) -> PathBuf {
     let expand = |f: &str| {
         day.format(f)
             .to_string()
@@ -149,6 +151,16 @@ fn dated_dir(archive: &Path, format: &str, day: chrono::DateTime<chrono::Local>)
         dir.push(part);
     }
     dir
+}
+
+/// The folder a photo shot at `ts` (unix seconds) belongs in, under `archive`:
+/// the rule the import follows, for anything else that has to agree with it.
+pub fn dated_dir_for_timestamp(archive: &Path, format: &str, ts: i64) -> PathBuf {
+    let day = chrono::Local
+        .timestamp_opt(ts, 0)
+        .single()
+        .unwrap_or_else(|| chrono::Local.timestamp_opt(0, 0).single().unwrap());
+    dated_dir(archive, format, day)
 }
 
 /// Copy `sources` into `<archive>/%Y/%Y-%m-%d/` by capture date (EXIF via

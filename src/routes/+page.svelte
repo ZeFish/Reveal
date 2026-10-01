@@ -43,6 +43,7 @@
   import Popover from "@stnd/ui/Popover.svelte";
   import Dialog from "@stnd/ui/Dialog.svelte";
   import Alert from "@stnd/ui/Alert.svelte";
+  import TidyPlanDialog from "@modules/tidy/TidyPlanDialog.svelte";
   import { AppController } from "$lib/controllers/AppController.js";
   import { extractGardenUrl } from "$lib/story.js";
   import { storyTheme, setStoryTheme, themeFromColors } from "$lib/story-theme.svelte.js";
@@ -485,6 +486,14 @@
   $effect(() => {
     applyFolderTheme(storyTheme.id);
   });
+
+  // The folder whose tidy plan is open, if any.
+  /** @type {string | null} */
+  let tidyDir = $state(null);
+  /** @param {string} path */
+  function openTidy(path) {
+    tidyDir = path;
+  }
 
   let minRating = $state(0);
   let scanning = $state(false);
@@ -4320,6 +4329,7 @@
           onOpenLibrary={() => openDir(library.root)}
           onRescan={rescan}
           onRescanDir={rescanDir}
+          onTidyFolder={openTidy}
           onRevealDir={revealDir}
           onAddLocation={indexRoot}
           onRemoveLibrary={removeLibrary}
@@ -4385,6 +4395,7 @@
             }}
             onRescan={rescan}
             onRescanDir={rescanDir}
+          onTidyFolder={openTidy}
             onRevealDir={revealDir}
             onAddLocation={indexRoot}
             onRemoveLibrary={removeLibrary}
@@ -5170,6 +5181,10 @@
       <span class="fullscreen-rating">{stars(view[sel].rating)}</span>
     {/if}
   </div>
+{/if}
+
+{#if tidyDir}
+  <TidyPlanDialog dir={tidyDir} onClose={() => (tidyDir = null)} />
 {/if}
 
 {#if shortcutsOpen}
