@@ -87,9 +87,36 @@
   // Without this, a thumbnail that genuinely fails (unreadable RAW, moved
   // file) looks identical to one still decoding — same quiet placeholder,
   // forever. A distinct glyph tells the two apart.
+  //
+  // A first failure is usually load, not a bad file: the decoder pool is busy
+  // (import, AI cull, export) and the protocol handler gives up. Retry a few
+  // times with a growing delay, on a fresh URL so the webview cache cannot
+  // replay the failure, before settling on the failed glyph.
+  const MAX_RETRIES = 3;
+  let attempt = $state(0);
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
+  let retryTimer;
   function handleError() {
-    failed = true;
+    if (attempt < MAX_RETRIES) {
+      clearTimeout(retryTimer);
+      retryTimer = setTimeout(() => attempt++, 600 * (attempt + 1) ** 2);
+    } else {
+      failed = true;
+    }
   }
+
+  // The virtual grid recycles cells: a new photo starts from a clean slate.
+  let lastKey = "";
+  $effect.pre(() => {
+    const key = `${path}|${previewVersion}`;
+    if (key === lastKey) return;
+    lastKey = key;
+    clearTimeout(retryTimer);
+    attempt = 0;
+    failed = false;
+    loaded = false;
+  });
+  $effect(() => () => clearTimeout(retryTimer));
 
   $effect(() => {
     if (imgEl && imgEl.complete) {
@@ -151,7 +178,7 @@
     <img
       data-no-zoom
       bind:this={imgEl}
-      src={thumbUrl(path, previewVersion)}
+      src={attempt ? `${thumbUrl(path, previewVersion)}&r=${attempt}` : thumbUrl(path, previewVersion)}
       alt={name}
       loading="eager"
       decoding="async"

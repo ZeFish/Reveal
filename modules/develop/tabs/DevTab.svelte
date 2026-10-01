@@ -99,6 +99,7 @@
     display: flex;
     flex-direction: column;
     gap: calc(var(--space-d4) * 3);
+    font-size:11px;
   }
 
   .sec-body {
