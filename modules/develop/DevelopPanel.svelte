@@ -19,6 +19,7 @@
   import { isTauri } from "$lib/api.js";
   import Icon from "$lib/components/Icon.svelte";
   import InfoBlock from "./tabs/InfoBlock.svelte";
+  import { openManual, TAB_PAGES } from "$lib/manual.js";
   import DevTab from "./tabs/DevTab.svelte";
   import CropTab from "./tabs/CropTab.svelte";
   import PresetTab from "./tabs/PresetTab.svelte";
@@ -169,6 +170,13 @@
         title="Show caption at bottom of photo"
       >
         <Icon name="subtitles" size="12px" />
+      </button>
+      <button
+        class="header-util-btn ghost"
+        onclick={() => openManual(activeTab === "dev" && !developEngine ? "develop/engines/" : TAB_PAGES[activeTab])}
+        title="Manual — about this tab"
+      >
+        <Icon name="question" size="12px" />
       </button>
       <button class="close header-util-btn ghost" onclick={() => hidePanel()} title="Close panel (⇧D)">
         <Icon name="x" size="11px" />

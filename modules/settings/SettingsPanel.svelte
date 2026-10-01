@@ -12,6 +12,7 @@
   // bridges these to the main window over Tauri events, since this window
   // shares no memory with it.
   import Icon from "$lib/components/Icon.svelte";
+  import ManualLink from "$lib/components/ManualLink.svelte";
   import Dropdown from "@stnd/ui/Dropdown.svelte";
   import DropdownItem from "@stnd/ui/DropdownItem.svelte";
   import Alert from "@stnd/ui/Alert.svelte";
@@ -850,6 +851,7 @@
             <Icon name="lightning" size="12px" />
             <span>AI CULLING &amp; AUTOMATION</span>
           </div>
+          <ManualLink page="cull/ai-cull/#what-leaves-your-mac" label="What AI culling sends, and how it works" />
           <div class="card flush list divided">
             <div class="setting-row">
               <div class="row-meta">

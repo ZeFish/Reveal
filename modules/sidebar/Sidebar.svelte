@@ -14,6 +14,7 @@
   // then LIBRARY and the Garden account row at the bottom.
   import { invoke } from "@tauri-apps/api/core";
   import Icon from "$lib/components/Icon.svelte";
+  import ManualLink from "$lib/components/ManualLink.svelte";
   import { storyTheme, setStoryTheme, THEMES } from "$lib/story-theme.svelte.js";
   import { THEME_IDS, DEFAULT_THEME } from "$lib/app-theme.js";
   import { APPLE_PHOTOS_ROOT, photoCollectionAncestors } from "./applePhotosTree.js";
@@ -987,6 +988,7 @@
         <button class="pop-primary" disabled={!pastedKey.trim() || verifying} onclick={submitKey}>
           {verifying ? "Verifying…" : "Connect"}
         </button>
+        <ManualLink page="editorial/garden/" label="Publishing to the Garden" />
       {:else}
         <span class="pop-title">Garden account</span>
         <span class="pop-user">{garden?.username}</span>
@@ -994,6 +996,7 @@
           <span class="pop-meta">{garden.tier.toUpperCase()}</span>
         {/if}
         <span class="pop-meta">{garden?.notes_count ?? 0} notes · {garden?.total_views ?? 0} views</span>
+        <ManualLink page="editorial/garden/" label="Publishing to the Garden" />
         <div class="pop-divider"></div>
         <button class="pop-danger" onclick={signOut}>Disconnect</button>
       {/if}

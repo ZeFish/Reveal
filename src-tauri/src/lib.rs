@@ -487,12 +487,21 @@ fn setup_main_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         ],
     )?;
 
+    // Help: the manual lives on the site, and the app opens it in the browser.
+    let manual = MenuItem::with_id(app, "menu-manual", "Reveal Manual", true, None::<&str>)?;
+    let help_menu = Submenu::with_items(app, "Help", true, &[&manual])?;
     let menu = Menu::with_items(
         app,
-        &[&app_menu, &edit_menu, &import_menu, &develop_menu, &export_menu, &window_menu],
+        &[&app_menu, &edit_menu, &import_menu, &develop_menu, &export_menu, &window_menu, &help_menu],
     )?;
     app.set_menu(menu)?;
     app.on_menu_event(|app, event| match event.id().as_ref() {
+        "menu-manual" => {
+            // The same address the in-app links use (src/lib/manual.js).
+            let _ = std::process::Command::new("/usr/bin/open")
+                .arg("https://reveal.photos/manual/")
+                .spawn();
+        }
         "settings" => {
             show_main_window(app);
             let _ = app.emit("open-settings-requested", ());

@@ -1,5 +1,6 @@
 <script>
   import Dialog from "@stnd/ui/Dialog.svelte";
+  import ManualLink from "$lib/components/ManualLink.svelte";
   /**
    * @typedef {Object} Props
    * @property {() => void} [onClose]
@@ -55,6 +56,9 @@
         <div class="shortcut-row"><kbd>?</kbd> / <kbd>h</kbd> <span>Show this help</span></div>
       </div>
     </div>
+    <footer class="panel-footer">
+      <ManualLink page="start/the-window/" label="The window, in the manual" />
+    </footer>
 </Dialog>
 
 <style>
@@ -75,6 +79,12 @@
   }
   .close-btn:hover {
     opacity: 1;
+  }
+  .panel-footer {
+    display: flex;
+    justify-content: flex-end;
+    padding: var(--space-d2) calc(var(--space-d4) * 5);
+    border-top: var(--stroke-width) solid var(--color-border);
   }
   .shortcuts-grid {
     padding: calc(var(--space-d4) * 5);
