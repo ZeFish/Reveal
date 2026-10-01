@@ -4834,7 +4834,7 @@
   <div
     class="app"
     role="presentation"
-    style="grid-template-columns: {showDockedPanel ? '1fr 17rem' : (layouts.dev.devPanel && !isTauri) ? '1fr 19.5rem' : '1fr'};"
+    style="grid-template-columns: {showDockedPanel ? '1fr 22rem' : (layouts.dev.devPanel && !isTauri) ? '1fr 22rem' : '1fr'};"
     onmousedown={startWindowDrag}
   >
     <DevelopView
@@ -5229,7 +5229,7 @@
     bottom: 24px;
     left: 50%;
     transform: translateX(-50%);
-    background: vavr(--color-surface-dark-1);
+    background: var(--canvas);
   }
   .cull > .body {
     flex: 1;
@@ -5421,7 +5421,7 @@
   /* ================= develop ================= */
   .app {
     display: grid;
-    grid-template-columns: 1fr 19.5rem;
+    grid-template-columns: 1fr 22rem;
     height: 100vh;
     position: relative;
     z-index: 1;

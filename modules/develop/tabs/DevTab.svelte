@@ -130,6 +130,7 @@
     flex-shrink: 0;
     text-align: right;
     font-variant-numeric: tabular-nums;
+    width: 30px;
   }
 
   /* Segmented control for the engine switch */

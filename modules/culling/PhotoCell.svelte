@@ -186,7 +186,7 @@
       onload={handleLoad}
       onerror={handleError}
       class:visible={loaded}
-      style="object-fit: {layout === 'masonry' || fill ? 'cover' : 'contain'};"
+      style="object-fit: {layout === 'masonry' || fill ? 'cover' : 'cover'};"
     />
     {#if !loaded}
       <!-- Loading — a near-empty frame with one quiet centred glyph, not a

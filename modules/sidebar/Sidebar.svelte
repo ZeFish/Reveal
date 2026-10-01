@@ -1151,7 +1151,6 @@
   /* The Frames / Editorial switch is the framework's .btn-group; this only
      places it in the card. */
   .tabs {
-    margin-bottom: var(--space-d2);
     flex-shrink: 0;
   }
 
@@ -1183,7 +1182,7 @@
   }
   .lib-row {
     gap: var(--row-gap);
-    padding: var(--space-d5) var(--space-d2);
+    padding: var(--space-d5) 0;
   }
   .lead {
     width: var(--lead);
@@ -1230,7 +1229,7 @@
     display: flex;
     align-items: center;
     gap: var(--row-gap);
-    padding: var(--space-d5) var(--space-d2);
+    padding: var(--space-d5) 0;
     margin-top: 0;
   }
   .cat-disc {
@@ -1241,11 +1240,13 @@
     width: var(--lead);
     height: 14px;
     flex-shrink: 0;
+    padding:0;
   }
   .section-main {
     text-box: cap alphabetic;
     min-width: 0;
     cursor: pointer;
+    padding:0;
   }
   .section-name {
     white-space: nowrap;
@@ -1262,7 +1263,7 @@
     /* Tight: the name's own line box already gives a row its height, and with
        6px above and below plus a gap between rows the tree read as a list of
        separate buttons rather than one outline. */
-    padding: var(--space-d5) var(--space-d2) var(--space-d5) calc(var(--space-d2) + (var(--depth) + 1) * var(--indent));
+    padding: var(--space-d5) 0 var(--space-d5) calc((var(--depth) + 1) * var(--indent));
     position: relative;
     transition: all var(--transition-fast);
   }
@@ -1375,7 +1376,6 @@
   .divider {
     height: 1px;
     background: var(--color-border);
-    margin: 0 calc(var(--space-d4) * 3);
     flex-shrink: 0;
   }
 
@@ -1385,7 +1385,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-d2);
-    padding-block: var(--space-d2);
+    padding-block-start: var(--space-d2);
   }
   .account-id {
     cursor: pointer;
