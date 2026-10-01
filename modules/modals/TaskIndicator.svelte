@@ -32,7 +32,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-d3);
-    padding: var(--space-d3) 10px var(--space-d3) var(--space-d2);
+    padding: var(--space-d3) calc(var(--space-d4) * 3) var(--space-d3) var(--space-d2);
     max-width: 220px;
     cursor: pointer;
     -webkit-app-region: no-drag;

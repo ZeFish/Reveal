@@ -154,7 +154,6 @@
   .pane-scroll {
     flex: 1;
     overflow-y: auto;
-    padding: var(--space);
     display: flex;
     flex-direction: column;
     gap: var(--space);
@@ -163,7 +162,7 @@
   .sec-body {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: calc(var(--space-d4) * 3);
   }
 
   .frow {
@@ -191,7 +190,7 @@
   .panel-select {
     width: auto;
     max-width: 170px;
-    padding: var(--space-d8) 22px var(--space-d8) var(--space-d2);
+    padding: var(--space-d8) calc(var(--space-d4) * 6) var(--space-d8) var(--space-d2);
   }
 
   .folder-pick {
@@ -199,7 +198,7 @@
     gap: var(--space-d4);
   }
   .folder-pick :global(.icon) {
-    color: color-mix(in srgb, var(--color-foreground) 55%, transparent);
+    color: var(--color-muted);
   }
 
   .panel-btn {

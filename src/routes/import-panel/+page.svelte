@@ -352,7 +352,7 @@
     background-color: transparent !important;
     background-image: none !important;
     overflow: hidden !important;
-    font-family: var(--font-header, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif);
+    font-family: var(--font-interface, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif);
     color: #e5e5e5;
   }
 
@@ -377,7 +377,7 @@
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    padding: 12px 14px;
+    padding: calc(var(--space-d4) * 3) var(--space);
     /* The whole background is a drag handle (parity with the Swift HUD's
        isMovableByWindowBackground). Buttons keep their own cursor via
        .action-btn. */
@@ -399,7 +399,7 @@
      matching the Swift HUD's `HStack { preview; VStack { … } }`. */
   .import-row {
     flex-direction: row;
-    gap: 12px;
+    gap: calc(var(--space-d4) * 3);
     align-items: stretch;
   }
 
@@ -431,7 +431,7 @@
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    margin-bottom: 12px;
+    margin-bottom: calc(var(--space-d4) * 3);
   }
 
   .subtitle {
@@ -439,7 +439,7 @@
   }
 
   .progress-container {
-    margin-bottom: 12px;
+    margin-bottom: calc(var(--space-d4) * 3);
   }
 
   .progress-text {
@@ -519,7 +519,7 @@
     align-items: center;
     justify-content: space-between;
     margin-top: auto;
-    gap: 12px;
+    gap: calc(var(--space-d4) * 3);
     pointer-events: auto;
   }
 

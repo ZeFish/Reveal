@@ -484,7 +484,7 @@
   .engine-runner {
     display: flex;
     flex-direction: column;
-    gap: 0.15rem;
+    gap: var(--space-d6);
   }
 
   /* Precision Leica Collapsible Group Header */
@@ -494,7 +494,7 @@
     align-items: center;
     gap: var(--space-d3);
     width: 100%;
-    margin-top: 10px;
+    margin-top: calc(var(--space-d4) * 3);
     margin-bottom: var(--space-d5);
     padding: var(--space-d8) 0;
     user-select: none;
@@ -503,7 +503,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: color-mix(in srgb, var(--color-foreground) 35%, transparent);
+    color: var(--color-subtle);
     transition: transform var(--duration-fast) ease, color var(--duration-fast) ease;
   }
   .group-header:hover .chevron {
@@ -518,13 +518,13 @@
   .group-line {
     flex: 1;
     height: 1px;
-    background: color-mix(in srgb, var(--color-foreground) 6%, transparent);
+    background: var(--color-surface);
   }
 
   .group-controls {
     display: flex;
     flex-direction: column;
-    gap: 1.5px;
+    gap: var(--space-d8);
   }
 
   /* Band mixer selector — the row of targets above a mixer's channel
@@ -537,7 +537,7 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-d4);
-    padding: var(--space-d4) var(--space-d8) 7px;
+    padding: var(--space-d4) var(--space-d8) var(--space-d2);
   }
   .band {
     position: relative;
@@ -558,7 +558,7 @@
   }
   .band:not(.swatch).active {
     color: var(--color-foreground);
-    background: color-mix(in srgb, var(--color-foreground) 16%, transparent);
+    background: var(--color-surface-light-3);
   }
   .band.swatch.active {
     transform: scale(1.15);
@@ -592,7 +592,7 @@
     align-items: center;
     gap: var(--space-d2);
     min-height: 20px;
-    padding: 1px 0;
+    padding: var(--stroke-width) 0;
     transition: opacity var(--duration-fast);
   }
   /* Indent the LABEL only (10px margin eaten from its own 90px box, not
@@ -602,7 +602,7 @@
      everything else). */
   .frow.sub-param .frow-label {
     width: 96px;
-    margin-left: 10px;
+    margin-left: calc(var(--space-d4) * 3);
   }
   .frow.disabled {
     opacity: 0.22;
@@ -616,7 +616,7 @@
      the shared right edge instead of sharing it. Nothing sits to a label's
      left, so it can just overflow that way uninterrupted instead. */
   .frow-label {
-    width: 106px;
+    width: var(--space-4);
     flex-shrink: 0;
     white-space: nowrap;
     transition: color var(--duration-fast);
@@ -643,7 +643,6 @@
     flex: 1;
   }
   .val {
-    min-width: 44px;
     white-space: nowrap;
     flex-shrink: 0;
     text-align: right;
@@ -677,23 +676,23 @@
 
   /* LUT Stacks */
   .lut-stack-section {
-    margin-top: 0.3rem;
+    margin-top: var(--space-d3);
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-d4);
   }
   .sub-bar {
     display: flex;
     align-items: center;
   }
   .add-lut-btn {
-    padding: 1px var(--space-d3);
+    padding: var(--stroke-width) var(--space-d3);
   }
 
   .lut-layer-card {
-    background: color-mix(in srgb, var(--color-foreground) 2.5%, transparent);
-    border: var(--stroke-width) solid color-mix(in srgb, var(--color-foreground) 7%, transparent);
-    border-radius: var(--radius-sm, 3px);
+    background: var(--color-surface);
+    border: var(--border);
+    border-radius: var(--radius-sm);
     padding: var(--space-d4) var(--space-d3);
     display: flex;
     flex-direction: column;

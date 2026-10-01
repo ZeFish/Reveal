@@ -19,19 +19,19 @@
 
 <style>
   .export-target-card {
-    padding: 1rem;
+    padding: var(--space);
     background: var(--color-surface-dark-1);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     border: var(--stroke-width) solid var(--color-border);
   }
   h3 {
-    margin: 0 0 0.4rem;
+    margin: 0 0 calc(var(--space-d4) * 2);
   }
   .desc {
-    margin: 0 0 1rem;
+    margin: 0 0 var(--space);
   }
   .publish-btn {
-    padding: 0.4rem 1rem;
+    padding: calc(var(--space-d4) * 2) var(--space);
     cursor: pointer;
   }
   .publish-btn:disabled {

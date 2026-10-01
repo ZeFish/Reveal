@@ -431,7 +431,7 @@
     display: block;
     width: 100%;
     text-align: left;
-    padding: 0.4em 0.6em;
+    padding: var(--space-d3) var(--space-d2);
     cursor: pointer;
     white-space: pre-wrap;
   }
@@ -442,8 +442,8 @@
   .row-gap-composer textarea {
     width: 100%;
     resize: none;
-    font: inherit;
-    padding: 0.4em 0.6em;
+    font: var(--font-text);
+    padding: var(--space-d3) var(--space-d2);
   }
 
   /* Masonry — columns are real elements, filled by masonryColumns above. */

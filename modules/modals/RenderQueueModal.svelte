@@ -78,48 +78,48 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 1rem 1.25rem;
+    padding: var(--space) calc(var(--space-d4) * 5);
     border-bottom: var(--stroke-width) solid var(--color-border);
   }
   .modal-header h3 {
     margin: 0;
   }
   .queue-cancel {
-    padding: 0.2rem 0.6rem;
+    padding: var(--space-d5) calc(var(--space-d4) * 2);
     cursor: pointer;
   }
   .close-btn {
     cursor: pointer;
     opacity: 0.6;
-    padding: 0.2rem;
+    padding: var(--space-d5);
   }
   .close-btn:hover {
     opacity: 1;
   }
   .modal-body {
-    padding: 1.25rem;
+    padding: calc(var(--space-d4) * 5);
     overflow-y: auto;
     flex: 1;
   }
   .empty-queue {
     opacity: 0.5;
     text-align: center;
-    padding: 2rem 0;
+    padding: var(--space-2) 0;
   }
   .queue-list {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: calc(var(--space-d4) * 3);
   }
   .queue-item {
-    padding: 0.75rem;
+    padding: calc(var(--space-d4) * 3);
     background: var(--color-surface-light-1);
     border: var(--stroke-width) solid var(--color-border);
     border-radius: var(--radius);
 
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: calc(var(--space-d4) * 2);
   }
   .queue-item-meta {
     display: flex;

@@ -327,7 +327,7 @@
     -webkit-user-drag: none;
     -webkit-user-select: none;
     user-select: none;
-    border-radius: 2px;
+    border-radius: calc(var(--radius-sm) / 2);
   }
   .matte img.visible,
   .matte.loaded img {
@@ -341,7 +341,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: color-mix(in srgb, var(--color-foreground) 3.5%, transparent);
+    background: var(--color-surface);
     color: var(--color-foreground);
     opacity: 0.16;
   }
@@ -374,8 +374,10 @@
     position: absolute;
     top: 8px;
     right: 8px;
-    width: 12px;
-    height: 12px;
+    width: 13px;
+    height: 13px;
+    padding:0;
+    border-radius: 999px;
     z-index: 10;
     cursor: pointer;
   }

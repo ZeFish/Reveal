@@ -62,7 +62,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 1rem 1.25rem;
+    padding: var(--space) calc(var(--space-d4) * 5);
     border-bottom: var(--stroke-width) solid var(--color-border);
   }
   .panel-header h2 {
@@ -71,32 +71,32 @@
   .close-btn {
     cursor: pointer;
     opacity: 0.6;
-    padding: 0.2rem;
+    padding: var(--space-d5);
   }
   .close-btn:hover {
     opacity: 1;
   }
   .shortcuts-grid {
-    padding: 1.25rem;
+    padding: calc(var(--space-d4) * 5);
     overflow-y: auto;
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 1.25rem;
+    gap: calc(var(--space-d4) * 5);
   }
   .shortcut-group h3 {
-    margin: 0 0 0.6rem 0;
+    margin: 0 0 calc(var(--space-d4) * 2) 0;
   }
   .shortcut-row {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    margin-bottom: 0.4rem;
+    gap: calc(var(--space-d4) * 2);
+    margin-bottom: calc(var(--space-d4) * 2);
   }
   .shortcut-row span {
-    margin-left: 0.2rem;
+    margin-left: var(--space-d5);
     opacity: 0.8;
   }
   kbd {
-    padding: 0.15rem 0.4rem;
+    padding: var(--space-d6) calc(var(--space-d4) * 2);
   }
 </style>

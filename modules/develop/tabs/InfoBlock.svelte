@@ -206,11 +206,10 @@
   .info-block {
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    padding: var(--space);
+    gap: calc(var(--space-d4) * 3);
   }
   .mono.dim {
-    color: color-mix(in srgb, var(--color-foreground) 45%, transparent);
+    color: var(--color-muted);
   }
 
   .caption-block {
@@ -236,7 +235,7 @@
      height and a serif/reading font (not the mono/din used everywhere
      else) so it reads as prose, not a form field. */
   .caption {
-    padding: 10px 12px;
+    padding: calc(var(--space-d4) * 3) calc(var(--space-d4) * 3);
     resize: vertical;
   }
 
@@ -266,7 +265,7 @@
     gap: var(--space-d4);
     min-height: calc(var(--font-text-size) * var(--line-height) + 8px);
     padding: var(--space-d4) var(--space-d3);
-    background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
+    background: var(--color-surface);
     border: var(--stroke-width) solid var(--color-border);
     border-radius: var(--radius);
   }
@@ -274,8 +273,8 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-d5);
-    background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
-    border-radius: 9999px;
+    background: var(--color-surface-light-2);
+    border-radius: var(--radius-lg);
     padding: var(--space-d8) var(--space-d4) var(--space-d8) var(--space-d2);
   }
   .tag-remove {
@@ -298,7 +297,7 @@
     gap: var(--space-d4);
   }
   .path {
-    color: color-mix(in srgb, var(--color-foreground) 38%, transparent);
+    color: var(--color-subtle);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

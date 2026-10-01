@@ -145,14 +145,14 @@
     <header data-tauri-drag-region>
       <span class="din title">{picked ?? "—"}</span>
       <button
-        class="header-util-btn"
+        class="header-util-btn ghost"
         onclick={() => onToggleDetached()}
         title={detached ? "Re-dock the panel" : "Detach into its own window"}
       >
         <Icon name={detached ? "arrows-in-simple" : "arrow-square-out"} size="12px" />
       </button>
       <button
-        class="header-util-btn"
+        class="header-util-btn ghost"
         aria-pressed={showClipping}
         onclick={() => toggleClipping()}
         title="Clipping warning (highlights & shadows)"
@@ -163,14 +163,14 @@
         {/if}
       </button>
       <button
-        class="header-util-btn"
+        class="header-util-btn ghost"
         aria-pressed={showCaption}
         onclick={() => toggleCaptionOverlay()}
         title="Show caption at bottom of photo"
       >
         <Icon name="subtitles" size="12px" />
       </button>
-      <button class="close" onclick={() => hidePanel()} title="Close panel (⇧D)">
+      <button class="close header-util-btn ghost" onclick={() => hidePanel()} title="Close panel (⇧D)">
         <Icon name="x" size="11px" />
       </button>
     </header>
@@ -264,31 +264,28 @@
     height: 100%;
     display: flex;
     flex-direction: column;
-    background: var(--color-surface-light-1);
   }
 
   .sticky-top {
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    background: var(--color-surface-light-1);
     z-index: 10;
+    margin-block-end: var(--space-d2);
   }
 
   header {
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    gap: var(--space-d2);
-    padding: 12px 14px 10px;
+    gap: var(--space-d4);
+    padding-block-end: var(--space-d2);
   }
   .close {
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 20px;
-    height: 20px;
   }
   header .title {
     overflow: hidden;
@@ -319,14 +316,14 @@
   .hairline {
     height: 1px;
     background: var(--color-border);
-    margin: 0 12px;
+    margin: 0 calc(var(--space-d4) * 3);
     flex-shrink: 0;
   }
 
   /* The tab bar is the framework's .btn-group — the same control as the
      engine switch and Frames / Editorial. This only places it. */
   .tab-bar {
-    margin: 0 12px var(--space-d2);
+    margin-block-end: var(--space-d2);
   }
 
   .pane-scroll {
@@ -335,5 +332,7 @@
     display: flex;
     flex-direction: column;
     /* padding is handled within the individual tab components */
+
   }
+
 </style>

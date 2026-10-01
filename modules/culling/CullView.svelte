@@ -109,17 +109,17 @@
     min-height: 360px;
   }
   .empty h1 {
-    margin: 0 0 0.6rem;
+    margin: 0 0 calc(var(--space-d4) * 2);
   }
   .empty p {
     opacity: 0.6;
-    margin: 0.2rem 0;
+    margin: var(--space-d5) 0;
   }
   .empty p.debug {
-    margin-top: 0.8rem;
+    margin-top: calc(var(--space-d4) * 3);
     opacity: 0.4;
   }
   .empty .add-library {
-    margin-top: 0.8rem;
+    margin-top: calc(var(--space-d4) * 3);
   }
 </style>

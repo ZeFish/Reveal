@@ -20,20 +20,19 @@
     height: 1px;
     background: var(--color-border);
     opacity: 0.6;
-    margin: 0.25rem 0;
+    margin: var(--space-d4) 0;
   }
 
   .pane-scroll {
     flex: 1;
     overflow-y: auto;
-    padding: var(--space);
     display: flex;
     flex-direction: column;
     gap: var(--space);
   }
 
   .empty {
-    padding: 24px 0;
+    padding: calc(var(--space-d4) * 6) 0;
     text-align: center;
   }
 </style>

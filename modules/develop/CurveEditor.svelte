@@ -284,7 +284,7 @@
     gap: var(--space-d5);
   }
   .din {
-    font-family: var(--font-header, sans-serif);
+    font-family: var(--font-interface, sans-serif);
     font-size: var(--scale-d3);
     letter-spacing: 0.08em;
     text-transform: uppercase;

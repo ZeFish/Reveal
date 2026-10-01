@@ -96,10 +96,9 @@
   .pane-scroll {
     flex: 1;
     overflow-y: auto;
-    padding: 12px 14px 20px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: calc(var(--space-d4) * 3);
   }
 
   .sec-body {
@@ -113,7 +112,7 @@
     align-items: center;
     gap: var(--space-d2);
     padding-bottom: var(--space-d3);
-    border-bottom: var(--stroke-width) solid color-mix(in srgb, var(--color-foreground) 8%, transparent);
+    border-bottom: var(--border);
   }
   .frow-label {
     width: 90px;
@@ -126,7 +125,6 @@
     min-width: 0;
   }
   .val {
-    min-width: 36px;
     white-space: nowrap;
     flex-shrink: 0;
     text-align: right;
@@ -136,7 +134,7 @@
   /* Segmented control for the engine switch */
   .engine-row {
     padding-bottom: var(--space-d3);
-    border-bottom: var(--stroke-width) solid color-mix(in srgb, var(--color-foreground) 8%, transparent);
+    border-bottom: var(--border);
   }
   .engine-scope {
     transition: opacity var(--duration-fast);

@@ -720,7 +720,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    transition: background 0.3s var(--ease-standard);
+    transition: background var(--duration-slow) var(--ease-standard);
   }
 
   /* Film roll — docked tray at bottom */
@@ -732,9 +732,9 @@
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: var(--space);
     margin: 0 var(--window-inset) var(--window-inset);
-    padding: 0.65rem 1.25rem;
+    padding: calc(var(--space-d4) * 3) calc(var(--space-d4) * 5);
     z-index: 10;
   }
   .roll-header {
@@ -750,7 +750,7 @@
   }
   .roll-strip {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-d2);
     overflow-x: auto;
     padding: var(--space-d3);
     scrollbar-width: thin;
@@ -806,7 +806,7 @@
     min-height: 0;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-    padding: 24px max(24px, 5vw) 120px;
+    padding: calc(var(--space-d4) * 6) max(24px, 5vw) calc(var(--space-d4) * 31);
     display: flex;
     flex-direction: column;
     max-width: 1100px;
@@ -821,9 +821,9 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 1rem;
+    gap: var(--space);
     text-align: center;
-    padding: 5rem 1rem;
+    padding: calc(var(--space-d4) * 21) var(--space);
     opacity: 0.6;
   }
   .empty p {
@@ -836,13 +836,13 @@
     align-items: center;
     justify-content: flex-end;
     gap: var(--space-d2);
-    margin-bottom: 1.25rem;
+    margin-bottom: calc(var(--space-d4) * 5);
   }
   .split-all-btn {
     display: inline-flex;
     align-items: center;
     gap: var(--space-d3);
-    padding: var(--space-d3) 10px;
+    padding: var(--space-d3) calc(var(--space-d4) * 3);
     cursor: pointer;
   }
 
@@ -875,7 +875,7 @@
     border-radius: var(--radius);
     overflow: hidden;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.08);
-    transition: box-shadow 0.15s var(--ease-standard), transform 0.15s var(--ease-standard);
+    transition: box-shadow var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard);
   }
   /* The drop marker is a bar on the edge the photo will land on: a vertical
      one beside this photo (same row), a horizontal one above or below it
@@ -935,7 +935,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: color-mix(in srgb, var(--color-foreground) 6%, transparent);
+    background: var(--color-surface);
     text-align: center;
     padding: var(--space-d4);
     box-sizing: border-box;
@@ -965,12 +965,12 @@
     box-sizing: border-box;
     width: 100%;
     text-align: center;
-    padding: var(--space-d3) 10px;
+    padding: var(--space-d3) calc(var(--space-d4) * 3);
   }
 
   .prose-row {
     position: relative;
-    margin: 12px 0;
+    margin: calc(var(--space-d4) * 3) 0;
     display: flex;
     justify-content: center;
   }
@@ -1026,7 +1026,7 @@
     box-sizing: border-box;
     width: 100%;
     margin: 0 auto;
-    padding: 14px 20px;
+    padding: var(--space) calc(var(--space-d4) * 5);
     resize: none;
     overflow: hidden;
     text-align: left;
@@ -1052,7 +1052,7 @@
     height: 1px;
     background: color-mix(in srgb, var(--color-border) 40%, transparent);
     opacity: 0;
-    transition: opacity 0.15s var(--ease-soft);
+    transition: opacity var(--duration-fast) var(--ease-soft);
     pointer-events: none;
   }
   .gap:hover::before {
@@ -1069,7 +1069,7 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-d3);
-    padding: var(--space-d4) 12px;
+    padding: var(--space-d4) calc(var(--space-d4) * 3);
     z-index: 2;
   }
   /* Above the first row there is nothing to hover over on the way in — the
@@ -1101,7 +1101,7 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-d2);
-    margin-top: 24px;
-    padding: 10px 22px;
+    margin-top: calc(var(--space-d4) * 6);
+    padding: calc(var(--space-d4) * 3) calc(var(--space-d4) * 6);
   }
 </style>

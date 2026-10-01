@@ -5195,7 +5195,7 @@
     position: fixed;
     top: 0;
     left: 0;
-    padding: 15px 18px 24px 18px;
+    padding: var(--space) var(--space) calc(var(--space-d4) * 6) var(--space);
     z-index: 100;
     display: inline-flex;
   }
@@ -5229,6 +5229,7 @@
     bottom: 24px;
     left: 50%;
     transform: translateX(-50%);
+    background: vavr(--color-surface-dark-1);
   }
   .cull > .body {
     flex: 1;
@@ -5286,7 +5287,7 @@
     align-items: center;
     flex-wrap: nowrap;
     white-space: nowrap;
-    gap: 12px;
+    gap: calc(var(--space-d4) * 3);
     padding: 0 var(--space);
     position: relative;
     z-index: 20;
@@ -5398,7 +5399,7 @@
     object-fit: cover;
     border-radius: var(--radius);
     flex-shrink: 0;
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-foreground) 15%, transparent);
+    box-shadow: 0 0 0 var(--stroke-width) var(--color-border);
   }
   .chip-stop {
     cursor: pointer;
@@ -5464,16 +5465,16 @@
 
   /* the panel is a floating card, not a flat column */
   aside {
-    margin: 2.2rem 0.9rem 0.9rem 0;
-    padding: 1.1rem 1rem;
+    margin: var(--space-2) var(--space) var(--space) 0;
+    padding: var(--space) var(--space);
     background: var(--color-surface-light-1);
-    border-radius: 10px;
+    border-radius: var(--radius-lg);
     box-shadow: var(--shadow-raised), var(--shadow-lift);
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 1.15rem;
-    font-size: 0.8rem;
+    gap: calc(var(--space-d4) * 5);
+    font-size: var(--scale);
   }
   .open {
     align-self: flex-start;
@@ -5503,22 +5504,22 @@
   section {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-d2);
   }
   aside h2 {
     padding: 0;
-    margin: 0 0 0.15rem;
+    margin: 0 0 var(--space-d6);
     opacity: 0.75;
   }
   .row {
     display: grid;
     grid-template-columns: 6.8rem 1fr 2.6rem;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-d2);
   }
   .row span {
     font-family: var(--font-monospace, monospace);
-    font-size: 0.6rem;
+    font-size: var(--scale-d2);
     letter-spacing: 0.04em;
     opacity: 0.7;
     white-space: nowrap;
@@ -5542,7 +5543,7 @@
     width: 100%;
   }
   textarea {
-    padding: 0.4rem 0.5rem;
+    padding: calc(var(--space-d4) * 2) var(--space-d2);
     resize: vertical;
   }
   .status {
@@ -5552,7 +5553,7 @@
   /* Collapsible sections in develop panel */
   .collapsible {
     border: var(--stroke-width) solid var(--color-border);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--color-surface-dark-1);
     overflow: hidden;
   }
@@ -5563,7 +5564,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.6rem 0.8rem;
+    padding: calc(var(--space-d4) * 2) calc(var(--space-d4) * 3);
     opacity: 0.85;
     user-select: none;
   }
@@ -5574,10 +5575,10 @@
     opacity: 0.5;
   }
   .section-content {
-    padding: 0.8rem;
+    padding: calc(var(--space-d4) * 3);
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: calc(var(--space-d4) * 3);
   }
 
   /* Catalogue-note content; Dialog supplies the shared modal shell. */
@@ -5585,7 +5586,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1rem 1.5rem;
+    padding: var(--space) calc(var(--space-d4) * 6);
     border-bottom: var(--stroke-width) solid var(--color-border);
     background: var(--color-surface-dark-1);
   }
@@ -5600,39 +5601,39 @@
     opacity: 1;
   }
   .modal-body {
-    padding: 1.5rem;
+    padding: calc(var(--space-d4) * 6);
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--space);
     max-height: 24rem;
     overflow-y: auto;
   }
   .modal-body textarea {
     width: 100%;
     height: 15rem;
-    padding: 1rem;
+    padding: var(--space);
     resize: none;
   }
   .modal-footer {
     display: flex;
     justify-content: flex-end;
-    gap: 1rem;
-    padding: 1rem 1.5rem;
+    gap: var(--space);
+    padding: var(--space) calc(var(--space-d4) * 6);
     border-top: var(--stroke-width) solid var(--color-border);
     background: var(--color-surface-dark-1);
   }
   .modal-footer button {
-    padding: 0.4rem 1.2rem;
+    padding: calc(var(--space-d4) * 2) calc(var(--space-d4) * 5);
     cursor: pointer;
   }
 
   /* Editor select in dev panel */
   .editor-select-container {
-    margin: 0.5rem 0;
+    margin: var(--space-d2) 0;
   }
   .editor-select {
     width: 100%;
-    padding: 0.3rem 0.5rem;
+    padding: var(--space-d3) var(--space-d2);
     cursor: pointer;
   }
 </style>

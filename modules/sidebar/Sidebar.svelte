@@ -1114,7 +1114,7 @@
        margin cancels the card's own inset, so these controls centre on the
        traffic lights and on the rail beside them. */
     height: var(--titlebar-height);
-    margin-top: calc(-1 * var(--window-inset));
+    margin-top: calc(var(--window-inset) * -1.5);
     flex-shrink: 0;
     display: flex;
     align-items: center;
@@ -1151,14 +1151,14 @@
   /* The Frames / Editorial switch is the framework's .btn-group; this only
      places it in the card. */
   .tabs {
-    margin: 0 12px var(--space-d3);
+    margin-bottom: var(--space-d2);
     flex-shrink: 0;
   }
 
   .tree {
     flex: 1;
     overflow-y: auto;
-    padding: var(--space-d2) var(--space-d4);
+    padding-block: var(--space-d2);
     display: flex;
     flex-direction: column;
     gap: 0;
@@ -1231,7 +1231,7 @@
     align-items: center;
     gap: var(--row-gap);
     padding: var(--space-d5) var(--space-d2);
-    margin-top: 0px;
+    margin-top: 0;
   }
   .cat-disc {
     cursor: pointer;
@@ -1276,7 +1276,7 @@
   .dir-rename {
     flex: 1;
     min-width: 0;
-    padding: 1px var(--space-d4);
+    padding: var(--stroke-width) var(--space-d4);
   }
   .disc {
     all: unset;
@@ -1292,7 +1292,7 @@
        shifting layout — the matching negative margin cancels the padding's
        footprint, so siblings sit exactly where they did before. */
     padding: var(--space-d3);
-    margin: -6px;
+    margin: calc(var(--space-d3) * -1);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1350,7 +1350,7 @@
 
   .lib-section {
     flex-shrink: 0;
-    padding: var(--space-d2) 12px 12px;
+    padding-block: var(--space-d2);
     display: flex;
     flex-direction: column;
     gap: var(--space-d3);
@@ -1375,7 +1375,7 @@
   .divider {
     height: 1px;
     background: var(--color-border);
-    margin: 0 12px;
+    margin: 0 calc(var(--space-d4) * 3);
     flex-shrink: 0;
   }
 
@@ -1385,7 +1385,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-d2);
-    padding: var(--space-d2) 12px;
+    padding-block: var(--space-d2);
   }
   .account-id {
     cursor: pointer;
@@ -1406,7 +1406,7 @@
     background: color-mix(in srgb, var(--color-accent) 15%, transparent);
   }
   .account-name {
-    color: color-mix(in srgb, var(--color-foreground) 85%, transparent);
+    color: var(--color-foreground);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1417,7 +1417,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-d2);
-    padding: 12px;
+    padding: calc(var(--space-d4) * 3);
   }
   .pop-or {
     text-align: center;
@@ -1448,8 +1448,8 @@
   .story-body {
     display: flex;
     flex-direction: column;
-    gap: 14px;
-    padding: 0 14px;
+    gap: var(--space);
+    padding: 0 var(--space);
     flex: 1;
     overflow-y: auto;
   }
@@ -1462,7 +1462,7 @@
   .theme-inner {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: calc(var(--space-d4) * 3);
   }
   .story-actions {
     display: flex;
@@ -1474,9 +1474,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 7px;
+    gap: var(--space-d2);
     width: 100%;
-    padding: 7px 12px;
+    padding: var(--space-d2) calc(var(--space-d4) * 3);
     cursor: pointer;
   }
   .publish-hero-btn:disabled {
@@ -1506,7 +1506,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-d3);
-    padding: var(--space-d3) 10px;
+    padding: var(--space-d3) calc(var(--space-d4) * 3);
     cursor: pointer;
   }
   :global(.banner-check) {

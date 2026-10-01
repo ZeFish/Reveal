@@ -117,7 +117,6 @@
   .crop-tab {
     flex: 1;
     overflow-y: auto;
-    padding: var(--space);
     display: flex;
     flex-direction: column;
     gap: var(--space);
@@ -126,7 +125,7 @@
   .section {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: calc(var(--space-d4) * 3);
   }
 
   .hairline {
@@ -161,7 +160,7 @@
   .slider-row {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: calc(var(--space-d4) * 3);
   }
 
   .val-mono {
@@ -182,6 +181,6 @@
     align-items: center;
     justify-content: center;
     gap: var(--space-d3);
-    padding: var(--space-d2) 12px;
+    padding: var(--space-d2) calc(var(--space-d4) * 3);
   }
 </style>

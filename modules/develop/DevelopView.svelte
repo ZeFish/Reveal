@@ -144,6 +144,31 @@
   let startCropBox = { x: 0, y: 0, w: 1, h: 1 };
   let cropBox = $state({ x: 0, y: 0, w: 1, h: 1 });
 
+  // The crop overlay must sit exactly on the photo as it is drawn. It used to
+  // size itself from the same max-width / max-height / aspect-ratio rules as
+  // the photo, but those only agree when the photo fills its cap; a photo
+  // shown smaller than that (a small preview, the Photo Size slider under
+  // 100%) left a frame larger than the picture. So measure the photo's own
+  // layout box (unaffected by its rotate/flip transform) and follow it.
+  /** @type {{ x: number, y: number, w: number, h: number } | null} */
+  let photoBox = $state(null);
+  const photoEl = $derived(useCanvas ? canvasEl : imgEl);
+  $effect(() => {
+    const el = photoEl;
+    if (!el || !isCropping) {
+      photoBox = null;
+      return;
+    }
+    const measure = () => {
+      photoBox = { x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight };
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    if (el.parentElement) observer.observe(el.parentElement);
+    return () => observer.disconnect();
+  });
+
   $effect(() => {
     const aspect = recipe?.crop_aspect;
     if (aspect === "original" || aspect === "free" || !aspect) {
@@ -711,10 +736,10 @@
     </div>
   {/if}
 
-  {#if isCropping && !imgFailed}
+  {#if isCropping && !imgFailed && photoBox}
     <div
-      class="crop-overlay-container photo-mat"
-      style={matStyle}
+      class="crop-overlay-container"
+      style="left: {photoBox.x}px; top: {photoBox.y}px; width: {photoBox.w}px; height: {photoBox.h}px; transform: {transformStr};"
       onpointermove={onCropPointerMove}
       onpointerup={onCropPointerUp}
       onpointercancel={onCropPointerUp}
@@ -732,10 +757,10 @@
         role="presentation"
       >
         <!-- Rule of Thirds Grid Lines -->
-        <div class="crop-grid-line h h1"></div>
-        <div class="crop-grid-line h h2"></div>
-        <div class="crop-grid-line v v1"></div>
-        <div class="crop-grid-line v v2"></div>
+        <div class="crop-grid-line horizontal at-third"></div>
+        <div class="crop-grid-line horizontal at-two-thirds"></div>
+        <div class="crop-grid-line vertical at-third"></div>
+        <div class="crop-grid-line vertical at-two-thirds"></div>
 
         <!-- Corner Handles -->
         <div class="crop-handle handle-nw" onpointerdown={(e) => startCropResize('nw', e)} role="presentation"></div>
@@ -837,7 +862,7 @@
      max-height:90% still caps the photo, so it just settles a bit smaller). */
   main.has-caption {
     flex-direction: column;
-    gap: 14px;
+    gap: var(--space);
   }
   .photo-mat {
     display: block;
@@ -851,7 +876,7 @@
     /* The mat around the print: padding in the mat colour (an <img> paints
        its background under its padding), not a border — the hairline edge
        comes from the shadow. */
-    padding: 12px;
+    padding: calc(var(--space-d4) * 3);
     background: var(--color-surface-light-1);
     box-shadow: var(--shadow), var(--shadow-glow);
     transition: all var(--transition-fast);
@@ -885,15 +910,10 @@
 
   .crop-overlay-container {
     position: absolute;
-    inset: 0;
-    margin: auto;
     z-index: 10;
     pointer-events: auto;
     overflow: hidden;
     touch-action: none;
-    border-color: transparent !important;
-    box-shadow: none !important;
-    background: transparent !important;
   }
   .crop-rect {
     position: absolute;
@@ -907,20 +927,21 @@
     background: rgba(255, 255, 255, 0.35);
     pointer-events: none;
   }
-  .crop-grid-line.h {
+  /* Named in full: a bare .h is the framework's height utility (!important). */
+  .crop-grid-line.horizontal {
     left: 0;
     right: 0;
-    height: 1px;
+    height: var(--stroke-width);
   }
-  .crop-grid-line.h1 { top: 33.333%; }
-  .crop-grid-line.h2 { top: 66.666%; }
-  .crop-grid-line.v {
+  .crop-grid-line.horizontal.at-third { top: 33.333%; }
+  .crop-grid-line.horizontal.at-two-thirds { top: 66.666%; }
+  .crop-grid-line.vertical {
     top: 0;
     bottom: 0;
-    width: 1px;
+    width: var(--stroke-width);
   }
-  .crop-grid-line.v1 { left: 33.333%; }
-  .crop-grid-line.v2 { left: 66.666%; }
+  .crop-grid-line.vertical.at-third { left: 33.333%; }
+  .crop-grid-line.vertical.at-two-thirds { left: 66.666%; }
 
   .crop-handle {
     position: absolute;
@@ -1020,8 +1041,8 @@
     transform: translateX(-50%);
     z-index: 10;
     display: flex;
-    gap: 12px;
-    padding: var(--space-d3) 14px;
+    gap: calc(var(--space-d4) * 3);
+    padding: var(--space-d3) var(--space);
   }
   .legend-item.red {
     color: var(--color-red);
@@ -1051,7 +1072,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
+    gap: var(--space-d2);
     min-width: 14rem;
     min-height: 10rem;
     color: var(--color-muted);
@@ -1100,7 +1121,7 @@
     z-index: 10;
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: var(--space-d2);
     animation: badge-in var(--duration-fast, 160ms) ease-out;
   }
   /* Empty frame: the mark goes where the eye already is, and grows enough
@@ -1120,8 +1141,8 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 10px;
-    color: color-mix(in srgb, var(--color-foreground) 28%, transparent);
+    gap: calc(var(--space-d4) * 3);
+    color: var(--color-subtle);
     user-select: none;
   }
   .empty-status {

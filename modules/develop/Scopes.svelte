@@ -357,7 +357,7 @@
     position: absolute;
     left: 6px;
     bottom: 4px;
-    font-family: var(--font-header, sans-serif);
+    font-family: var(--font-interface, sans-serif);
     font-size: 8px;
     letter-spacing: 0.1em;
     text-transform: uppercase;

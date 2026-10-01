@@ -50,7 +50,6 @@
   .tools-strip {
     display: flex;
     gap: var(--space-d2);
-    padding: 0 var(--space) 12px;
   }
 
   .tool-btn {

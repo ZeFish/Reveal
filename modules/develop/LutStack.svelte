@@ -125,7 +125,7 @@
   .lut-stack-section {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: calc(var(--space-d4) * 2);
   }
   .frow {
     display: flex;
@@ -134,7 +134,7 @@
     min-height: 16px;
   }
   .sub-bar {
-    gap: 0.5rem;
+    gap: var(--space-d2);
   }
   .spacer {
     flex: 1;
@@ -143,16 +143,16 @@
     opacity: 0.85;
   }
   .lut-layer-card {
-    background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
-    border: var(--stroke-width) solid var(--color-border);
+    background: var(--color-surface);
+    border: var(--border);
     border-radius: var(--radius);
-    padding: 0.4rem;
+    padding: calc(var(--space-d4) * 2);
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: calc(var(--space-d4) * 2);
   }
   .layer-row {
-    gap: 0.4rem;
+    gap: calc(var(--space-d4) * 2);
   }
   .din {
     opacity: 0.7;

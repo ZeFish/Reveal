@@ -1044,7 +1044,7 @@
     align-items: center;
     gap: var(--space-d2);
     width: 100%;
-    padding: var(--space-d3) 10px;
+    padding: var(--space-d3) calc(var(--space-d4) * 3);
     cursor: pointer;
   }
 
@@ -1055,16 +1055,16 @@
     flex-direction: column;
   }
   .detail-scroll {
-    padding: var(--titlebar-height) 1.5rem 1.25rem;
+    padding: var(--titlebar-height) calc(var(--space-d4) * 6) calc(var(--space-d4) * 5);
     overflow-y: auto;
     flex: 1;
     min-height: 0;
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: calc(var(--space-d4) * 5);
   }
   .save-error {
-    padding: 0 1.5rem;
+    padding: 0 calc(var(--space-d4) * 6);
   }
 
   .cache-actions { flex-wrap: wrap; gap: var(--space-half); }
@@ -1072,14 +1072,14 @@
   .section-group {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: calc(var(--space-d4) * 2);
   }
 
   .section-heading {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    padding-left: 0.25rem;
+    gap: calc(var(--space-d4) * 2);
+    padding-left: var(--space-d4);
   }
 
   /* .inset-card's overflow:hidden clips any Dropdown popover open inside it
@@ -1091,14 +1091,14 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.75rem 0.9rem;
-    gap: 1rem;
+    padding: calc(var(--space-d4) * 3) var(--space);
+    gap: var(--space);
   }
 
   .row-meta {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: calc(var(--space-d4) * 2);
     flex: 1;
     min-width: 0;
   }
@@ -1121,7 +1121,7 @@
      a narrower, monospace-set field than the 1em default. */
   .mono-input {
     box-sizing: border-box;
-    padding: 0.35rem 0.65rem;
+    padding: var(--space-d3) calc(var(--space-d4) * 3);
     width: 190px;
     max-width: 100%;
   }
@@ -1135,7 +1135,7 @@
     position: relative;
   }
   .input-with-presets .mono-input {
-    padding-right: 26px;
+    padding-right: calc(var(--space-d4) * 7);
     width: 190px;
   }
   .input-with-presets :global(.preset-toggle-btn) {
@@ -1203,7 +1203,7 @@
   }
 
   .settings-footer {
-    padding: 0.85rem 1.25rem;
+    padding: var(--space) calc(var(--space-d4) * 5);
     border-top: var(--border);
     display: flex;
     align-items: center;
@@ -1213,6 +1213,6 @@
   .footer-actions {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-d2);
   }
 </style>

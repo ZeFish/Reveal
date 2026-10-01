@@ -326,10 +326,9 @@
   .pane-scroll {
     flex: 1;
     overflow-y: auto;
-    padding: var(--space);
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    gap: var(--space);
   }
 
   section {
@@ -343,9 +342,9 @@
     gap: var(--space-d3);
   }
   .count-badge {
-    background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
-    padding: 1px var(--space-d3);
-    border-radius: 999px;
+    background: var(--color-surface-light-2);
+    padding: var(--stroke-width) var(--space-d3);
+    border-radius: var(--radius-lg);
   }
 
   .save-row {
@@ -360,14 +359,14 @@
   .panel-input {
     flex: 1;
     min-width: 0;
-    padding: 7px 9px;
+    padding: var(--space-d2) var(--space-d2);
   }
   .save-btn {
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
     gap: var(--space-d3);
-    padding: 7px 13px;
+    padding: var(--space-d2) calc(var(--space-d4) * 3);
   }
   .import-btn {
     width: 100%;
@@ -375,7 +374,7 @@
     align-items: center;
     justify-content: center;
     gap: var(--space-d3);
-    padding: var(--space-d3) 12px;
+    padding: var(--space-d3) calc(var(--space-d4) * 3);
     margin-top: var(--space-d3);
   }
   .import-note {
@@ -394,8 +393,8 @@
     flex-direction: column;
     align-items: center;
     gap: var(--space-d2);
-    padding: 28px var(--space);
-    color: color-mix(in srgb, var(--color-foreground) 30%, transparent);
+    padding: var(--space-2) var(--space);
+    color: var(--color-subtle);
     border: var(--stroke-width) dashed var(--color-border);
     border-radius: var(--radius);
   }
@@ -429,7 +428,7 @@
     aspect-ratio: 1;
     border-radius: var(--radius);
     overflow: hidden;
-    background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
+    background: var(--color-surface);
     box-shadow: var(--shadow);
     transition: box-shadow var(--duration-fast) var(--ease-soft);
   }
@@ -450,9 +449,9 @@
     height: 100%;
     background: linear-gradient(
       100deg,
-      color-mix(in srgb, var(--color-foreground) 5%, transparent) 30%,
-      color-mix(in srgb, var(--color-foreground) 10%, transparent) 50%,
-      color-mix(in srgb, var(--color-foreground) 5%, transparent) 70%
+      var(--color-surface) 30%,
+      var(--color-surface) 50%,
+      var(--color-surface) 70%
     );
     background-size: 200% 100%;
     animation: preset-thumb-pulse 1.4s ease-in-out infinite;
@@ -485,7 +484,7 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-d3);
-    padding: 0 1px;
+    padding: 0 var(--stroke-width);
   }
   .preset-name {
     min-width: 0;
