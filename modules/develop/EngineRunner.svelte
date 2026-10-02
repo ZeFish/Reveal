@@ -549,8 +549,16 @@
      (Shadows/Midtones/Highlights) stays a text chip rather than being
      assigned an arbitrary one. */
   .band.swatch {
+    flex: none;
     width: 18px;
     height: 18px;
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: var(--swatch);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
   }
   .band:not(.swatch) {
     flex: 1;
