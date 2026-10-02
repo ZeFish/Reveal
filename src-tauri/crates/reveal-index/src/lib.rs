@@ -306,6 +306,71 @@ impl Index {
         Ok(())
     }
 
+    /// Whether a folder may be moved under `dest_parent`. A folder that is a
+    /// library, or holds one, cannot go inside another library: that would nest
+    /// them, and libraries do not nest.
+    pub fn check_can_move(&self, src: &str, dest_parent: &str) -> Result<(), IndexError> {
+        let s = normal_form(src);
+        let holds_library = self.roots()?.iter().any(|r| {
+            let r = normal_form(r);
+            r == s || r.starts_with(&format!("{s}/"))
+        });
+        if !holds_library {
+            return Ok(());
+        }
+        if let Some(outer) = self.library_covering(dest_parent)? {
+            let name = |p: &str| p.rsplit('/').find(|x| !x.is_empty()).unwrap_or(p).to_string();
+            return Err(IndexError::Nested(format!(
+                "\u{201c}{}\u{201d} is, or contains, a library, and \u{201c}{}\u{201d} is already one. Libraries can\u{2019}t be nested, so it isn\u{2019}t moved.",
+                name(src),
+                name(&outer)
+            )));
+        }
+        Ok(())
+    }
+
+    /// A folder was renamed or moved on disk: carry the index with it. Library
+    /// roots at or under `old` follow to `new`, and so do the photos' rows, so
+    /// their ratings and remembered hashes survive. Rows that end up outside
+    /// every library (the folder was moved out of one) are forgotten; the files
+    /// are untouched.
+    pub fn relocate(&self, old: &str, new: &str) -> Result<(), IndexError> {
+        let old = old.trim_end_matches('/');
+        let new = new.trim_end_matches('/');
+        // The same place has two spellings on macOS; rows may use either.
+        let mut pairs = vec![(old.to_string(), new.to_string())];
+        if old.starts_with('/') && !old.starts_with("/System/Volumes/Data/") {
+            pairs.push((format!("/System/Volumes/Data{old}"), format!("/System/Volumes/Data{new}")));
+        }
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        for (o, n) in &pairs {
+            tx.execute(
+                "UPDATE OR IGNORE roots SET path = ?2 || substr(path, length(?1) + 1)
+                 WHERE path = ?1 OR substr(path, 1, length(?1) + 1) = ?1 || '/'",
+                [o, n],
+            )?;
+            tx.execute(
+                "UPDATE frames SET path = ?2 || substr(path, length(?1) + 1),
+                                   dir = ?2 || substr(dir, length(?1) + 1)
+                 WHERE substr(path, 1, length(?1) + 1) = ?1 || '/'",
+                [o, n],
+            )?;
+            tx.execute(
+                "DELETE FROM frames
+                 WHERE substr(path, 1, length(?1) + 1) = ?1 || '/'
+                   AND NOT EXISTS (
+                     SELECT 1 FROM roots r
+                     WHERE frames.path = r.path
+                        OR substr(frames.path, 1, length(r.path) + 1) = r.path || '/'
+                   )",
+                [n],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     /// The registered root that contains `path` (longest match wins for
     /// nested roots) — used to validate a subtree rescan against the set.
     pub fn root_containing(&self, path: &str) -> Result<Option<String>, IndexError> {
@@ -746,6 +811,82 @@ mod tests {
 
     fn write_raw(dir: &Path, name: &str) {
         std::fs::write(dir.join(name), b"fake raw bytes").unwrap();
+    }
+
+    fn insert_frame(index: &Index, path: &str, rating: i64) {
+        let dir = path.rsplit_once('/').unwrap().0;
+        let name = path.rsplit_once('/').unwrap().1;
+        let conn = index.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO frames(path, dir, name, mtime, rating) VALUES(?1, ?2, ?3, 1, ?4)",
+            rusqlite::params![path, dir, name, rating],
+        )
+        .unwrap();
+    }
+
+    fn rating_of(index: &Index, path: &str) -> Option<i64> {
+        let conn = index.conn.lock().unwrap();
+        conn.query_row("SELECT rating FROM frames WHERE path=?1", [path], |r| r.get(0)).ok()
+    }
+
+    #[test]
+    fn renaming_a_library_folder_carries_the_root_and_the_photos_with_it() {
+        let dir = scratch_dir("relocate-rename");
+        let index = open_index(&dir);
+        index.add_root("/p/Photos").unwrap();
+        insert_frame(&index, "/p/Photos/2026/a.raf", 4);
+        insert_frame(&index, "/p/Other/b.raf", 1);
+
+        index.relocate("/p/Photos", "/p/Archive").unwrap();
+
+        assert_eq!(index.roots().unwrap(), vec!["/p/Archive".to_string()]);
+        assert_eq!(rating_of(&index, "/p/Archive/2026/a.raf"), Some(4), "rating survives");
+        assert_eq!(rating_of(&index, "/p/Photos/2026/a.raf"), None);
+        assert_eq!(index.dirs().unwrap().iter().filter(|d| d.dir == "/p/Archive/2026").count(), 1);
+    }
+
+    #[test]
+    fn a_folder_inside_a_library_moves_without_touching_its_siblings() {
+        let dir = scratch_dir("relocate-inside");
+        let index = open_index(&dir);
+        index.add_root("/p/Lib").unwrap();
+        insert_frame(&index, "/p/Lib/a/1.raf", 2);
+        insert_frame(&index, "/p/Lib/ab/2.raf", 3);
+        index.relocate("/p/Lib/a", "/p/Lib/z/a").unwrap();
+        assert_eq!(rating_of(&index, "/p/Lib/z/a/1.raf"), Some(2));
+        assert_eq!(rating_of(&index, "/p/Lib/ab/2.raf"), Some(3), "a longer name sharing the prefix is not a child");
+        assert_eq!(index.roots().unwrap(), vec!["/p/Lib".to_string()]);
+    }
+
+    #[test]
+    fn moving_a_folder_out_of_every_library_forgets_its_rows_only() {
+        let dir = scratch_dir("relocate-out");
+        let index = open_index(&dir);
+        index.add_root("/p/Lib").unwrap();
+        insert_frame(&index, "/p/Lib/a/1.raf", 2);
+        insert_frame(&index, "/p/Lib/keep.raf", 5);
+        index.relocate("/p/Lib/a", "/elsewhere/a").unwrap();
+        assert_eq!(rating_of(&index, "/elsewhere/a/1.raf"), None);
+        assert_eq!(rating_of(&index, "/p/Lib/keep.raf"), Some(5));
+    }
+
+    #[test]
+    fn a_library_cannot_be_moved_into_another_and_a_plain_folder_can() {
+        let dir = scratch_dir("move-check");
+        let index = open_index(&dir);
+        index.add_root("/p/Lib").unwrap();
+        index.add_root("/q/Other").unwrap();
+        index.add_root("/q/Parent").unwrap_or(());
+        // A library into a library: nesting.
+        assert!(matches!(index.check_can_move("/q/Other", "/p/Lib/sub"), Err(IndexError::Nested(_))));
+        // A folder that contains a library, into a library: also nesting.
+        let index2 = open_index(&scratch_dir("move-check-2"));
+        index2.add_root("/q/Group/Inner").unwrap();
+        index2.add_root("/p/Lib").unwrap();
+        assert!(matches!(index2.check_can_move("/q/Group", "/p/Lib"), Err(IndexError::Nested(_))));
+        // A plain folder in a library, anywhere: fine. A library out of all libraries: fine.
+        assert!(index.check_can_move("/p/Lib/a", "/p/Lib/b").is_ok());
+        assert!(index.check_can_move("/q/Other", "/somewhere/else").is_ok());
     }
 
     #[test]

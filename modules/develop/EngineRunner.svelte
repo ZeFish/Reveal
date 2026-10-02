@@ -494,8 +494,7 @@
     align-items: center;
     gap: var(--space-d3);
     width: 100%;
-    margin-top: calc(var(--space-d4) * 3);
-    margin-bottom: var(--space-d5);
+    margin: 0;
     padding: var(--space-d8) 0;
     user-select: none;
   }
@@ -525,6 +524,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-d8);
+    margin-left: var(--space-d4);
   }
 
   /* Band mixer selector — the row of targets above a mixer's channel
@@ -622,6 +622,7 @@
     transition: color var(--duration-fast);
     cursor: default;
     text-align: right;
+    font-family: var(--font-interface);
   }
   .reset-label {
     /* Standard's base :where(button) rule (packages/styles/_standard-13-

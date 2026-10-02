@@ -202,21 +202,47 @@ pub(crate) async fn move_photo(path: String, dest_dir: String) -> Result<String,
             ));
         }
 
-        // The RAW must move; its companions are best-effort so a missing
-        // sidecar or jpg never blocks the frame from landing.
+        // A sidecar already waiting at the destination belongs to something
+        // else (an orphan, or another photo's decisions). A rename would
+        // replace it without a word, so refuse before anything moves.
+        let sidecar = reveal_meta::sidecar_path(&src);
+        let dest_sidecar = reveal_meta::sidecar_path(&new_path);
+        if sidecar.exists() && dest_sidecar.exists() {
+            return Err(format!(
+                "a sidecar named \u{201c}{}\u{201d} already exists in the destination folder",
+                dest_sidecar.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+            ));
+        }
+
         move_one(&src, &new_path).map_err(|e| format!("move failed: {e}"))?;
 
-        let sidecar = reveal_meta::sidecar_path(&src);
+        // The sidecar holds the photo's decisions: if it cannot follow, the
+        // frame goes back rather than leaving them behind in the old folder.
         if sidecar.exists() {
-            let _ = move_one(&sidecar, &reveal_meta::sidecar_path(&new_path));
+            if let Err(e) = move_one(&sidecar, &dest_sidecar) {
+                return match move_one(&new_path, &src) {
+                    Ok(()) => Err(format!("could not move the sidecar, so the photo stayed where it was: {e}")),
+                    Err(back) => Err(format!(
+                        "could not move the sidecar ({e}), and the photo could not be put back ({back}); it is now at {}",
+                        new_path.display()
+                    )),
+                };
+            }
         }
+        // The camera's JPEG travels too, whatever its capitalisation. Best
+        // effort: a missing one never blocks the frame from landing.
         if let Some(stem) = src.file_stem() {
-            let jpg = src_dir.join(format!("{}.jpg", stem.to_string_lossy()));
-            if let Some(name) = jpg.file_name() {
-                let dest_jpg = dest_dir.join(name);
-                if jpg.exists() && !dest_jpg.exists() {
+            for ext in ["jpg", "JPG", "jpeg", "JPEG"] {
+                let name = format!("{}.{ext}", stem.to_string_lossy());
+                let jpg = src_dir.join(&name);
+                if !jpg.exists() {
+                    continue;
+                }
+                let dest_jpg = dest_dir.join(&name);
+                if !dest_jpg.exists() {
                     let _ = move_one(&jpg, &dest_jpg);
                 }
+                break;
             }
         }
         eprintln!("moved: {} → {}", src.display(), new_path.display());
@@ -247,7 +273,12 @@ fn validate_dir_name(name: &str) -> Result<&str, String> {
 /// `<new-name>.md` and silently find nothing). Refuses to overwrite an
 /// existing folder at the new name. The caller reindexes to reconcile.
 #[tauri::command]
-pub(crate) async fn rename_dir(path: String, new_name: String) -> Result<String, String> {
+pub(crate) async fn rename_dir(
+    index: tauri::State<'_, IndexState>,
+    path: String,
+    new_name: String,
+) -> Result<String, String> {
+    let idx = index.0.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let src = std::path::PathBuf::from(&path);
         let name = validate_dir_name(&new_name)?;
@@ -263,10 +294,16 @@ pub(crate) async fn rename_dir(path: String, new_name: String) -> Result<String,
             .parent()
             .ok_or_else(|| "folder has no parent".to_string())?;
         let dest = parent.join(name);
-        if dest.exists() {
+        // On a case-insensitive volume "foo" already "exists" when the folder
+        // is "Foo": that is the folder itself, and a change of case is allowed.
+        if dest.exists() && !is_same_dir(&src, &dest) {
             return Err(format!("\u{201c}{name}\u{201d} already exists"));
         }
         std::fs::rename(&src, &dest).map_err(|e| format!("rename failed: {e}"))?;
+        // A library root at or under this folder now lives at the new path.
+        if let Err(e) = idx.relocate(&path, &dest.to_string_lossy()) {
+            eprintln!("rename: index not updated: {e}");
+        }
 
         // Best-effort: the folder rename already succeeded, so a note that
         // fails to follow along is a smaller problem than pretending the
@@ -312,7 +349,12 @@ pub(crate) async fn create_dir(parent_dir: String, name: String) -> Result<Strin
 /// folder. Refuses to move a folder into itself, into its own descendant, or
 /// onto an existing folder of the same name.
 #[tauri::command]
-pub(crate) async fn move_dir(path: String, dest_parent_dir: String) -> Result<String, String> {
+pub(crate) async fn move_dir(
+    index: tauri::State<'_, IndexState>,
+    path: String,
+    dest_parent_dir: String,
+) -> Result<String, String> {
+    let idx = index.0.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let src = std::path::PathBuf::from(&path);
         let dest_parent = std::path::PathBuf::from(&dest_parent_dir);
@@ -341,9 +383,14 @@ pub(crate) async fn move_dir(path: String, dest_parent_dir: String) -> Result<St
         if !dest_parent.is_dir() {
             return Err("destination folder not found".to_string());
         }
+        // A library, or a folder holding one, cannot go inside another library.
+        idx.check_can_move(&path, &dest_parent_dir).map_err(|e| e.to_string())?;
 
         match std::fs::rename(&src, &dest) {
             Ok(()) => {
+                if let Err(e) = idx.relocate(&path, &dest.to_string_lossy()) {
+                    eprintln!("move: index not updated: {e}");
+                }
                 eprintln!("moved: {} → {}", src.display(), dest.display());
                 Ok(dest.to_string_lossy().into_owned())
             }
@@ -357,14 +404,39 @@ pub(crate) async fn move_dir(path: String, dest_parent_dir: String) -> Result<St
 }
 
 /// Rename within a volume; copy+remove across volumes (rename returns EXDEV).
+///
+/// The copy goes through a temporary file next to the destination, so a copy
+/// that fails half way never leaves a truncated file under the real name (which
+/// would also block every retry), and the source is only removed once the
+/// copy is complete.
 fn move_one(src: &std::path::Path, dest: &std::path::Path) -> std::io::Result<()> {
-    match std::fs::rename(src, dest) {
-        Ok(()) => Ok(()),
-        Err(_) => {
-            std::fs::copy(src, dest)?;
-            std::fs::remove_file(src)?;
-            Ok(())
+    if std::fs::rename(src, dest).is_ok() {
+        return Ok(());
+    }
+    let tmp = dest.with_file_name(format!(
+        ".{}.part",
+        dest.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+    ));
+    let copied = std::fs::copy(src, &tmp).and_then(|n| {
+        if n == std::fs::metadata(src)?.len() {
+            std::fs::rename(&tmp, dest)
+        } else {
+            Err(std::io::Error::new(std::io::ErrorKind::Other, "copy is shorter than the original"))
         }
+    });
+    if let Err(e) = copied {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    std::fs::remove_file(src)
+}
+
+/// Whether two paths are one folder. Differs from `==` on a case-insensitive
+/// volume, where `Foo` and `foo` name the same place.
+fn is_same_dir(a: &std::path::Path, b: &std::path::Path) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => false,
     }
 }
 
@@ -666,4 +738,52 @@ pub(crate) async fn tidy_plan(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("reveal-catalog-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn a_folder_is_the_same_folder_under_a_different_case_only_where_the_volume_says_so() {
+        let dir = scratch("same-dir");
+        let foo = dir.join("Foo");
+        std::fs::create_dir(&foo).unwrap();
+        // True on a case-insensitive volume (macOS default), false elsewhere:
+        // either way it must agree with whether the other spelling exists at all.
+        assert_eq!(is_same_dir(&foo, &dir.join("foo")), dir.join("foo").exists());
+        assert!(is_same_dir(&foo, &foo));
+        let other = dir.join("Other");
+        std::fs::create_dir(&other).unwrap();
+        assert!(!is_same_dir(&foo, &other));
+    }
+
+    #[test]
+    fn moving_a_file_leaves_no_temporary_behind_and_keeps_the_bytes() {
+        let dir = scratch("move-one");
+        let src = dir.join("a.raf");
+        std::fs::write(&src, b"original bytes").unwrap();
+        let dest = dir.join("b.raf");
+        move_one(&src, &dest).unwrap();
+        assert!(!src.exists());
+        assert_eq!(std::fs::read(&dest).unwrap(), b"original bytes");
+        assert!(!dir.join(".b.raf.part").exists());
+    }
+
+    #[test]
+    fn a_move_that_fails_leaves_the_source_alone() {
+        let dir = scratch("move-fail");
+        let src = dir.join("a.raf");
+        std::fs::write(&src, b"x").unwrap();
+        let dest = dir.join("missing-folder").join("a.raf");
+        assert!(move_one(&src, &dest).is_err());
+        assert!(src.exists(), "the original is only removed after a complete copy");
+    }
 }

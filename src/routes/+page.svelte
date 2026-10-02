@@ -2273,20 +2273,17 @@
   }
 
   // ---- renaming, creating and moving folders -------------------------------------
-  // All three touch the filesystem directly, then reconcile via `scan_root`
-  // rather than a scoped `scan_folder`: the folder's OLD path no longer
-  // exists after a rename/move, and reveal-index's walker treats an
-  // unreadable root as "saw nothing under it" — which prunes every row under
-  // that root unconditionally, not just a safe no-op. Scoping to the vanished
-  // old path specifically would still correctly prune it (same mechanism),
-  // but `scan_root` also picks up the folder's frames appearing fresh under
-  // its new path in the same pass, and walks from a root that's guaranteed
-  // to still exist. Same cost as clicking "Force Reindex" — not a new class
-  // of operation, just triggered automatically here.
-  async function reconcileAfterFileOp() {
-    if (!library.root) return;
+  // All three touch the filesystem directly. Rename and move also carry the
+  // index along on the Rust side (`relocate`): the library roots and the photos'
+  // rows follow the folder to its new path, so ratings survive and a renamed
+  // library does not go offline. Then the new location is read again.
+  async function reconcileAfterFileOp(/** @type {string} */ newPath) {
+    // The Rust side already carried the index to the new path; reading that
+    // folder again picks up anything that changed meanwhile, in whichever
+    // library it belongs to (not only the first one). A folder moved out of
+    // every library is not scanned: it is simply no longer shown.
     try {
-      await invoke("scan_root", { path: library.root });
+      await invoke("scan_folder", { path: newPath });
     } catch (_) {}
     await refreshDirs();
   }
@@ -2298,7 +2295,7 @@
   async function renameDir(path, newName) {
     try {
       const newPath = await invoke("rename_dir", { path, newName });
-      await reconcileAfterFileOp();
+      await reconcileAfterFileOp(newPath);
       if (library.curDir === path) {
         await openDir(newPath);
       } else if (library.curDir && library.curDir.startsWith(path + "/")) {
@@ -2333,7 +2330,7 @@
     const name = path.split("/").pop();
     try {
       const newPath = await invoke("move_dir", { path, destParentDir });
-      await reconcileAfterFileOp();
+      await reconcileAfterFileOp(newPath);
       if (library.curDir === path) {
         await openDir(newPath);
       } else if (library.curDir && library.curDir.startsWith(path + "/")) {
