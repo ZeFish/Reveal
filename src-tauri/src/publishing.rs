@@ -134,20 +134,6 @@ pub(crate) async fn story_set_theme(dir: String, theme: Option<String>) -> Resul
     note.save().map_err(|e| e.to_string())
 }
 
-/// Set or clear pin state on the story note. Read-modify-write from disk.
-#[tauri::command]
-pub(crate) async fn story_set_pinned(dir: String, pinned: bool, pinned_at: Option<String>) -> Result<(), String> {
-    let mut note = story::StoryNote::load(std::path::Path::new(&dir));
-    note.set_pinned(pinned, pinned_at.as_deref());
-    note.save().map_err(|e| e.to_string())
-}
-
-/// Scan folders for story notes — feeds the PINNED + RECENT lists.
-#[tauri::command]
-pub(crate) async fn list_story_notes(dirs: Vec<String>) -> Vec<story::StoryNoteInfo> {
-    story::list_story_notes(&dirs)
-}
-
 fn parse_markdown_story(raw: &str, dirp: &std::path::Path) -> (String, String) {
     let mut title = dirp.file_name().unwrap_or_default().to_string_lossy().to_string();
     let body;

@@ -1994,8 +1994,6 @@ pub fn run() {
             publishing::save_story_note,
             publishing::story_load_theme,
             publishing::story_set_theme,
-            publishing::story_set_pinned,
-            publishing::list_story_notes,
             publishing::export_local_story,
             metadata::save_caption,
             metadata::save_tags,

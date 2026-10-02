@@ -149,23 +149,6 @@ impl StoryNote {
         }
     }
 
-    /// Whether this note is pinned (frontmatter `pinned: true`).
-    pub fn pinned(&self) -> bool {
-        self.frontmatter_value("pinned").as_deref() == Some("true")
-    }
-
-    /// Set or clear pin state. `pinned = true` writes `pinned: true` plus an
-    /// optional ISO `pinned-at` timestamp (for stable ordering). `pinned = false`
-    /// removes both keys.
-    pub fn set_pinned(&mut self, pinned: bool, pinned_at: Option<&str>) {
-        if pinned {
-            self.set_frontmatter("pinned", Some("true"));
-            self.set_frontmatter("pinned-at", pinned_at);
-        } else {
-            self.set_frontmatter("pinned", None);
-            self.set_frontmatter("pinned-at", None);
-        }
-    }
 }
 
 /// Keys an earlier Reveal wrote to colour and type a story by hand. The theme
@@ -232,58 +215,6 @@ fn parse_stems(content: &str) -> Vec<String> {
             out.push(stem.to_string());
         }
         rest = &rest[end + 2..];
-    }
-    out
-}
-
-/// One story note's metadata for the sidebar's PINNED / RECENT lists.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StoryNoteInfo {
-    pub note_path: String,
-    pub folder_path: String,
-    pub folder_name: String,
-    pub mtime: f64,                    // epoch seconds
-    pub pinned: bool,
-    pub pinned_at: Option<String>,     // ISO 8601
-    pub thumb_stems: Vec<String>,      // up to 3, for the row thumbnail strip
-}
-
-/// Scan the given folders for story notes. Returns one `StoryNoteInfo` per
-/// folder whose note exists AND has at least one photo embed. Folders with no
-/// note, or an empty note, are skipped. Used to populate PINNED + RECENT.
-//
-// Wired into the app in a later task (Tauri IPC); exercised by tests today,
-// so silence the transitional dead-code lint on the lib target.
-pub fn list_story_notes(dirs: &[String]) -> Vec<StoryNoteInfo> {
-    let mut out = Vec::new();
-    for dir_s in dirs {
-        let dir = Path::new(dir_s);
-        let note = StoryNote::load(dir);
-        // skip notes with no photo embeds (not a real story)
-        let stems = parse_stems(&note.body);
-        if stems.is_empty() {
-            continue;
-        }
-        let mtime = std::fs::metadata(&note.url)
-            .and_then(|m| m.modified())
-            .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_secs_f64())
-            .unwrap_or(0.0);
-        let folder_name = dir
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
-        out.push(StoryNoteInfo {
-            note_path: note.url.to_string_lossy().to_string(),
-            folder_path: dir_s.clone(),
-            folder_name,
-            mtime,
-            pinned: note.pinned(),
-            pinned_at: note.frontmatter_value("pinned-at"),
-            thumb_stems: stems.into_iter().take(3).collect(),
-        });
     }
     out
 }
@@ -465,68 +396,6 @@ mod tests {
         let mut n = super::StoryNote::parse("---\ntheme: forest\n---\n\nbody\n", std::path::Path::new("/tmp/n.md"));
         n.set_theme(None);
         assert!(n.theme().theme.is_none());
-    }
-
-    #[test]
-    fn pinned_false_on_fresh_note() {
-        let n = super::StoryNote::parse("---\npublish: true\n---\n\nbody\n", std::path::Path::new("/tmp/n.md"));
-        assert!(!n.pinned());
-    }
-
-    #[test]
-    fn set_pinned_true_writes_pinned_and_pinned_at() {
-        let mut n = super::StoryNote::parse("---\npublish: true\n---\n\nbody\n", std::path::Path::new("/tmp/n.md"));
-        n.set_pinned(true, Some("2026-07-23T14:03:00Z"));
-        assert!(n.pinned());
-        assert_eq!(n.frontmatter_value("pinned"), Some("true".to_string()));
-        assert_eq!(n.frontmatter_value("pinned-at"), Some("2026-07-23T14:03:00Z".to_string()));
-    }
-
-    #[test]
-    fn set_pinned_false_removes_both_keys() {
-        let raw = "---\npinned: true\npinned-at: 2026-07-23T14:03:00Z\n---\n\nbody\n";
-        let mut n = super::StoryNote::parse(raw, std::path::Path::new("/tmp/n.md"));
-        n.set_pinned(false, None);
-        assert!(!n.pinned());
-        assert!(n.frontmatter_value("pinned").is_none());
-        assert!(n.frontmatter_value("pinned-at").is_none());
-    }
-
-    #[test]
-    fn set_pinned_true_without_timestamp_omits_pinned_at() {
-        let mut n = super::StoryNote::parse("---\npublish: true\n---\n\nbody\n", std::path::Path::new("/tmp/n.md"));
-        n.set_pinned(true, None);
-        assert!(n.pinned());
-        assert!(n.frontmatter_value("pinned-at").is_none());
-    }
-
-    #[test]
-    fn list_story_notes_finds_pinned_and_recent() {
-        use std::fs;
-        let tmp = tempfile::tempdir().unwrap();
-        // folder "alpha" with a pinned story
-        let alpha = tmp.path().join("alpha");
-        fs::create_dir_all(&alpha).unwrap();
-        fs::write(alpha.join("alpha.md"), "---\npinned: true\npinned-at: 2026-07-23T10:00:00Z\n---\n\n![[a1.jpg]]\n![[a2.jpg]]\n").unwrap();
-        // folder "beta" with an unpinned story
-        let beta = tmp.path().join("beta");
-        fs::create_dir_all(&beta).unwrap();
-        fs::write(beta.join("beta.md"), "---\n---\n\n![[b1.jpg]]\n").unwrap();
-        // folder "gamma" with no story (just photos) — should be skipped
-        let gamma = tmp.path().join("gamma");
-        fs::create_dir_all(&gamma).unwrap();
-        fs::write(gamma.join("photo.jpg"), b"x").unwrap();
-
-        let dirs = vec![alpha.to_string_lossy().to_string(), beta.to_string_lossy().to_string(), gamma.to_string_lossy().to_string()];
-        let notes = super::list_story_notes(&dirs);
-        assert_eq!(notes.len(), 2); // gamma skipped (no note)
-        let by_folder: std::collections::HashMap<&str, &super::StoryNoteInfo> =
-            notes.iter().map(|n| (n.folder_name.as_str(), n)).collect();
-        assert!(by_folder["alpha"].pinned);
-        assert_eq!(by_folder["alpha"].pinned_at.as_deref(), Some("2026-07-23T10:00:00Z"));
-        assert!(!by_folder["beta"].pinned);
-        assert_eq!(by_folder["alpha"].thumb_stems.len(), 2);
-        assert_eq!(by_folder["beta"].thumb_stems.len(), 1);
     }
 
     /// Proves the invariant-3 fix in `save_story_note`: a body save preserves

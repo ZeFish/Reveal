@@ -151,13 +151,6 @@
    * @property {number} notes_count
    * @property {number} total_views
    */
-  /** A story-note summary, from `list_story_notes`. */
-  /** @typedef {Object} StoryNote
-   * @property {string} notePath
-   * @property {boolean} [pinned]
-   * @property {string} [pinnedAt]
-   * @property {number} mtime
-   */
   /** A developed RGBA preview buffer returned by `develop_preview_rgba`. */
   /** @typedef {Object} RgbaPreview
    * @property {number} width
@@ -571,13 +564,6 @@
   let sortDesc = $state(false);
   let layoutMenuOpen = $state(false);
   let storyDirs = $state(new Set());
-  // Story-notes sidebar state. pinnedStories = the pinned-list order
-  // (frontmatter pinned-at descending — newest/newest-pinned at top);
-  // recentStories = newest 12 by mtime.
-  /** @type {StoryNote[]} */
-  let pinnedStories = $state([]);
-  /** @type {StoryNote[]} */
-  let recentStories = $state([]);
   /** @type {{ dirs: number; frames: number } | null} */ let indexProgress = $state(null); // {dirs, frames} while a scan walks
 
   /** @type {string | null} */ let photoPath = $state(null);
@@ -1714,35 +1700,6 @@
     try {
       storyDirs = new Set(await invoke("story_dirs", { dirs: library.dirs.map((d) => d.dir) }));
     } catch (e) {}
-    // Refresh the story-notes lists too — pin/story changes flow through here.
-    await refreshStoryNotes();
-  }
-
-  // Load every folder's story note metadata and split into the pinned list
-  // (sorted by pinned-at descending — newest/newest-pinned at top) and the
-  // recent list (mtime desc, top 12). Pinned notes may also appear in recent.
-  async function refreshStoryNotes() {
-    if (!isTauri || !library.dirs.length) {
-      pinnedStories = [];
-      recentStories = [];
-      return;
-    }
-    /** @type {any[]} */
-    let all = [];
-    try {
-      all = await invoke("list_story_notes", { dirs: library.dirs.map((d) => d.dir) });
-    } catch (e) {
-      pinnedStories = [];
-      recentStories = [];
-      return;
-    }
-    pinnedStories = all
-      .filter((n) => n.pinned)
-      // Descending by pinned-at: newest timestamp = top. reorderPinned stamps
-      // index 0 with `now` and steps down 60s per index, so a descending sort
-      // reproduces the displayed order; a new pin (now) floats to the top.
-      .sort((a, b) => (b.pinnedAt ?? "").localeCompare(a.pinnedAt ?? ""));
-    recentStories = [...all].sort((a, b) => b.mtime - a.mtime).slice(0, 12);
   }
 
 
@@ -2696,46 +2653,6 @@
     const f = view[sel];
     if (!f) return;
     await toggleStoryWithPath(f.path);
-  }
-
-  // Pin/unpin a story note. Pin state lives in frontmatter (file-first); a new
-  // pin stamps now so it floats to the top of the pinned list.
-  /**
-   * @param {string} notePath
-   * @param {boolean} pinned
-   */
-  async function setStoryPinned(notePath, pinned) {
-    const pinnedAt = pinned ? new Date().toISOString() : null;
-    const noteDir = notePath.substring(0, notePath.lastIndexOf("/"));
-    try {
-      await invoke("story_set_pinned", { dir: noteDir, pinned, pinnedAt });
-    } catch (e) {}
-    await refreshStoryNotes();
-  }
-
-  // Rewrite pinned-at across every pinned note so the chronological sort in
-  // refreshStoryNotes reproduces the displayed order: index 0 = newest (now),
-  // stride 60s. See spec "Pin ordering invariant" + "Reorder algorithm".
-  /**
-   * @param {number} fromIndex
-   * @param {number} toIndex
-   */
-  async function reorderPinned(fromIndex, toIndex) {
-    const reordered = [...pinnedStories];
-    const [moved] = reordered.splice(fromIndex, 1);
-    reordered.splice(toIndex, 0, moved);
-    const now = Date.now();
-    for (let i = 0; i < reordered.length; i++) {
-      const pinnedAt = new Date(now - i * 60_000).toISOString();
-      const noteDir = reordered[i].notePath.substring(
-        0,
-        reordered[i].notePath.lastIndexOf("/"),
-      );
-      try {
-        await invoke("story_set_pinned", { dir: noteDir, pinned: true, pinnedAt });
-      } catch (e) {}
-    }
-    await refreshStoryNotes();
   }
 
   async function publishStory() {
