@@ -22,6 +22,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { getVersion } from "@tauri-apps/api/app";
   import { isTauri } from "$lib/api.js";
+  import { updater, checkForUpdate, installUpdate } from "$lib/updater.svelte.js";
   import { TEXT_SIZES, DEFAULT_TEXT_SIZE } from "$lib/app-theme.js";
 
   /**
@@ -935,6 +936,33 @@
               </div>
               <div class="row-control"><span class="mono">{appVersion || "—"}</span></div>
             </div>
+            {#if isTauri}
+              <div class="setting-row">
+                <div class="row-meta">
+                  <span class="row-label">UPDATES</span>
+                  <span class="row-desc">
+                    {#if updater.status === "checking"}Checking…
+                    {:else if updater.status === "uptodate"}Reveal is up to date.
+                    {:else if updater.status === "available"}Reveal {updater.version} is available.
+                    {:else if updater.status === "downloading"}Downloading {updater.version}…
+                    {:else if updater.status === "ready"}Restarting…
+                    {:else if updater.status === "error"}Couldn't check for updates — {updater.error}
+                    {:else}Reveal looks for updates a few seconds after it opens.{/if}
+                  </span>
+                </div>
+                <div class="row-control">
+                  {#if updater.status === "available"}
+                    <button type="button" class="outline small action-pill-btn" onclick={installUpdate}>
+                      <span>Install &amp; restart</span>
+                    </button>
+                  {:else}
+                    <button type="button" class="outline small action-pill-btn" disabled={updater.status === "checking" || updater.status === "downloading" || updater.status === "ready"} onclick={() => checkForUpdate()}>
+                      <span>Check now</span>
+                    </button>
+                  {/if}
+                </div>
+              </div>
+            {/if}
             <div class="setting-row">
               <div class="row-meta">
                 <span class="row-desc">Free and open source — a personal darkroom, not a product. Built on the same appetite for crediting the work it stands on that it asks of anyone using it.</span>

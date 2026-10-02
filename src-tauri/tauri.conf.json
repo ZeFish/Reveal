@@ -14,6 +14,12 @@
       "desktop": {
         "schemes": ["reveal"]
       }
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDE0NTMwMTIyRUMwQTFFOEIKUldTTEhncnNJZ0ZURklNOXBrd2hXVksvUUhuenNmUmxSNjYycEZoRGpvTGF5KyswbHNGZEhFbTgK",
+      "endpoints": [
+        "https://github.com/ZeFish/Reveal/releases/latest/download/latest.json"
+      ]
     }
   },
   "app": {
@@ -51,6 +57,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "macOS": {
       "minimumSystemVersion": "11.0",
       "infoPlist": "Info.plist"

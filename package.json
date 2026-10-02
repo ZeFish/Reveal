@@ -21,13 +21,15 @@
     "@stnd/fonts": "^0.5.1",
     "@stnd/styles": "^0.13.0",
     "@stnd/ui": "^0.8.2",
-    "@tauri-apps/api": "^2.11.1"
+    "@tauri-apps/api": "^2.12.1",
+    "@tauri-apps/plugin-process": "^2.4.0",
+    "@tauri-apps/plugin-updater": "^2.13.1"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.10",
     "@sveltejs/kit": "^2.69.1",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
-    "@tauri-apps/cli": "^2.11.4",
+    "@tauri-apps/cli": "^2.12.1",
     "js-yaml": "^4.1.0",
     "sass": "^1.83.0",
     "svelte": "5.57.0",

@@ -36,6 +36,9 @@
   import TaskIndicator from "@modules/modals/TaskIndicator.svelte";
   import Toast from "@modules/modals/Toast.svelte";
   import NotificationStack from "@modules/modals/NotificationStack.svelte";
+  import UpdateCard from "@modules/modals/UpdateCard.svelte";
+  import WhatsNewModal from "@modules/modals/WhatsNewModal.svelte";
+  import { checkForUpdate, takeWhatsNew } from "$lib/updater.svelte.js";
   import ContextMenu from "@modules/menus/ContextMenu.svelte";
   import Dropdown from "@stnd/ui/Dropdown.svelte";
   import DropdownItem from "@stnd/ui/DropdownItem.svelte";
@@ -534,6 +537,19 @@
   let filmOpen = $state(true);
   let textureOpen = $state(true);
   let shortcutsOpen = $state(false);
+
+  // Updates. What changed in the version just installed shows once; then a
+  // quiet check a few seconds after launch, so it never competes with the
+  // library loading. Skipped under `tauri dev`: a dev build has no release.
+  /** @type {{ version: string, notes: string } | null} */
+  let whatsNew = $state(null);
+  $effect(() => {
+    if (!isTauri) return;
+    whatsNew = takeWhatsNew();
+    if (import.meta.env.DEV) return;
+    const timer = setTimeout(() => checkForUpdate({ quiet: true }), 8000);
+    return () => clearTimeout(timer);
+  });
   // Sidebar Garden account row — null until boot resolves the stored key.
   /** @type {GardenAccount | null} */ let gardenAccount = $state(null);
   let preferences = $state({
@@ -5112,6 +5128,7 @@
      which mode (Grid/Develop) is currently showing — an import can finish
      while you're in Develop, and you should still see it. -->
 <NotificationStack>
+  <UpdateCard />
   <Toast message={activity.message} />
   <TaskIndicator activityQueue={activity.queue} onOpen={() => setQueueOpen(true)} />
 </NotificationStack>
@@ -5151,6 +5168,9 @@
 
 {#if shortcutsOpen}
   <ShortcutsModal onClose={() => (shortcutsOpen = false)} />
+{/if}
+{#if whatsNew}
+  <WhatsNewModal version={whatsNew.version} notes={whatsNew.notes} onClose={() => (whatsNew = null)} />
 {/if}
 
 <style>
