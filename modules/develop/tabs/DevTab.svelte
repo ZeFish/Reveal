@@ -138,6 +138,11 @@
     padding-bottom: var(--space-d3);
     border-bottom: var(--border);
   }
+  /* The switch spans the panel; its buttons share the width equally. */
+  .engine-row .btn-group {
+    display: flex;
+    width: 100%;
+  }
   .engine-scope {
     transition: opacity var(--duration-fast);
     display: flex;
