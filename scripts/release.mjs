@@ -77,6 +77,14 @@ fs.writeFileSync(
   fs.readFileSync(cargoPath, "utf8").replace(/(\[workspace\.package\][^[]*?\nversion\s*=\s*")[^"]*(")/, `$1${version}$2`),
 );
 
+// Cargo.lock records the workspace crates' versions too; left alone, the next
+// build rewrites it and leaves the tree dirty right after a release.
+try {
+  execFileSync("cargo", ["update", "--workspace", "--offline"], { cwd: file("src-tauri"), stdio: "ignore" });
+} catch {
+  console.warn("Could not refresh Cargo.lock (is cargo installed?). Run `cargo update --workspace` in src-tauri.");
+}
+
 // CHANGELOG.md — newest section goes right under the title.
 const changelogPath = file("CHANGELOG.md");
 const existing = fs.readFileSync(changelogPath, "utf8");
