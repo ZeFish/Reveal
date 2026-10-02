@@ -25,6 +25,116 @@ const SKIP_DIRS: &[&str] = &[
     "@synologydrive",
 ];
 
+/// Threads that wait on the file system for `stat`. They hardly use the CPU, so
+/// there can be more of them than cores; the reads that follow keep rayon's
+/// default pool because those compete for the disks.
+static STAT_POOL: std::sync::LazyLock<rayon::ThreadPool> = std::sync::LazyLock::new(|| {
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(32)
+        .thread_name(|i| format!("index-stat-{i}"))
+        .build()
+        .expect("stat pool")
+});
+
+/// `list_folder`, tried again when the file system fails for a reason that may
+/// pass. A NAS under many requests at once answers some with a timeout or an
+/// I/O error that the next try does not repeat.
+fn list_folder_retrying(d: &Path) -> std::io::Result<Listing> {
+    let mut attempt = 0;
+    loop {
+        match list_folder(d) {
+            Ok(l) => return Ok(l),
+            // Gone, or not ours to read: asking again will not change that.
+            Err(e) if matches!(e.kind(), std::io::ErrorKind::NotFound | std::io::ErrorKind::PermissionDenied) => {
+                return Err(e)
+            }
+            Err(e) if attempt >= 3 => return Err(e),
+            Err(_) => {
+                attempt += 1;
+                std::thread::sleep(std::time::Duration::from_millis(250 * attempt));
+            }
+        }
+    }
+}
+
+/// One folder as the walk needs it.
+struct Listing {
+    /// Folders to descend into.
+    subdirs: Vec<std::path::PathBuf>,
+    /// Lower-cased names of the `.xmp` files present, so a photo's sidecar is
+    /// known without asking for it.
+    xmps: HashSet<String>,
+    /// Photos: path, folder, name, modification time.
+    batch: Vec<(String, String, String, i64)>,
+}
+
+/// List one folder: its subfolders, its sidecars and its photos with their
+/// modification times. Run for a whole level of the tree at once.
+fn list_folder(d: &Path) -> std::io::Result<Listing> {
+    let entries = std::fs::read_dir(d)?;
+    // Which sidecars exist, learned from the listing we are already reading.
+    // Asking for `NAME.RAF.xmp` on every photo meant an open per file, and most
+    // have none: a failed lookup on the NAS is still a round trip — 9.5ms a
+    // file, measured cold.
+    let mut xmps: HashSet<String> = HashSet::new();
+    let mut subdirs = Vec::new();
+    // Photos found in this folder: (path, file name). Their modification times
+    // are read together below, not one by one.
+    let mut candidates: Vec<(std::path::PathBuf, String)> = Vec::new();
+    for e in entries.flatten() {
+        let p = e.path();
+        let name = e.file_name().to_string_lossy().to_string();
+        let lower = name.to_lowercase();
+        // The listing already says whether an entry is a folder; asking
+        // `is_dir()` per entry was a `stat` each, a round trip on a NAS. Only a
+        // symlink needs the real answer (it may point at a folder).
+        let is_dir = match e.file_type() {
+            Ok(t) if t.is_symlink() => p.is_dir(),
+            Ok(t) => t.is_dir(),
+            Err(_) => p.is_dir(),
+        };
+        if is_dir {
+            if !name.starts_with('.') && !SKIP_DIRS.contains(&lower.as_str()) {
+                subdirs.push(p);
+            }
+            continue;
+        }
+        if lower.ends_with(".xmp") {
+            xmps.insert(lower);
+            continue;
+        }
+        // macOS writes a "._name.raf" AppleDouble sidecar next to every real
+        // file on NFS/SMB volumes — same extension, not a photo, and unreadable
+        // as one (permanent decode failures).
+        if name.starts_with('.') {
+            continue;
+        }
+        let Some(ext) = lower.rsplit('.').next() else { continue };
+        if !reveal_decode::RAW_EXTENSIONS.contains(&ext) {
+            continue;
+        }
+        candidates.push((p, name));
+    }
+    // One `stat` per photo for its modification time, the check that lets a
+    // rescan skip everything unchanged. On a NAS each is a round trip whose cost
+    // is waiting, not work, so they overlap: serially they were the whole cost
+    // of rescanning a library that had not changed.
+    let dir_string = d.to_string_lossy().into_owned();
+    let batch = candidates
+        .into_par_iter()
+        .map(|(p, name)| {
+            let mtime = std::fs::metadata(&p)
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            (p.to_string_lossy().into_owned(), dir_string.clone(), name, mtime)
+        })
+        .collect();
+    Ok(Listing { subdirs, xmps, batch })
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum IndexError {
     #[error("sqlite: {0}")]
@@ -446,65 +556,40 @@ impl Index {
         // index was. Failing loudly here, before any pruning happens, turns
         // that into a clear error instead of a silent wipe.
         let mut first = true;
-        while let Some(d) = stack.pop() {
-            let entries = match std::fs::read_dir(&d) {
-                Ok(e) => e,
-                Err(e) => {
-                    if first {
-                        return Err(IndexError::Io(e));
+        let mut unreadable: Vec<String> = Vec::new();
+        // The walk goes a level at a time. Every folder of a level is listed
+        // together: a cold NAS makes each listing a wait, and they overlap.
+        let mut wave: Vec<std::path::PathBuf> = std::mem::take(&mut stack);
+        while !wave.is_empty() {
+            let listings: Vec<(std::path::PathBuf, std::io::Result<Listing>)> = STAT_POOL.install(|| {
+                wave.par_iter().map(|d| (d.clone(), list_folder_retrying(d))).collect()
+            });
+            wave = Vec::new();
+            for (d, listing) in listings {
+                let listing = match listing {
+                    Ok(l) => l,
+                    Err(e) => {
+                        if first {
+                            return Err(IndexError::Io(e));
+                        }
+                        first = false;
+                        // A folder that cannot be read right now is not a folder
+                        // that is gone. Its photos stay in the index: pruning
+                        // them would lose their ratings over a timeout. (A
+                        // folder that no longer exists is pruned as before.)
+                        if e.kind() != std::io::ErrorKind::NotFound {
+                            eprintln!("index: could not read {}: {e}; keeping what it held", d.display());
+                            unreadable.push(format!("{}/", d.to_string_lossy().trim_end_matches('/')));
+                        }
+                        continue;
                     }
-                    first = false;
-                    continue; // a deeper subdir being unreadable is tolerable; prune stays scoped to what we DID see
-                }
-            };
-            first = false;
-            dirs += 1;
-            let mut batch: Vec<(String, String, String, i64)> = Vec::new(); // path,dir,name,mtime
-            // Which sidecars exist, learned from the listing we are already
-            // reading. Asking for `NAME.RAF.xmp` on every photo meant an open
-            // per file, and most have none: a failed lookup on the NAS is still
-            // a round trip — 9.5ms a file, measured cold.
-            let mut xmps: HashSet<String> = HashSet::new();
-            for e in entries.flatten() {
-                let p = e.path();
-                let name = e.file_name().to_string_lossy().to_string();
-                let lower = name.to_lowercase();
-                if p.is_dir() {
-                    if !name.starts_with('.') && !SKIP_DIRS.contains(&lower.as_str()) {
-                        stack.push(p);
-                    }
-                    continue;
-                }
-                if lower.ends_with(".xmp") {
-                    xmps.insert(lower.clone());
-                    continue;
-                }
-                // macOS writes a "._name.raf" AppleDouble sidecar next to
-                // every real file on NFS/SMB volumes — same extension, not a
-                // photo, and unreadable as one (permanent decode failures).
-                if name.starts_with('.') {
-                    continue;
-                }
-                let Some(ext) = lower.rsplit('.').next() else {
-                    continue;
                 };
-                if !reveal_decode::RAW_EXTENSIONS.contains(&ext) {
-                    continue;
-                }
-                let mtime = e
-                    .metadata()
-                    .ok()
-                    .and_then(|m| m.modified().ok())
-                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                    .map(|d| d.as_secs() as i64)
-                    .unwrap_or(0);
-                batch.push((
-                    p.to_string_lossy().into_owned(),
-                    d.to_string_lossy().into_owned(),
-                    name,
-                    mtime,
-                ));
-            }
+                first = false;
+                dirs += 1;
+                let _ = &d;
+                wave.extend(listing.subdirs);
+                let xmps = listing.xmps;
+                let batch = listing.batch;
 
             frames_seen += batch.len();
             if !batch.is_empty() {
@@ -583,6 +668,7 @@ impl Index {
                 }
             }
             on_progress(dirs, frames_seen);
+            }
         }
 
         // Prune: rows under root whose file vanished from this walk — plus
@@ -595,6 +681,7 @@ impl Index {
             let rows = stmt.query_map([&root_like], |r| r.get::<_, String>(0))?;
             rows.flatten()
                 .filter(|p| !found_paths.contains(p.as_str()))
+                .filter(|p| !unreadable.iter().any(|d| p.starts_with(d.as_str())))
                 .collect()
         };
         let removed = stale.len();
@@ -887,6 +974,30 @@ mod tests {
         // A plain folder in a library, anywhere: fine. A library out of all libraries: fine.
         assert!(index.check_can_move("/p/Lib/a", "/p/Lib/b").is_ok());
         assert!(index.check_can_move("/q/Other", "/somewhere/else").is_ok());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_folder_that_cannot_be_read_keeps_its_photos_and_a_deleted_one_loses_them() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = scratch_dir("unreadable");
+        let index = open_index(&dir);
+        for sub in ["kept", "gone", "fine"] {
+            std::fs::create_dir_all(dir.join(sub)).unwrap();
+            write_raw(&dir.join(sub), "a.raf");
+        }
+        index.add_root(&dir.to_string_lossy()).unwrap();
+        index.scan(&dir).unwrap();
+        let count = |index: &Index| index.dirs().unwrap().iter().map(|d| d.count as usize).sum::<usize>();
+        assert_eq!(count(&index), 3);
+
+        std::fs::set_permissions(dir.join("kept"), std::fs::Permissions::from_mode(0o000)).unwrap();
+        std::fs::remove_dir_all(dir.join("gone")).unwrap();
+        let result = index.scan(&dir);
+        std::fs::set_permissions(dir.join("kept"), std::fs::Permissions::from_mode(0o755)).unwrap();
+        result.unwrap();
+
+        assert_eq!(count(&index), 2, "the unreadable folder's photo stays, the deleted one's goes");
     }
 
     #[test]
