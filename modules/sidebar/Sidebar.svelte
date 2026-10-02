@@ -970,7 +970,7 @@
       <div class="account-form">
       {#if !signedIn}
         <span class="pop-title">Garden account</span>
-        <button class="pop-primary" onclick={() => onOpenUrl?.("https://standard.garden/connect/reveal")}>
+        <button class="pop-primary" onclick={async () => { try { onOpenUrl?.(await invoke("garden_begin_connect")); } catch (e) { console.error("garden connect", e); } }}>
           Connect via browser
         </button>
         <span class="pop-or">or</span>

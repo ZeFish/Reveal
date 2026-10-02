@@ -317,6 +317,81 @@ async fn garden_sign_in(app: tauri::AppHandle, api_key: String) -> Result<Garden
     sign_in_with_key(&app, &api_key).await
 }
 
+/// A browser sign-in started from THIS app: the one-time `state` the callback
+/// must echo back, and when it stops being valid.
+///
+/// `reveal://garden-callback?key=…` can be opened by any web page or document.
+/// Without this, a link could replace the signed-in Garden account with someone
+/// else's, and Reveal would then publish your photos into THEIR garden. So a
+/// callback counts only if we started the sign-in ourselves, it is recent, and
+/// it carries our nonce.
+#[derive(Default)]
+struct GardenConnectState(std::sync::Mutex<Option<(String, std::time::Instant)>>);
+
+/// How long a started browser sign-in stays valid.
+const GARDEN_CONNECT_WINDOW: std::time::Duration = std::time::Duration::from_secs(15 * 60);
+
+/// `bytes` random bytes from the system, hex-encoded. Reveal only runs on
+/// macOS, where /dev/urandom is the OS's own CSPRNG.
+fn random_hex(bytes: usize) -> Result<String, String> {
+    use std::io::Read;
+    let mut buf = vec![0u8; bytes];
+    std::fs::File::open("/dev/urandom")
+        .and_then(|mut f| f.read_exact(&mut buf))
+        .map_err(|e| format!("no randomness: {e}"))?;
+    Ok(buf.iter().map(|b| format!("{b:02x}")).collect())
+}
+
+/// An id for this Mac, kept in the app's own data folder, so each device that
+/// connects to Garden gets its own key (connecting another never signs this
+/// one out). Created on first use.
+fn garden_device_id(app: &tauri::AppHandle) -> Result<String, String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let file = dir.join("garden-device-id");
+    if let Ok(existing) = std::fs::read_to_string(&file) {
+        let existing = existing.trim();
+        if (6..=32).contains(&existing.len())
+            && existing.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return Ok(existing.to_string());
+        }
+    }
+    let id = random_hex(8)?;
+    std::fs::write(&file, &id).map_err(|e| e.to_string())?;
+    Ok(id)
+}
+
+/// Start a browser sign-in: remember a fresh nonce and hand back the page to
+/// open. The sidebar's "Connect via browser" opens exactly this URL.
+#[tauri::command]
+fn garden_begin_connect(
+    app: tauri::AppHandle,
+    pending: tauri::State<'_, GardenConnectState>,
+) -> Result<String, String> {
+    let nonce = random_hex(16)?;
+    let device = garden_device_id(&app)?;
+    *pending.0.lock().map_err(|e| e.to_string())? = Some((nonce.clone(), std::time::Instant::now()));
+    Ok(format!("https://standard.garden/connect/reveal?state={nonce}&device={device}"))
+}
+
+/// Whether a deep-link callback echoes the nonce of a sign-in we started and
+/// that is still fresh. The nonce is single-use: a match consumes it.
+fn take_connect_nonce(app: &tauri::AppHandle, state: Option<&str>) -> bool {
+    let pending = app.state::<GardenConnectState>();
+    let Ok(mut slot) = pending.0.lock() else { return false };
+    match (slot.take(), state) {
+        (Some((nonce, started)), Some(given)) => {
+            started.elapsed() < GARDEN_CONNECT_WINDOW && constant_time_eq(nonce.as_bytes(), given.as_bytes())
+        }
+        _ => false,
+    }
+}
+
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
 /// Sidebar "Sign out" — clears the stored key entirely (falls back to any
 /// vault config, same as before anyone signed in).
 #[tauri::command]
@@ -1563,6 +1638,17 @@ pub fn run() {
                         else {
                             continue;
                         };
+                        let given = url
+                            .query_pairs()
+                            .find(|(k, _)| k == "state")
+                            .map(|(_, v)| v.into_owned());
+                        if !take_connect_nonce(&dl_app, given.as_deref()) {
+                            let _ = dl_app.emit(
+                                "app-error",
+                                serde_json::json!({ "message": "Garden connection ignored: it was not started from Reveal, or it expired. Use “Connect via browser” and try again." }),
+                            );
+                            continue;
+                        }
                         let app_for_task = dl_app.clone();
                         tauri::async_runtime::spawn(async move {
                             if let Err(e) = sign_in_with_key(&app_for_task, &key).await {
@@ -1591,6 +1677,7 @@ pub fn run() {
             let shell_prefs = read_shell_prefs(app.handle());
             app.manage(FocusState(std::sync::Arc::new(std::sync::Mutex::new(shell_prefs.focus_mode))));
             app.manage(FocusPresenceState::default());
+            app.manage(GardenConnectState::default());
             app.manage(OpenFileState::default());
             app.manage(ImportState::default());
             app.manage(ImportCancelState::default());
@@ -2030,6 +2117,7 @@ pub fn run() {
             publishing::publish_photo,
             garden_sign_in,
             garden_sign_out,
+            garden_begin_connect,
             garden_refresh,
             publishing::load_story_note,
             publishing::save_story_note,
@@ -2166,5 +2254,21 @@ mod frame_packing_tests {
         let packed = pack_developed_frame(w, h, 24, 0, &rgba);
         assert_eq!(packed.len(), 16 + (w * h * 4) as usize);
         assert!(packed.len() < 12_000_000, "{} bytes", packed.len());
+    }
+    #[test]
+    fn connect_nonce_comparison_is_exact() {
+        assert!(constant_time_eq(b"abc123", b"abc123"));
+        assert!(!constant_time_eq(b"abc123", b"abc124"));
+        assert!(!constant_time_eq(b"abc123", b"abc12"));
+        assert!(!constant_time_eq(b"", b"x"));
+    }
+
+    #[test]
+    fn random_hex_is_the_right_length_and_not_constant() {
+        let a = random_hex(16).unwrap();
+        let b = random_hex(16).unwrap();
+        assert_eq!(a.len(), 32);
+        assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_ne!(a, b);
     }
 }
