@@ -48,8 +48,12 @@ pub(crate) struct FrameInfo {
 /// The RAW frames of one folder (non-recursive), with sidecar ratings.
 #[tauri::command]
 pub(crate) async fn list_dir(path: String) -> Result<Vec<FrameInfo>, String> {
+    crate::blocking(move || list_dir_blocking(&path)).await
+}
+
+fn list_dir_blocking(path: &str) -> Result<Vec<FrameInfo>, String> {
     let mut frames = Vec::new();
-    for e in std::fs::read_dir(&path).map_err(|e| e.to_string())? {
+    for e in std::fs::read_dir(path).map_err(|e| e.to_string())? {
         let Ok(e) = e else { continue };
         let p = e.path();
         // macOS writes a "._name.raf" AppleDouble sidecar next to every real
@@ -88,10 +92,14 @@ pub(crate) async fn set_rating(
     path: String,
     rating: u8,
 ) -> Result<(), String> {
-    apple_photos::update_metadata(&path, |sidecar| {
-        sidecar.rating = Some(rating.min(5));
-        Ok(())
-    })?;
+    let sidecar_path = path.clone();
+    crate::blocking(move || {
+        apple_photos::update_metadata(&sidecar_path, |sidecar| {
+            sidecar.rating = Some(rating.min(5));
+            Ok(())
+        })
+    })
+    .await?;
     if apple_photos::is_asset(&path) { return Ok(()); }
     index.0.set_rating(&path, rating.min(5)).map_err(|e| e.to_string())
 }

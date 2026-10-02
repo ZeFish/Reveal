@@ -592,7 +592,12 @@ pub(crate) async fn developed_preview_jpeg(
         out.width, out.height, out.decode_ms, out.render_ms
     );
     // One call publishes to both stores — see the contract on this function.
-    write_preview_sidecar_bytes(app, path, &out.jpeg, durable, max_px);
+    // It writes next to the RAW, which may be on the NAS: off the runtime.
+    let (app_for_write, path_for_write, bytes) = (app.clone(), path.to_string(), out.jpeg.clone());
+    let _ = crate::blocking(move || {
+        Ok(write_preview_sidecar_bytes(&app_for_write, &path_for_write, &bytes, durable, max_px))
+    })
+    .await;
     Ok(out.jpeg)
 }
 
@@ -927,7 +932,11 @@ pub(crate) async fn write_preview_sidecar(
     if !publish_generation_is_current(path, generation) {
         return Ok(());
     }
-    write_preview_sidecar_bytes(app, path, &rendered.jpeg, true, max_px);
+    let (app_for_write, path_for_write) = (app.clone(), path.to_string());
+    crate::blocking(move || {
+        Ok(write_preview_sidecar_bytes(&app_for_write, &path_for_write, &rendered.jpeg, true, max_px))
+    })
+    .await?;
     Ok(())
 }
 

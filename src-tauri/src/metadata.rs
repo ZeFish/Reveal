@@ -7,19 +7,25 @@ use crate::*;
 /// Caption (dc:description) editing — sidecar field, everything else kept.
 #[tauri::command]
 pub(crate) async fn save_caption(path: String, description: String) -> Result<(), String> {
-    apple_photos::update_metadata(&path, |sidecar| {
-        sidecar.description = if description.trim().is_empty() { None } else { Some(description) };
-        Ok(())
+    crate::blocking(move || {
+        apple_photos::update_metadata(&path, |sidecar| {
+            sidecar.description = if description.trim().is_empty() { None } else { Some(description) };
+            Ok(())
+        })
     })
+    .await
 }
 
 /// Tags (dc:subject) editing — sidecar field, everything else kept.
 #[tauri::command]
 pub(crate) async fn save_tags(path: String, tags: Vec<String>) -> Result<(), String> {
-    apple_photos::update_metadata(&path, |sidecar| {
-        sidecar.tags = tags;
-        Ok(())
+    crate::blocking(move || {
+        apple_photos::update_metadata(&path, |sidecar| {
+            sidecar.tags = tags;
+            Ok(())
+        })
     })
+    .await
 }
 
 /// AI-suggested keyword tags for one photo — reuses the same `ai_api_key`/

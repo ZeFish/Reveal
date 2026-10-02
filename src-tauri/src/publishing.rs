@@ -96,10 +96,13 @@ pub(crate) async fn story_toggle(dir: String, path: String) -> Result<Vec<String
 /// Load the raw markdown story note.
 #[tauri::command]
 pub(crate) async fn load_story_note(dir: String) -> String {
-    let dirp = std::path::Path::new(&dir);
-    let path = story::note_path(dirp);
-    std::fs::read_to_string(&path)
-        .unwrap_or_else(|_| "---\npublish: true\n---\n\n".to_string())
+    let fresh = || "---\npublish: true\n---\n\n".to_string();
+    crate::blocking(move || {
+        let path = story::note_path(std::path::Path::new(&dir));
+        Ok(std::fs::read_to_string(&path).unwrap_or_else(|_| fresh()))
+    })
+    .await
+    .unwrap_or_else(|_| fresh())
 }
 
 /// Save the story note's body, preserving the on-disk frontmatter verbatim.

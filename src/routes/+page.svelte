@@ -3811,6 +3811,10 @@
     };
   }
 
+  // A render reads the RAW and writes its preview, both possibly over the
+  // network. Past this, say so rather than spin.
+  const RENDER_TIMEOUT_MS = 60_000;
+
   /** @param {number} px @param {boolean} [live] */
   function scheduleRender(px, live = false) {
     pendingPx = px; // latest wins
@@ -3831,7 +3835,7 @@
     try {
       if (snap.engine === "rapid") {
         const res = unpackFrame(
-          await invoke("develop_preview_rgba", { path, recipe: snap, maxPx: px, live }),
+          await withTimeout(invoke("develop_preview_rgba", { path, recipe: snap, maxPx: px, live }), RENDER_TIMEOUT_MS),
         );
         if (path === photoPath) {
           renderMs = Math.round(performance.now() - t0);
@@ -3884,7 +3888,7 @@
         // "switching from rapid to spektra first makes the photo
         // disappear while I wait"). The previous render stays up until there is something
         // better to put in its place.
-        const bytes = await invoke("develop_preview", { path, recipe: snap, maxPx: px });
+        const bytes = await withTimeout(invoke("develop_preview", { path, recipe: snap, maxPx: px }), RENDER_TIMEOUT_MS);
         const url = URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" }));
         const img = new Image();
         img.src = url;
@@ -3942,9 +3946,53 @@
     const path = photoPath;
     const snapshot = recipe ? { ...recipe } : null;
     saveTimer = setTimeout(() => {
-      if (path && snapshot) invoke("save_recipe", { path, recipe: snapshot })
-        .catch((error) => { hold(`Could not save development settings: ${error}`); });
+      if (path && snapshot) saveRecipeSoon(path, snapshot);
     }, 300);
+  }
+
+  // One recipe save in flight at a time; while it runs, only the newest recipe
+  // per photo waits. Each edit used to fire its own write to the sidecar, and
+  // on a NAS that has stopped answering they all queued up behind a call that
+  // takes a minute to time out.
+  let recipeSaveBusy = false;
+  /** @type {Map<string, any>} */
+  const recipeSaveQueue = new Map();
+  /** @param {string} path @param {any} snapshot */
+  function saveRecipeSoon(path, snapshot) {
+    if (recipeSaveBusy) {
+      recipeSaveQueue.set(path, snapshot);
+      return;
+    }
+    recipeSaveBusy = true;
+    invoke("save_recipe", { path, recipe: snapshot })
+      .catch((error) => { hold(`Could not save development settings: ${error}`); })
+      .finally(() => {
+        recipeSaveBusy = false;
+        const next = recipeSaveQueue.entries().next();
+        if (!next.done) {
+          recipeSaveQueue.delete(next.value[0]);
+          saveRecipeSoon(next.value[0], next.value[1]);
+        }
+      });
+  }
+
+  /**
+   * Fail a call that has not answered in `ms`, so a drive that stopped
+   * responding shows an error instead of a spinner that never ends. The
+   * abandoned call finishes (or times out) on its own in the background.
+   * @template T
+   * @param {Promise<T>} promise @param {number} ms
+   */
+  function withTimeout(promise, ms) {
+    /** @type {ReturnType<typeof setTimeout>} */
+    let timer;
+    const limit = new Promise((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error("the drive is not answering. Check that the NAS is reachable, then try again.")),
+        ms,
+      );
+    });
+    return /** @type {Promise<T>} */ (Promise.race([promise, limit]).finally(() => clearTimeout(timer)));
   }
 
   function undoRecipeEdit() {

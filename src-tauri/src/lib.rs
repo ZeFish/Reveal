@@ -857,29 +857,35 @@ async fn notify_user(title: String, body: String) -> Result<(), String> {
 /// Open a path in Finder.
 #[tauri::command]
 async fn open_path(path: String) -> Result<(), String> {
-    apple_photos::require_file(&path)?;
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("/usr/bin/open")
-            .arg(path)
-            .status()
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(())
+    blocking(move || {
+        apple_photos::require_file(&path)?;
+        #[cfg(target_os = "macos")]
+        {
+            std::process::Command::new("/usr/bin/open")
+                .arg(path)
+                .status()
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    })
+    .await
 }
 
 /// Reveal a file in Finder with the file selected.
 #[tauri::command]
 async fn reveal_in_finder(path: String) -> Result<(), String> {
-    apple_photos::require_file(&path)?;
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("/usr/bin/open")
-            .args(["-R", &path])
-            .status()
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(())
+    blocking(move || {
+        apple_photos::require_file(&path)?;
+        #[cfg(target_os = "macos")]
+        {
+            std::process::Command::new("/usr/bin/open")
+                .args(["-R", &path])
+                .status()
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    })
+    .await
 }
 
 fn applescript_string(value: &str) -> String {
@@ -1081,25 +1087,53 @@ async fn list_external_editors() -> Vec<(String, String)> {
 
 #[tauri::command]
 async fn open_in_editor(file_path: String, app_path: String) -> Result<(), String> {
-    apple_photos::require_file(&file_path)?;
-    std::process::Command::new("open")
-        .args(&["-a", &app_path, &file_path])
-        .status()
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    blocking(move || {
+        apple_photos::require_file(&file_path)?;
+        std::process::Command::new("open")
+            .args(&["-a", &app_path, &file_path])
+            .status()
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+    .await
 }
 
 #[tauri::command]
 async fn load_catalog_note(root: String) -> String {
-    let path = std::path::Path::new(&root).join("reveal.md");
-    std::fs::read_to_string(&path)
-        .unwrap_or_else(|_| "---\ntype: reveal-catalog\ncreated: 2026-07-16\n---\n\n".to_string())
+    let fresh = || "---\ntype: reveal-catalog\ncreated: 2026-07-16\n---\n\n".to_string();
+    blocking(move || {
+        let path = std::path::Path::new(&root).join("reveal.md");
+        Ok(std::fs::read_to_string(&path).unwrap_or_else(|_| fresh()))
+    })
+    .await
+    .unwrap_or_else(|_| fresh())
 }
 
 #[tauri::command]
 async fn save_catalog_note(root: String, content: String) -> Result<(), String> {
-    let path = std::path::Path::new(&root).join("reveal.md");
-    std::fs::write(&path, content).map_err(|e| e.to_string())
+    blocking(move || {
+        let path = std::path::Path::new(&root).join("reveal.md");
+        std::fs::write(&path, content).map_err(|e| e.to_string())
+    })
+    .await
+}
+
+/// Run blocking work (file I/O, usually on the NAS) off the async runtime.
+///
+/// An `async fn` command that touches a network volume directly parks one of
+/// the runtime's few worker threads for as long as the NAS takes to answer. When
+/// the NAS stops answering, an NFS call can take minutes to time out, a few
+/// edits take every worker, and then no command at all gets a turn: renders
+/// never return and the spinner never stops. The blocking pool is wide, and
+/// holding one of its threads costs nothing else.
+pub(crate) async fn blocking<T, F>(work: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 struct IndexState(std::sync::Arc<reveal_index::Index>);
@@ -1369,7 +1403,7 @@ async fn import_xmp_presets(app: tauri::AppHandle) -> Result<Vec<xmp_preset::Imp
 /// Read the photo's sidecar (rating, tags, saved recipe). Null when none.
 #[tauri::command]
 async fn load_sidecar(path: String) -> Result<Option<reveal_meta::Sidecar>, String> {
-    reveal_meta::read(&apple_photos::metadata_path(&path)?).map_err(|e| e.to_string())
+    blocking(move || reveal_meta::read(&apple_photos::metadata_path(&path)?).map_err(|e| e.to_string())).await
 }
 
 /// Persist the recipe into the photo's sidecar, preserving the standard
@@ -1386,29 +1420,32 @@ fn write_recipe_to_sidecar(path: &std::path::Path, recipe: &reveal_engine::Recip
 
 #[tauri::command]
 async fn save_recipe(path: String, recipe: reveal_engine::Recipe) -> Result<(), String> {
-    write_recipe_to_sidecar(std::path::Path::new(&path), &recipe)
+    blocking(move || write_recipe_to_sidecar(std::path::Path::new(&path), &recipe)).await
 }
 
 #[tauri::command]
 async fn clear_recipe(path: String) -> Result<(), String> {
-    let metadata = apple_photos::metadata_path(&path)?;
-    let p = metadata.as_path();
-    apple_photos::update_metadata(&path, |sidecar| {
-        sidecar.engine = None;
-        sidecar.engine_settings = None;
-        Ok(())
-    })?;
-    // Reverting to "no engine" removes our own developed sidecar so the grid
-    // and loupe fall back to the as-shot look. The Swift-era `.reveal.jpg` is
-    // left untouched (manual cleanup later) — it stays a read-only fallback.
-    if let Some(candidate) = preview_sidecar_path(p) {
-        match std::fs::remove_file(&candidate) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e.to_string()),
+    blocking(move || {
+        let metadata = apple_photos::metadata_path(&path)?;
+        let p = metadata.as_path();
+        apple_photos::update_metadata(&path, |sidecar| {
+            sidecar.engine = None;
+            sidecar.engine_settings = None;
+            Ok(())
+        })?;
+        // Reverting to "no engine" removes our own developed sidecar so the grid
+        // and loupe fall back to the as-shot look. The Swift-era `.reveal.jpg` is
+        // left untouched (manual cleanup later) — it stays a read-only fallback.
+        if let Some(candidate) = preview_sidecar_path(p) {
+            match std::fs::remove_file(&candidate) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e.to_string()),
+            }
         }
-    }
-    Ok(())
+        Ok(())
+    })
+    .await
 }
 
 /// Per-frame develop-sidecar mtimes (ms since epoch, 0 = as-shot), parallel to
