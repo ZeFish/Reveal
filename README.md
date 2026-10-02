@@ -32,7 +32,11 @@ What is built here is the application around it: the catalogue, the indexer, the
 
 Pre-1.0 and honest about it. It is my daily tool, which means it is reliable for the paths I walk every day and rougher elsewhere. macOS is the only platform currently built and tested.
 
-The interface is in French; the code, comments and documentation are in English.
+The interface, code, comments and documentation are in English.
+
+## Install
+
+Download `Reveal.dmg` from the [latest release](https://github.com/ZeFish/Reveal/releases/latest). It is built for Apple silicon only and is not notarized by Apple, so the first launch needs right-click → **Open**. After that, Reveal checks for newer versions itself and offers to install them.
 
 ## Building
 
