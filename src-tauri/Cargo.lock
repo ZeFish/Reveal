@@ -3761,7 +3761,7 @@ dependencies = [
 
 [[package]]
 name = "reveal"
-version = "0.1.0"
+version = "0.46.0"
 dependencies = [
  "block",
  "chrono",
@@ -3792,7 +3792,7 @@ dependencies = [
 
 [[package]]
 name = "reveal-cull"
-version = "0.1.0"
+version = "0.46.0"
 dependencies = [
  "base64 0.22.1",
  "image",
@@ -3807,7 +3807,7 @@ dependencies = [
 
 [[package]]
 name = "reveal-decode"
-version = "0.1.0"
+version = "0.46.0"
 dependencies = [
  "bindgen",
  "image",
@@ -3819,7 +3819,7 @@ dependencies = [
 
 [[package]]
 name = "reveal-engine"
-version = "0.1.0"
+version = "0.46.0"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -3837,7 +3837,7 @@ dependencies = [
 
 [[package]]
 name = "reveal-import"
-version = "0.1.0"
+version = "0.46.0"
 dependencies = [
  "chrono",
  "rayon",
@@ -3850,7 +3850,7 @@ dependencies = [
 
 [[package]]
 name = "reveal-index"
-version = "0.1.0"
+version = "0.46.0"
 dependencies = [
  "rayon",
  "reveal-decode",
@@ -3862,7 +3862,7 @@ dependencies = [
 
 [[package]]
 name = "reveal-meta"
-version = "0.1.0"
+version = "0.46.0"
 dependencies = [
  "quick-xml 0.37.5",
  "serde",
@@ -3872,7 +3872,7 @@ dependencies = [
 
 [[package]]
 name = "reveal-publish"
-version = "0.1.0"
+version = "0.46.0"
 dependencies = [
  "serde",
  "serde_json",
