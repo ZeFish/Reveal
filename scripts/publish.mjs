@@ -54,6 +54,49 @@ for (const f of [tarball, signature, dmg]) {
   }
 }
 
+// 1b. Make the app runnable on a Mac that is not this one. `tauri build` links
+// libraw and lcms2 by their absolute /opt/homebrew paths, so as built it only
+// launches where Homebrew has those exact libraries (install.sh bundles them
+// for the local install; the published build needs it just as much). Copy them
+// and their whole dependency tree into Contents/libs, re-sign, and rebuild the
+// two artifacts that contain the app — the updater tarball (and its signature,
+// which covers the bytes) and the disk image.
+const run = (cmd, args, options = {}) => execFileSync(cmd, args, { stdio: "inherit", ...options });
+const app = path.join(bundle, "macos", "Reveal.app");
+const binary = path.join(app, "Contents", "MacOS", "reveal");
+try {
+  execFileSync("which", ["dylibbundler"], { stdio: "ignore" });
+} catch {
+  console.error("dylibbundler is required to publish: brew install dylibbundler");
+  process.exit(1);
+}
+console.log("Bundling native libraries…");
+run("dylibbundler", ["-od", "-b", "-x", binary, "-d", path.join(app, "Contents", "libs") + "/", "-p", "@executable_path/../libs/"]);
+run("codesign", ["--force", "--deep", "--sign", "-", app]);
+
+// Nothing may still point at Homebrew, and the signature must hold.
+const dylibs = fs.readdirSync(path.join(app, "Contents", "libs")).map((f) => path.join(app, "Contents", "libs", f));
+const leaks = [binary, ...dylibs].filter((f) => /\/opt\/homebrew|\/usr\/local/.test(execFileSync("otool", ["-L", f], { encoding: "utf8" })));
+if (leaks.length) {
+  console.error(`Still linked to Homebrew:\n  ${leaks.join("\n  ")}`);
+  process.exit(1);
+}
+run("codesign", ["--verify", "--deep", "--strict", app]);
+
+const macosDir = path.join(bundle, "macos");
+const tarballPath = path.join(macosDir, "Reveal.app.tar.gz");
+fs.rmSync(tarballPath, { force: true });
+run("tar", ["-czf", tarballPath, "-C", macosDir, "Reveal.app"], { env: { ...process.env, COPYFILE_DISABLE: "1" } });
+run("pnpm", ["tauri", "signer", "sign", "-f", KEY, "-p", "", tarballPath], { cwd: appDir });
+
+const dmgPath = path.join(bundle, "dmg", `Reveal_${version}_${process.arch === "arm64" ? "aarch64" : "x86_64"}.dmg`);
+const staging = fs.mkdtempSync(path.join(os.tmpdir(), "reveal-dmg-"));
+run("cp", ["-R", app, staging]);
+fs.symlinkSync("/Applications", path.join(staging, "Applications"));
+fs.rmSync(dmgPath, { force: true });
+run("hdiutil", ["create", "-volname", "Reveal", "-srcfolder", staging, "-ov", "-format", "UDZO", dmgPath]);
+fs.rmSync(staging, { recursive: true, force: true });
+
 // 2. latest.json. Notes are this version's section of CHANGELOG.md.
 const changelog = fs.readFileSync(path.join(appDir, "CHANGELOG.md"), "utf8");
 const section = changelog.split(/\n(?=## )/).find((s) => s.startsWith(`## ${version} `));
