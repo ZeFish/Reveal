@@ -2,7 +2,9 @@
 
 /** @param {string | null | undefined} path */
 export function photoIdentity(path) {
-  return path?.startsWith("apple-photos://") ? path.slice("apple-photos://".length).split("/")[0] : path;
+  if (path?.startsWith("apple-photos://")) return path.slice("apple-photos://".length).split("/")[0];
+  if (path?.startsWith("immich://")) return path.slice("immich://".length).split("/")[0];
+  return path;
 }
 
 /**

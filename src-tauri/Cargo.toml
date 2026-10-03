@@ -65,6 +65,7 @@ reveal-publish = { path = "crates/reveal-publish" }
 reveal-import = { path = "crates/reveal-import" }
 reveal-cull = { path = "crates/reveal-cull" }
 tauri-plugin-deep-link = "2.4.9"
+ureq = { version = "2", features = ["json"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # Objective-C block construction for `dispatch_async` to the main queue —

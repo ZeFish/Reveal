@@ -18,6 +18,7 @@
   import { storyTheme, setStoryTheme, THEMES } from "$lib/story-theme.svelte.js";
   import { THEME_IDS, DEFAULT_THEME } from "$lib/app-theme.js";
   import { APPLE_PHOTOS_ROOT, photoCollectionAncestors } from "./applePhotosTree.js";
+import { IMMICH_ROOT } from "./immichTree.js";
 
   import { removeLibraryNote } from "$lib/library.svelte.js";
 
@@ -86,6 +87,10 @@
     applePhotos = null,
     onConnectApplePhotos = () => {},
     onRefreshApplePhotos = () => {},
+    /** @type {{connected: boolean, active: boolean, busy: boolean, loaded: boolean, album: string, albums: Array<{id: string, title: string, count: number}>, total: number | null} | null} */
+    immich = null,
+    onConnectImmich = () => {},
+    onRefreshImmich = () => {},
   } = $props();
 
   const EXPANDED_KEY = "reveal.sidebar.expanded.v2";
@@ -166,7 +171,7 @@
     return new Set();
   }
 
-  /** @typedef {{ name: string, rel: string, abs: string, count: number, children: TreeNode[], source?: "photos" }} TreeNode */
+  /** @typedef {{ name: string, rel: string, abs: string, count: number, children: TreeNode[], source?: "photos" | "immich" }} TreeNode */
   const photoAncestors = $derived(new Set(applePhotos?.active
     ? photoCollectionAncestors(applePhotos.albums, applePhotos.album).slice(0, -1)
     : []));
@@ -225,7 +230,7 @@
 
   /** @param {string} cat */
   function isCatExpanded(cat) {
-    if (cat === APPLE_PHOTOS_ROOT && !applePhotos?.loaded) return false;
+    if ((cat === APPLE_PHOTOS_ROOT && !applePhotos?.loaded) || (cat === IMMICH_ROOT && !immich?.loaded)) return false;
     return !expandedCatalogs.has(`collapsed:${cat}`);
   }
 
@@ -317,6 +322,23 @@
         cat: APPLE_PHOTOS_ROOT, name: "Apple Photos",
         total: applePhotos.total ?? 0,
         tree: { nodes: photoNodes(applePhotos.albums) },
+      });
+    }
+    if (immich?.connected) {
+      /** @param {Array<{id: string, title: string, count: number}>} albums
+       * @returns {TreeNode[]} */
+      const immichNodes = (albums) => (albums || []).map((album) => ({
+        name: album.title,
+        rel: IMMICH_ROOT + album.id,
+        abs: IMMICH_ROOT + album.id,
+        count: album.count ?? 0,
+        source: "immich",
+        children: [],
+      }));
+      catalogues.push({
+        cat: IMMICH_ROOT, name: "Immich",
+        total: immich.total ?? 0,
+        tree: { nodes: immichNodes(immich.albums) },
       });
     }
     return catalogues;
@@ -541,7 +563,8 @@
   /** @param {TreeNode} node */
   function isCurrent(node) {
     if (node.source === "photos") return !!applePhotos?.active && node.abs === APPLE_PHOTOS_ROOT + applePhotos.album;
-    return !applePhotos?.active && !isLibrary && node.abs === curDir;
+    if (node.source === "immich") return !!immich?.active && node.abs === IMMICH_ROOT + immich.album;
+    return !applePhotos?.active && !immich?.active && !isLibrary && node.abs === curDir;
   }
 
   // The import-destination accent: the chosen folder's name turns accent
@@ -808,6 +831,8 @@
     {#each catalogueTrees as { cat, name, total, tree } (cat)}
       {@const open = isCatExpanded(cat)}
       {@const photos = cat === APPLE_PHOTOS_ROOT}
+      {@const isImmich = cat === IMMICH_ROOT}
+      {@const remote = photos || isImmich}
       <div class="section">
         <button
           class="cat-disc"
@@ -815,8 +840,9 @@
             e.stopPropagation();
             toggleCatExpanded(cat);
             if (photos && !open && !applePhotos?.loaded) onConnectApplePhotos();
+            if (isImmich && !open && !immich?.loaded) onConnectImmich();
           }}
-          disabled={photos && applePhotos?.busy && !applePhotos.loaded}
+          disabled={(photos && applePhotos?.busy && !applePhotos.loaded) || (isImmich && immich?.busy && !immich.loaded)}
           aria-label={`${open ? "Collapse" : "Expand"} ${name}`}
           aria-expanded={open}
           title={open ? "Collapse catalogue" : "Expand catalogue"}
@@ -827,32 +853,33 @@
           class="section-main ghost"
           class:import-dest={isImportDest(cat)}
           class:import-branch={isImportBranch(cat)}
-          title={photos ? "Apple Photos" : cat}
-          aria-current={(photos ? applePhotos?.active && !applePhotos.album : curDir === cat) ? "true" : undefined}
-          disabled={photos && applePhotos?.busy}
+          title={photos ? "Apple Photos" : isImmich ? "Immich" : cat}
+          aria-current={(photos ? applePhotos?.active && !applePhotos.album : isImmich ? immich?.active && !immich.album : curDir === cat) ? "true" : undefined}
+          disabled={(photos && applePhotos?.busy) || (isImmich && immich?.busy)}
           onclick={() => {
             if (!isCatExpanded(cat)) toggleCatExpanded(cat);
             onOpenDir(cat);
           }}
-          oncontextmenu={(event) => photos ? event.preventDefault() : openFolderMenu(event, cat, name)}
+          oncontextmenu={(event) => remote ? event.preventDefault() : openFolderMenu(event, cat, name)}
         >
           <span class="section-name">{name}</span>
         </button>
         <span class="dir-spacer"></span>
-        <span class="dir-count">{!photos || applePhotos?.loaded ? total.toLocaleString("en-CA") : ""}</span>
+        <span class="dir-count">{!remote || (photos && applePhotos?.loaded) || (isImmich && immich?.loaded) ? total.toLocaleString("en-CA") : ""}</span>
         <button
           class="add-btn"
           onclick={(e) => {
             e.stopPropagation();
             if (photos) onRefreshApplePhotos();
+            else if (isImmich) onRefreshImmich();
             else onRescanDir(cat);
           }}
-          disabled={photos ? applePhotos?.busy : scanning}
-          title={photos ? "Refresh Apple Photos" : "Reindex this catalogue"}
-          aria-label={photos ? "Refresh Apple Photos" : `Reindex ${name}`}
-          aria-busy={photos ? applePhotos?.busy : scanning}
+          disabled={photos ? applePhotos?.busy : isImmich ? immich?.busy : scanning}
+          title={photos ? "Refresh Apple Photos" : isImmich ? "Refresh Immich" : "Reindex this catalogue"}
+          aria-label={photos ? "Refresh Apple Photos" : isImmich ? "Refresh Immich" : `Reindex ${name}`}
+          aria-busy={(photos ? applePhotos?.busy : isImmich ? immich?.busy : scanning)}
         >
-          <Icon name="arrows-clockwise" size="9px" class={(photos ? applePhotos?.busy : scanning) ? "spin" : ""} />
+          <Icon name="arrows-clockwise" size="9px" class={(photos ? applePhotos?.busy : isImmich ? immich?.busy : scanning) ? "spin" : ""} />
         </button>
       </div>
 

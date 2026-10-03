@@ -99,6 +99,8 @@ pub struct Summary {
     pub other_files: usize,
     /// Day folders the moves would create.
     pub new_folders: usize,
+    /// Companion files (sidecars, videos, audio notes, camera JPEGs) that would follow moved photos.
+    pub companions: usize,
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -260,6 +262,7 @@ pub fn plan(cfg: &Config<'_>, photos: Vec<Photo>, other_files: usize, exists: &d
                     new_dirs.insert(dest_dir.clone(), ());
                 }
                 summary.to_move += 1;
+                summary.companions += photo.companions.len();
                 items.push(Item { from, to: Some(to), verdict: Verdict::Move { reason }, dating: photo.dating, companions: photo.companions.len() });
             }
         }
@@ -271,13 +274,51 @@ pub fn plan(cfg: &Config<'_>, photos: Vec<Photo>, other_files: usize, exists: &d
 
 // ------------------------------------------------------------------- finding
 
-/// Files that belong with a RAW and would travel with it: its sidecars (both
-/// naming styles) and its JPEG renders.
-pub fn companions_of(raw: &Path) -> Vec<PathBuf> {
+/// Extensions treated as standard photo images when no corresponding RAW exists.
+pub const IMAGE_EXTENSIONS: &[&str] = &[
+    "jpg", "jpeg", "heic", "heif", "png", "tiff", "tif", "webp",
+];
+
+/// Read capture timestamp from either RAW metadata (libraw) or standard image EXIF (kamadak-exif).
+pub fn capture_timestamp(path: &Path) -> Option<i64> {
+    if let Some(ts) = reveal_decode::capture_timestamp(path) {
+        if ts > 0 {
+            return Some(ts);
+        }
+    }
+
+    let file = std::fs::File::open(path).ok()?;
+    let mut bufreader = std::io::BufReader::new(file);
+    let exifreader = exif::Reader::new();
+    let exif_data = exifreader.read_from_container(&mut bufreader).ok()?;
+
+    let tag = exif_data
+        .get_field(exif::Tag::DateTimeOriginal, exif::In::PRIMARY)
+        .or_else(|| exif_data.get_field(exif::Tag::DateTimeDigitized, exif::In::PRIMARY))
+        .or_else(|| exif_data.get_field(exif::Tag::DateTime, exif::In::PRIMARY))?;
+
+    let date_str = match &tag.value {
+        exif::Value::Ascii(ref vec) if !vec.is_empty() => std::str::from_utf8(&vec[0]).ok()?,
+        _ => return None,
+    };
+
+    use chrono::TimeZone;
+    if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(date_str.trim(), "%Y:%m:%d %H:%M:%S") {
+        if let Some(local) = chrono::Local.from_local_datetime(&naive).single() {
+            return Some(local.timestamp());
+        }
+    }
+
+    None
+}
+
+/// Files that belong with a photo and would travel with it: its sidecars (both
+/// naming styles), its JPEG renders, Live Photo clips, and audio notes.
+pub fn companions_of(photo: &Path) -> Vec<PathBuf> {
     let (Some(dir), Some(name), Some(stem)) = (
-        raw.parent(),
-        raw.file_name().map(|n| n.to_string_lossy().into_owned()),
-        raw.file_stem().map(|n| n.to_string_lossy().into_owned()),
+        photo.parent(),
+        photo.file_name().map(|n| n.to_string_lossy().into_owned()),
+        photo.file_stem().map(|n| n.to_string_lossy().into_owned()),
     ) else {
         return Vec::new();
     };
@@ -290,23 +331,38 @@ pub fn companions_of(raw: &Path) -> Vec<PathBuf> {
         format!("{stem}.jpeg"),
         format!("{stem}.JPEG"),
         format!("{stem}.preview.jpg"),
+        format!("{stem}.mov"),
+        format!("{stem}.MOV"),
+        format!("{stem}.mp4"),
+        format!("{stem}.MP4"),
+        format!("{stem}.m4v"),
+        format!("{stem}.M4V"),
+        format!("{stem}.wav"),
+        format!("{stem}.WAV"),
+        format!("{stem}.m4a"),
+        format!("{stem}.M4A"),
     ] {
         let p = dir.join(candidate);
-        if p.is_file() && !out.contains(&p) {
+        if p != photo && p.is_file() && !out.contains(&p) {
             out.push(p);
         }
     }
     out
 }
 
-/// Every RAW under `root` (hidden folders and files skipped), with its
-/// companions, and the number of other visible files, which stay untouched.
+/// Every photo under `root` (RAWs and standalone images; hidden folders and files skipped),
+/// with its companions, and the number of other visible files, which stay untouched.
 pub fn find_photos(root: &Path) -> (Vec<PathBuf>, usize) {
-    let mut raws = Vec::new();
+    let mut photos = Vec::new();
     let mut others = 0usize;
     let mut stack = vec![root.to_path_buf()];
+
     while let Some(d) = stack.pop() {
         let Ok(entries) = std::fs::read_dir(&d) else { continue };
+        let mut dir_raws = Vec::new();
+        let mut dir_images = Vec::new();
+        let mut dir_other_files = Vec::new();
+
         for e in entries.flatten() {
             let p = e.path();
             let name = e.file_name().to_string_lossy().into_owned();
@@ -315,32 +371,68 @@ pub fn find_photos(root: &Path) -> (Vec<PathBuf>, usize) {
             }
             if p.is_dir() {
                 stack.push(p);
-            } else if reveal_decode::RAW_EXTENSIONS.contains(&name.rsplit('.').next().unwrap_or("").to_lowercase().as_str()) {
-                raws.push(p);
             } else {
+                let ext = name.rsplit('.').next().unwrap_or("").to_lowercase();
+                if reveal_decode::RAW_EXTENSIONS.contains(&ext.as_str()) {
+                    dir_raws.push(p);
+                } else if IMAGE_EXTENSIONS.contains(&ext.as_str()) {
+                    dir_images.push(p);
+                } else {
+                    dir_other_files.push(p);
+                }
+            }
+        }
+
+        let mut claimed_companions: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+
+        // 1. Process all RAWs first (primary photos)
+        for raw in &dir_raws {
+            let companions = companions_of(raw);
+            for c in companions {
+                claimed_companions.insert(c);
+            }
+            photos.push(raw.clone());
+        }
+
+        // 2. Process images that are NOT claimed as companions of any RAW (standalone photos)
+        for img in dir_images {
+            if claimed_companions.contains(&img) {
+                continue;
+            }
+            let companions = companions_of(&img);
+            for c in companions {
+                claimed_companions.insert(c);
+            }
+            photos.push(img);
+        }
+
+        // 3. Count other files that are not companions of any photo
+        for other in dir_other_files {
+            if !claimed_companions.contains(&other) {
                 others += 1;
             }
         }
     }
-    raws.sort();
-    (raws, others)
+
+    photos.sort();
+    (photos, others)
 }
 
 /// Read each photo's date, in parallel, calling `progress(done, total)`.
 /// `known` may answer from somewhere cheaper than the file (the index).
 pub fn read_photos(
-    raws: Vec<PathBuf>,
+    photos: Vec<PathBuf>,
     known: &(dyn Fn(&Path) -> Option<i64> + Sync),
     progress: &(dyn Fn(usize, usize) + Sync),
 ) -> Vec<Photo> {
     use rayon::prelude::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    let total = raws.len();
+    let total = photos.len();
     let done = AtomicUsize::new(0);
-    let photos: Vec<Photo> = raws
+    let result: Vec<Photo> = photos
         .into_par_iter()
         .map(|path| {
-            let (ts, dating) = match known(&path).filter(|t| *t > 0).or_else(|| reveal_decode::capture_timestamp(&path)) {
+            let (ts, dating) = match known(&path).filter(|t| *t > 0).or_else(|| capture_timestamp(&path)) {
                 Some(t) => (Some(t), Dating::Exif),
                 None => match std::fs::metadata(&path)
                     .ok()
@@ -359,7 +451,7 @@ pub fn read_photos(
             Photo { path, ts, dating, companions }
         })
         .collect();
-    photos
+    result
 }
 
 #[cfg(test)]
@@ -505,5 +597,40 @@ mod tests {
         for no in ["Capture", "2019-03-05", "190305", "Temp Import", "1903 - Kenya", "190305 - ", "2018"] {
             assert!(!is_labelled_event(no), "{no}");
         }
+    }
+
+    #[test]
+    fn find_photos_handles_raw_pairs_standalone_jpegs_and_multimedia_companions() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        // 1. RAW with JPEG, sidecar, and video clip
+        std::fs::write(root.join("DSC0001.ARW"), b"raw").unwrap();
+        std::fs::write(root.join("DSC0001.JPG"), b"jpg").unwrap();
+        std::fs::write(root.join("DSC0001.xmp"), b"xmp").unwrap();
+        std::fs::write(root.join("DSC0001.MOV"), b"mov").unwrap();
+
+        // 2. Standalone JPEG with live photo video companion
+        std::fs::write(root.join("IMG_0002.JPG"), b"jpg2").unwrap();
+        std::fs::write(root.join("IMG_0002.MOV"), b"mov2").unwrap();
+
+        // 3. Unrelated non-photo file
+        std::fs::write(root.join("notes.txt"), b"text").unwrap();
+
+        let (photos, others) = find_photos(root);
+
+        // Should find exactly 2 primary photos: DSC0001.ARW and IMG_0002.JPG
+        assert_eq!(photos.len(), 2);
+        assert_eq!(others, 1); // only notes.txt is an untouched other file
+
+        let raw_photo = photos.iter().find(|p| p.ends_with("DSC0001.ARW")).unwrap();
+        let raw_companions = companions_of(raw_photo);
+        assert!(raw_companions.contains(&root.join("DSC0001.JPG")));
+        assert!(raw_companions.contains(&root.join("DSC0001.xmp")));
+        assert!(raw_companions.contains(&root.join("DSC0001.MOV")));
+
+        let standalone_jpeg = photos.iter().find(|p| p.ends_with("IMG_0002.JPG")).unwrap();
+        let jpeg_companions = companions_of(standalone_jpeg);
+        assert!(jpeg_companions.contains(&root.join("IMG_0002.MOV")));
     }
 }

@@ -34,6 +34,13 @@
    * @property {string} [default_engine]
    * @property {string} [app_theme]
    * @property {number} [ui_text_size]
+   * @property {string} [immich_url]
+   * @property {string} [immich_api_key]
+   * @property {boolean} [immich_export_enabled]
+   * @property {string} [google_photos_client_id]
+   * @property {string} [google_photos_client_secret]
+   * @property {string} [google_photos_refresh_token]
+   * @property {boolean} [google_photos_export_enabled]
    */
 
   /** @type {Preferences} */
@@ -53,6 +60,13 @@
     apple_photos_cache_limit_gib: 4,
     default_engine: "",
     app_theme: "reveal",
+    immich_url: "",
+    immich_api_key: "",
+    immich_export_enabled: false,
+    google_photos_client_id: "",
+    google_photos_client_secret: "",
+    google_photos_refresh_token: "",
+    google_photos_export_enabled: false,
   });
   let cacheAvailable = $state(false);
   let autoImportEnabled = $state(false);
@@ -163,6 +177,22 @@
       .catch(() => {});
     invoke("garden_refresh").then((info) => (gardenAccount = /** @type {any} */ (info))).catch(() => {});
     invoke("list_engines").then((list) => (engines = /** @type {any} */ (list))).catch(() => {});
+    if (isTauri) {
+      invoke("hide_window_traffic_lights").catch(() => {});
+      (async () => {
+        try {
+          const win = getCurrentWindow();
+          const factor = await win.scaleFactor();
+          const size = await win.innerSize();
+          const w = size.width / factor;
+          const h = size.height / factor;
+          if (w < 820 || h < 540) {
+            const { LogicalSize } = await import("@tauri-apps/api/dpi");
+            await win.setSize(new LogicalSize(860, 580));
+          }
+        } catch (_) {}
+      })();
+    }
     invoke("list_presets").then((list) => (presets = /** @type {any} */ (list))).catch(() => {});
     const unlistenGarden = listen("garden-account-changed", (e) => (gardenAccount = /** @type {any} */ (e.payload)));
     const unlistenPresetsChanged = listen("presets-changed", () => {

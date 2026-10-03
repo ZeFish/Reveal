@@ -100,7 +100,7 @@ pub(crate) async fn set_rating(
         })
     })
     .await?;
-    if apple_photos::is_asset(&path) { return Ok(()); }
+    if apple_photos::is_asset(&path) || crate::immich::is_asset(&path) { return Ok(()); }
     index.0.set_rating(&path, rating.min(5)).map_err(|e| e.to_string())
 }
 
@@ -522,7 +522,7 @@ pub(crate) async fn release_working_frame(state: tauri::State<'_, EngineState>) 
 #[tauri::command]
 pub(crate) fn source_reachable(path: String) -> bool {
     let p = std::path::Path::new(&path);
-    apple_photos::is_asset(&path) || is_volume_mounted(p)
+    apple_photos::is_asset(&path) || crate::immich::is_asset(&path) || is_volume_mounted(p)
 }
 
 /// Every registered library, with its frame count and whether its folder is

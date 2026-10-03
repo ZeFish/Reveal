@@ -8,6 +8,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { isTauri } from "$lib/api.js";
+  import ManualLink from "$lib/components/ManualLink.svelte";
 
   /**
    * `preview` is a plan that is already made: tests and screenshots hand one
@@ -52,6 +53,7 @@
   <header class="head">
     <h2>Tidy “{name(dir)}”</h2>
     <p class="fine">A preview. Nothing has been moved, and nothing will be from this window.</p>
+    <ManualLink page="reference/files/#tidy-folder" label="How Tidy plans and protects your files" />
   </header>
 
   <div class="body">
@@ -74,7 +76,12 @@
     <ul class="summary">
       <li><b>{n(s.photos)}</b> photos checked</li>
       <li><b>{n(s.in_place)}</b> already where the rule puts them</li>
-      <li class="lead"><b>{n(s.to_move)}</b> would move, into {n(s.new_folders)} new day folders</li>
+      <li class="lead">
+        <b>{n(s.to_move)}</b> would move, into {n(s.new_folders)} new day folders
+        {#if s.companions}
+          <span class="fine">({n(s.companions)} companion sidecars, videos and renders would follow)</span>
+        {/if}
+      </li>
       <li><b>{n(s.kept)}</b> kept, because they sit in folders you named</li>
       {#if s.conflicts}<li><b>{n(s.conflicts)}</b> would clash with a file already there, and would stay</li>{/if}
       {#if s.undated}

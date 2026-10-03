@@ -53,9 +53,8 @@
 <style>
   :global(:root) {
     --window-controls-offset-sidebar: 78px;
-    /* The photo canvas: the ground plus the framework's sunk wash. */
-    --canvas: linear-gradient(var(--color-surface-dark-2), var(--color-surface-dark-2))
-      var(--color-background);
+    /* The photo canvas: unified with the global ground. */
+    --canvas: var(--color-background);
     --window-controls-offset-content: 86px;
   }
 </style>

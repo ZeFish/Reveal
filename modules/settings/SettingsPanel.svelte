@@ -21,6 +21,7 @@
   import { untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { getVersion } from "@tauri-apps/api/app";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
   import { isTauri } from "$lib/api.js";
   import { updater, checkForUpdate, installUpdate } from "$lib/updater.svelte.js";
   import { TEXT_SIZES, DEFAULT_TEXT_SIZE } from "$lib/app-theme.js";
@@ -43,6 +44,13 @@
    * @property {string} [default_engine]
    * @property {string} [app_theme]
    * @property {number} [ui_text_size]
+   * @property {string} [immich_url]
+   * @property {string} [immich_api_key]
+   * @property {boolean} [immich_export_enabled]
+   * @property {string} [google_photos_client_id]
+   * @property {string} [google_photos_client_secret]
+   * @property {string} [google_photos_refresh_token]
+   * @property {boolean} [google_photos_export_enabled]
    */
 
   /** @typedef {Object} EngineInfo
@@ -76,6 +84,13 @@
         apple_photos_cache_limit_gib: 4,
         default_engine: "",
         app_theme: "reveal",
+        immich_url: "",
+        immich_api_key: "",
+        immich_export_enabled: false,
+        google_photos_client_id: "",
+        google_photos_client_secret: "",
+        google_photos_refresh_token: "",
+        google_photos_export_enabled: false,
       })
     ),
     onClose = () => {},
@@ -128,6 +143,8 @@
     { id: "locations", label: "Locations", icon: "folder-open" },
     { id: "library", label: "Libraries", icon: "books" },
     { id: "obsidian", label: "Obsidian", icon: "note-pencil" },
+    { id: "immich", label: "Immich", icon: "cloud-arrow-up" },
+    { id: "google_photos", label: "Google Photos", icon: "google-photos-logo" },
     { id: "cache", label: "Cache & Storage", icon: "hard-drive" },
     { id: "garden", label: "Garden Account", icon: "user-circle" },
     { id: "ai", label: "AI & Automation", icon: "lightning" },
@@ -356,6 +373,92 @@
     }
   }
 
+  let immichTesting = $state(false);
+  let immichMessage = $state("");
+  let immichError = $state("");
+
+  async function testImmich() {
+    if (!preferences.immich_url || !preferences.immich_api_key) {
+      immichError = "Please specify both the Immich Server URL and API key.";
+      immichMessage = "";
+      return;
+    }
+    immichTesting = true;
+    immichError = "";
+    immichMessage = "";
+    try {
+      const res = await invoke("test_immich_connection", {
+        url: preferences.immich_url,
+        apiKey: preferences.immich_api_key,
+      });
+      const name = res.user?.name || res.user?.email || "User";
+      const ver = res.version ? ` (${res.version})` : "";
+      immichMessage = `Connected to Immich as ${name}${ver}`;
+    } catch (err) {
+      immichError = `Connection failed: ${err}`;
+    } finally {
+      immichTesting = false;
+    }
+  }
+
+  let googleTesting = $state(false);
+  let googleAuthorizing = $state(false);
+  let googleMessage = $state("");
+  let googleError = $state("");
+  const googleConnected = $derived(Boolean(preferences.google_photos_refresh_token));
+
+  async function authorizeGooglePhotos() {
+    if (!preferences.google_photos_client_id || !preferences.google_photos_client_secret) {
+      googleError = "Please enter both your Client ID and Client Secret.";
+      googleMessage = "";
+      return;
+    }
+    googleAuthorizing = true;
+    googleError = "";
+    googleMessage = "";
+    try {
+      const res = await invoke("google_photos_start_auth", {
+        clientId: preferences.google_photos_client_id,
+        clientSecret: preferences.google_photos_client_secret,
+      });
+      if (res?.refresh_token) {
+        preferences.google_photos_refresh_token = res.refresh_token;
+        preferences.google_photos_export_enabled = true;
+        googleMessage = "Connected to Google Photos successfully!";
+      }
+    } catch (err) {
+      googleError = String(err);
+    } finally {
+      googleAuthorizing = false;
+    }
+  }
+
+  async function testGooglePhotos() {
+    googleTesting = true;
+    googleError = "";
+    googleMessage = "";
+    try {
+      const res = await invoke("google_photos_test_connection");
+      googleMessage = res?.message ?? "Connected to Google Photos";
+    } catch (err) {
+      googleError = `Connection failed: ${err}`;
+    } finally {
+      googleTesting = false;
+    }
+  }
+
+  async function disconnectGooglePhotos() {
+    try {
+      await invoke("google_photos_disconnect");
+      preferences.google_photos_refresh_token = "";
+      preferences.google_photos_export_enabled = false;
+      googleMessage = "Disconnected from Google Photos";
+      googleError = "";
+    } catch (err) {
+      googleError = String(err);
+    }
+  }
+
   const datePresets = [
     { pattern: "%Y/%Y-%m-%d", example: "2026/2026-12-31", desc: "Year / Year-Month-Day" },
     { pattern: "%Y/%m/%d", example: "2026/12/31", desc: "Year / Month / Day" },
@@ -396,11 +499,41 @@
     if (parts.length <= 2) return path;
     return `…/${parts.slice(-2).join("/")}`;
   }
+
+  async function minimizeWindow() {
+    if (isTauri) {
+      try {
+        await getCurrentWindow().minimize();
+      } catch (e) {
+        console.error("minimizeWindow:", e);
+      }
+    }
+  }
+
+  async function zoomWindow() {
+    if (isTauri) {
+      try {
+        await getCurrentWindow().toggleMaximize();
+      } catch (e) {
+        console.error("zoomWindow:", e);
+      }
+    }
+  }
 </script>
 
 <svelte:window onkeydown={handleKeyDown} />
 
 <div class="settings-window">
+  {#if isTauri}
+    <div class="window-controls-zone" data-tauri-drag-region>
+      <div class="window-controls" aria-label="Window controls">
+        <button class="window-close" onclick={onClose} aria-label="Close window"></button>
+        <button class="window-minimize" onclick={minimizeWindow} aria-label="Minimize window"></button>
+        <button class="window-zoom" onclick={zoomWindow} aria-label="Zoom window"></button>
+      </div>
+    </div>
+  {/if}
+
   <nav class="categories pane" data-tauri-drag-region>
     <div class="categories-spacer" data-tauri-drag-region></div>
     {#each visibleCategories as cat (cat.id)}
@@ -669,6 +802,164 @@
               </div>
             {/if}
           </div>
+        </div>
+      {:else if activeCategory === "immich"}
+        <div class="section-group">
+          <div class="section-heading">
+            <Icon name="cloud-arrow-up" size="12px" />
+            <span>IMMICH INTEGRATION</span>
+          </div>
+          <ManualLink page="reference/settings/#immich" label="Immich integration in the manual" />
+          <div class="card flush list divided">
+            <div class="setting-row">
+              <div class="row-meta">
+                <span class="row-label">AUTO-UPLOAD ON EXPORT</span>
+                <span class="row-desc">Automatically upload developed JPEGs to your Immich server upon export.</span>
+              </div>
+              <div class="row-control">
+                <input type="checkbox" role="switch" bind:checked={preferences.immich_export_enabled} />
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="row-meta">
+                <span class="row-label">SERVER URL</span>
+                <span class="row-desc">Base URL of your Immich instance (e.g. <code>http://immich.local:2283</code> or <code>https://immich.yourdomain.com</code>).</span>
+              </div>
+              <div class="row-control">
+                <input
+                  class="mono-input"
+                  bind:value={preferences.immich_url}
+                  placeholder="http://immich.local:2283"
+                  spellcheck="false"
+                />
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="row-meta">
+                <span class="row-label">API KEY</span>
+                <span class="row-desc">Generate an API key in your Immich Account Settings → API Keys.</span>
+              </div>
+              <div class="row-control">
+                <input
+                  type="password"
+                  class="mono-input"
+                  bind:value={preferences.immich_api_key}
+                  placeholder="Paste your Immich API key"
+                  spellcheck="false"
+                />
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="row-meta">
+                <span class="row-label">VERIFY CONNECTION</span>
+                <span class="row-desc">Test that Reveal can reach your server and authenticate.</span>
+              </div>
+              <div class="row-control">
+                <button
+                  type="button"
+                  class="outline small action-pill-btn"
+                  disabled={immichTesting || !preferences.immich_url || !preferences.immich_api_key}
+                  onclick={testImmich}
+                >
+                  {immichTesting ? "TESTING…" : "TEST CONNECTION"}
+                </button>
+              </div>
+            </div>
+          </div>
+          {#if immichError}<div role="alert"><Alert class="error">{immichError}</Alert></div>{/if}
+          {#if immichMessage}<div role="status"><Alert class="info">{immichMessage}</Alert></div>{/if}
+        </div>
+      {:else if activeCategory === "google_photos"}
+        <div class="section-group">
+          <div class="section-heading">
+            <Icon name="google-photos-logo" size="12px" />
+            <span>GOOGLE PHOTOS INTEGRATION</span>
+          </div>
+          <ManualLink page="reference/settings/#google-photos" label="Google Photos setup and permissions in the manual" />
+          <div class="card flush list divided">
+            <div class="setting-row">
+              <div class="row-meta">
+                <span class="row-label">AUTO-UPLOAD ON EXPORT</span>
+                <span class="row-desc">Automatically upload developed JPEGs to your Google Photos library upon export.</span>
+              </div>
+              <div class="row-control">
+                <input type="checkbox" role="switch" disabled={!googleConnected} bind:checked={preferences.google_photos_export_enabled} />
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="row-meta">
+                <span class="row-label">CLIENT ID</span>
+                <span class="row-desc">OAuth 2.0 Client ID for Desktop application from your Google Cloud Console.</span>
+              </div>
+              <div class="row-control">
+                <input
+                  class="mono-input"
+                  bind:value={preferences.google_photos_client_id}
+                  placeholder="xxxx.apps.googleusercontent.com"
+                  spellcheck="false"
+                  disabled={googleConnected || googleAuthorizing}
+                />
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="row-meta">
+                <span class="row-label">CLIENT SECRET</span>
+                <span class="row-desc">OAuth 2.0 Client Secret from your Google Cloud Console.</span>
+              </div>
+              <div class="row-control">
+                <input
+                  type="password"
+                  class="mono-input"
+                  bind:value={preferences.google_photos_client_secret}
+                  placeholder="Paste client secret"
+                  spellcheck="false"
+                  disabled={googleConnected || googleAuthorizing}
+                />
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="row-meta">
+                <span class="row-label">ACCOUNT STATUS</span>
+                <span class="row-desc">
+                  {#if googleConnected}
+                    Connected to Google Photos. Reveal has permission to add exported photos to your library.
+                  {:else}
+                    Reveal opens your web browser to sign in and grant upload permission to your Google Photos library.
+                  {/if}
+                </span>
+              </div>
+              <div class="row-control cache-actions">
+                {#if googleConnected}
+                  <button
+                    type="button"
+                    class="outline small action-pill-btn"
+                    disabled={googleTesting}
+                    onclick={testGooglePhotos}
+                  >
+                    {googleTesting ? "VERIFYING…" : "VERIFY CONNECTION"}
+                  </button>
+                  <button
+                    type="button"
+                    class="outline small action-pill-btn"
+                    onclick={disconnectGooglePhotos}
+                  >
+                    DISCONNECT
+                  </button>
+                {:else}
+                  <button
+                    type="button"
+                    class="outline small action-pill-btn"
+                    disabled={googleAuthorizing || !preferences.google_photos_client_id || !preferences.google_photos_client_secret}
+                    onclick={authorizeGooglePhotos}
+                  >
+                    {googleAuthorizing ? "SIGNING IN…" : "CONNECT WITH GOOGLE…"}
+                  </button>
+                {/if}
+              </div>
+            </div>
+          </div>
+          {#if googleError}<div role="alert"><Alert class="error">{googleError}</Alert></div>{/if}
+          {#if googleMessage}<div role="status"><Alert class="info">{googleMessage}</Alert></div>{/if}
         </div>
       {:else if activeCategory === "library"}
         <div class="section-group">
@@ -1039,9 +1330,8 @@
     margin: 0;
     padding: 0;
     height: 100%;
-    /* The same ground as the main window's photo area: the settings sit
-       on the recessed canvas, the categories float above it. */
-    background: var(--canvas);
+    /* Unified global window background */
+    background: var(--color-background);
     color: var(--color-foreground);
     overflow: hidden;
   }
@@ -1049,24 +1339,26 @@
   .settings-window {
     height: 100vh;
     display: flex;
+    background: var(--color-background);
   }
 
-  /* Categories — the same floating pane as the main window's sidebar
-     (Sidebar.svelte's nav): inset, concentric corner, raised. The traffic
-     lights overlay its top, as they do the sidebar's. */
+  /* Categories — floating pane with identical panel styling as the main window sidebar */
   .categories {
-    width: 190px;
+    width: 200px;
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
     gap: var(--space-d8);
+    margin: var(--window-inset);
     padding: 0 var(--space-d2) var(--space-d2);
+    background: var(--color-surface-light-1);
+    border-radius: var(--pane-radius);
+    box-shadow: var(--shadow);
     overflow-y: auto;
   }
-  /* Clears the traffic lights: the title-bar band, less the pane's own
-     inset from the window top. */
+  /* Clears the traffic lights with generous breathing room */
   .categories-spacer {
-    height: calc(var(--titlebar-height) - var(--window-inset));
+    height: 58px;
     flex-shrink: 0;
   }
   .category-btn {
@@ -1086,7 +1378,7 @@
     flex-direction: column;
   }
   .detail-scroll {
-    padding: var(--titlebar-height) calc(var(--space-d4) * 6) calc(var(--space-d4) * 5);
+    padding: 58px var(--space) var(--space);
     overflow-y: auto;
     flex: 1;
     min-height: 0;
@@ -1186,6 +1478,12 @@
     display: flex;
     align-items: center;
     gap: var(--space-d3);
+  }
+  .path-display {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-d3);
+    max-width: 240px;
   }
   .path-text {
     white-space: nowrap;

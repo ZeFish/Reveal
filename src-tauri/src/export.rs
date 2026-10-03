@@ -8,6 +8,7 @@ use crate::*;
 /// Export one photo (its saved recipe unless one is passed) to `dest_dir`.
 #[tauri::command]
 pub(crate) async fn export_photo(
+    app: tauri::AppHandle,
     state: tauri::State<'_, EngineState>,
     path: String,
     recipe: reveal_engine::Recipe,
@@ -16,6 +17,7 @@ pub(crate) async fn export_photo(
     border_frac: f32,
 ) -> Result<String, String> {
     let engine = state.0.clone();
+    let app_handle = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let src = std::path::Path::new(&path);
         let (jpeg, w, h) = engine
@@ -32,6 +34,34 @@ pub(crate) async fn export_photo(
         let out = std::path::Path::new(&dest_dir).join(format!("{stem}.jpg"));
         let out = write_photo_export(&path, &out, &jpeg)?;
         eprintln!("export: {} ({}x{})", out.display(), w, h);
+
+        let prefs = load_preferences(app_handle);
+        if prefs.get("immich_export_enabled").and_then(|v| v.as_bool()).unwrap_or(false) {
+            let url = prefs.get("immich_url").and_then(|v| v.as_str()).unwrap_or_default();
+            let key = prefs.get("immich_api_key").and_then(|v| v.as_str()).unwrap_or_default();
+            if !url.is_empty() && !key.is_empty() {
+                let capture_at = photo_capture_timestamp(&path).ok().flatten();
+                let filename = out.file_name().unwrap_or_default().to_string_lossy();
+                match crate::immich::upload_photo(url, key, &jpeg, &filename, capture_at) {
+                    Ok(res) => eprintln!("immich upload: {filename} -> {res}"),
+                    Err(err) => eprintln!("immich upload failed for {filename}: {err}"),
+                }
+            }
+        }
+
+        if prefs.get("google_photos_export_enabled").and_then(|v| v.as_bool()).unwrap_or(false) {
+            let client_id = prefs.get("google_photos_client_id").and_then(|v| v.as_str()).unwrap_or_default();
+            let client_secret = prefs.get("google_photos_client_secret").and_then(|v| v.as_str()).unwrap_or_default();
+            let refresh_token = prefs.get("google_photos_refresh_token").and_then(|v| v.as_str()).unwrap_or_default();
+            if !client_id.is_empty() && !client_secret.is_empty() && !refresh_token.is_empty() {
+                let filename = out.file_name().unwrap_or_default().to_string_lossy();
+                match crate::google_photos::upload_photo(client_id, client_secret, refresh_token, &jpeg, &filename) {
+                    Ok(res) => eprintln!("google photos upload: {filename} -> {res}"),
+                    Err(err) => eprintln!("google photos upload failed for {filename}: {err}"),
+                }
+            }
+        }
+
         Ok(out.to_string_lossy().into_owned())
     })
     .await
@@ -255,6 +285,41 @@ pub(crate) fn export_batch(
 ) -> Result<usize, String> {
     let total = paths.len();
     let mut done = 0usize;
+    let prefs = load_preferences(app.clone());
+    let immich_enabled = prefs
+        .get("immich_export_enabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let immich_url = prefs
+        .get("immich_url")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let immich_key = prefs
+        .get("immich_api_key")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let google_enabled = prefs
+        .get("google_photos_export_enabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let google_client_id = prefs
+        .get("google_photos_client_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let google_client_secret = prefs
+        .get("google_photos_client_secret")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let google_refresh_token = prefs
+        .get("google_photos_refresh_token")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+
     std::fs::create_dir_all(dest_dir).map_err(|e| e.to_string())?;
     for (i, path) in paths.iter().enumerate() {
         if cancelled.load(std::sync::atomic::Ordering::Acquire) {
@@ -288,6 +353,34 @@ pub(crate) fn export_batch(
         let stem = src.file_stem().unwrap_or_default().to_string_lossy();
         let out = std::path::Path::new(dest_dir).join(format!("{stem}.jpg"));
         write_photo_export(path, &out, &jpeg)?;
+
+        if immich_enabled && !immich_url.is_empty() && !immich_key.is_empty() {
+            let capture_at = photo_capture_timestamp(path).ok().flatten();
+            let filename = out.file_name().unwrap_or_default().to_string_lossy();
+            if let Err(err) =
+                crate::immich::upload_photo(&immich_url, &immich_key, &jpeg, &filename, capture_at)
+            {
+                eprintln!("immich batch upload failed for {filename}: {err}");
+            }
+        }
+
+        if google_enabled
+            && !google_client_id.is_empty()
+            && !google_client_secret.is_empty()
+            && !google_refresh_token.is_empty()
+        {
+            let filename = out.file_name().unwrap_or_default().to_string_lossy();
+            if let Err(err) = crate::google_photos::upload_photo(
+                &google_client_id,
+                &google_client_secret,
+                &google_refresh_token,
+                &jpeg,
+                &filename,
+            ) {
+                eprintln!("google photos batch upload failed for {filename}: {err}");
+            }
+        }
+
         done += 1;
     }
     let _ = app.emit(
@@ -335,4 +428,40 @@ pub(crate) fn cancel_exports(cancellation: tauri::State<'_, ExportState>) {
     cancellation
         .0
         .store(true, std::sync::atomic::Ordering::Release);
+}
+
+#[tauri::command]
+pub(crate) fn test_immich_connection(
+    url: String,
+    api_key: String,
+) -> Result<serde_json::Value, String> {
+    crate::immich::test_connection(&url, &api_key)
+}
+
+#[tauri::command]
+pub(crate) async fn upload_photo_to_immich(
+    app: tauri::AppHandle,
+    path: String,
+) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let prefs = load_preferences(app);
+        let url = prefs
+            .get("immich_url")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        let key = prefs
+            .get("immich_api_key")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        if url.is_empty() || key.is_empty() {
+            return Err("Immich URL and API key must be configured in Settings".to_string());
+        }
+        let src = std::path::Path::new(&path);
+        let filename = src.file_name().unwrap_or_default().to_string_lossy();
+        let bytes = std::fs::read(&path).map_err(|e| format!("Failed to read {path}: {e}"))?;
+        let capture_at = photo_capture_timestamp(&path).ok().flatten();
+        crate::immich::upload_photo(url, key, &bytes, &filename, capture_at)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }

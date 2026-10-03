@@ -9,7 +9,7 @@ const NS_WINDOW_ZOOM_BUTTON: i64 = 2;
 
 pub fn style(ns_window: *mut Object) -> Result<(), String> {
     if ns_window.is_null() {
-        return Err("main NSWindow unavailable".into());
+        return Err("NSWindow unavailable".into());
     }
 
     unsafe {

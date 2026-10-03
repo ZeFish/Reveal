@@ -24,6 +24,8 @@ mod apple_photos;
 mod catalog; // the library on disk: folders, ratings, roots, the index
 mod cull; // AI-assisted culling
 mod export; // exporting developed photos
+pub mod immich; // Immich integration
+pub mod google_photos; // Google Photos export integration
 mod import_cards; // ingesting memory cards
 mod metadata; // captions and tags
 mod preview; // every on-disk derivative of a photo
@@ -1075,6 +1077,22 @@ fn set_simple_fullscreen(window: tauri::WebviewWindow, enabled: bool) -> Result<
     Ok(())
 }
 
+/// Hide native macOS traffic light buttons for a window so that custom
+/// HTML controls can render in their place with exact hover behaviors.
+#[tauri::command]
+fn hide_window_traffic_lights(window: tauri::WebviewWindow) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let ns_window = window.ns_window().map_err(|e| e.to_string())? as *mut objc::runtime::Object;
+        macos::traffic_lights::style(ns_window)?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = &window;
+    }
+    Ok(())
+}
+
 /// Hide the main Reveal window while keeping the app alive.
 #[tauri::command]
 fn hide_contact_sheet(app: tauri::AppHandle) {
@@ -1610,7 +1628,7 @@ pub fn run() {
                 }
             }
         }).build())
-        .plugin(tauri_plugin_window_state::Builder::default().with_denylist(&["import-panel"]).build())
+        .plugin(tauri_plugin_window_state::Builder::default().with_denylist(&["import-panel", "settings-panel"]).build())
         .setup(|app| {
             apple_photos::init(app.handle())?;
             setup_main_menu(app).map_err(|e| e.to_string())?;
@@ -1885,6 +1903,19 @@ pub fn run() {
                             };
                             responder.respond(response);
                             return;
+                        } else if immich::is_asset(&path) {
+                            let response = match immich::thumbnail(&app, &path, size) {
+                                Ok(bytes) => HttpResponse::builder()
+                                    .header("Content-Type", "image/jpeg")
+                                    .header("Cache-Control", "max-age=3600")
+                                    .body(if size <= 768 { downscale_grid_thumb(bytes, size, 1) } else { bytes }).unwrap(),
+                                Err(error) => {
+                                    eprintln!("Immich thumbnail: {error}");
+                                    HttpResponse::builder().status(503).body(error.into_bytes()).unwrap()
+                                }
+                            };
+                            responder.respond(response);
+                            return;
                         }
                         let t = std::time::Instant::now();
                         let source = std::path::Path::new(&path);
@@ -2077,6 +2108,7 @@ pub fn run() {
             set_focus_window_presence,
             set_simple_fullscreen,
             hide_contact_sheet,
+            hide_window_traffic_lights,
             ping,
             catalog::pick_folder,
             catalog::list_dir,
@@ -2106,6 +2138,15 @@ pub fn run() {
             export::export_batch_to_daily_note,
             export::export_photos,
             export::cancel_exports,
+            export::test_immich_connection,
+            export::upload_photo_to_immich,
+            immich::immich_status,
+            immich::immich_albums,
+            immich::immich_list,
+            google_photos::google_photos_start_auth,
+            google_photos::google_photos_test_connection,
+            google_photos::google_photos_disconnect,
+            google_photos::upload_photo_to_google_photos,
             cull::ai_cull,
             cull::ai_cull_selection,
             cull::cancel_cull,
@@ -2161,11 +2202,14 @@ pub fn run() {
                         ns_window as *mut objc::runtime::Object,
                     );
                 }
-            } else if matches!(
-                event,
-                tauri::WindowEvent::Resized(_)
-                    | tauri::WindowEvent::ScaleFactorChanged { .. }
-            ) {
+            } else if matches!(window.label(), "main" | "settings-panel")
+                && matches!(
+                    event,
+                    tauri::WindowEvent::Resized(_)
+                        | tauri::WindowEvent::ScaleFactorChanged { .. }
+                        | tauri::WindowEvent::ThemeChanged(_)
+                )
+            {
                 if let Ok(ns_window) = window.ns_window() {
                     let _ =
                         macos::traffic_lights::style(ns_window as *mut objc::runtime::Object);

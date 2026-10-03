@@ -25,6 +25,7 @@
   import Icon from "$lib/components/Icon.svelte";
   import Sidebar from "@modules/sidebar/Sidebar.svelte";
   import { APPLE_PHOTOS_ROOT, findPhotoCollection } from "@modules/sidebar/applePhotosTree.js";
+  import { IMMICH_ROOT } from "@modules/sidebar/immichTree.js";
   import { reloadPhotoPages, restorePhotoSelection } from "@modules/sidebar/applePhotosBrowsing.js";
   import CullView from "@modules/culling/CullView.svelte";
   import DevelopView from "@modules/develop/DevelopView.svelte";
@@ -280,6 +281,19 @@
     album: applePhotosAlbum, albums: applePhotosAlbums, total: applePhotosLibraryTotal,
   });
 
+  let immichConnecting = $state(false);
+  let immichActive = $state(false);
+  let immichBusy = $state(false);
+  let immichLoaded = $state(false);
+  let immichAlbum = $state("");
+  /** @type {Array<{id: string, title: string, count: number}>} */
+  let immichAlbums = $state([]);
+  /** @type {number | null} */
+  let immichLibraryTotal = $state(null);
+  let immichTotal = $state(0);
+  let immichOffset = $state(0);
+  let immichRequest = 0;
+
   $effect(() => {
     if (!isTauri) return;
     invoke("apple_photos_status", { authorize: false })
@@ -448,6 +462,109 @@
     applePhotosBusy = false;
   }
 
+  function leaveImmich() {
+    immichRequest += 1;
+    immichActive = false;
+    immichBusy = false;
+  }
+
+  async function loadImmichCollections(refresh = false) {
+    if (!preferences.immich_url || !preferences.immich_api_key) return false;
+    immichConnecting = true;
+    try {
+      if (refresh || !immichLoaded) {
+        const res = await invoke("immich_albums");
+        if (res.connected) {
+          immichAlbums = res.albums || [];
+          immichLibraryTotal = res.total ?? 0;
+          immichLoaded = true;
+        }
+      }
+      return true;
+    } catch (err) {
+      hold(`Could not reach Immich: ${err}`);
+      return false;
+    } finally {
+      immichConnecting = false;
+    }
+  }
+
+  async function openImmich(album = "", { refresh = false } = {}) {
+    const request = ++immichRequest;
+    leaveApplePhotos();
+    let preserve = immichActive && immichAlbum === album;
+    const previous = {
+      selected: new Set(selection.paths),
+      focus: view[sel]?.path,
+      anchor: view[selectionAnchor]?.path,
+      index: sel,
+    };
+    const loadedCount = library.frames.length;
+    const descending = sortDesc;
+    immichBusy = true;
+    dismiss();
+    try {
+      if (!await loadImmichCollections(refresh) || request !== immichRequest) return;
+      /** @type {(offset: number) => Promise<{frames: Frame[], total: number, next: number}>} */
+      const readPage = (offset) => invoke("immich_list", { album: album || null, offset, descending });
+      const page = await reloadPhotoPages(
+        readPage,
+        {
+          minimumCount: preserve ? loadedCount : 0,
+          retainedPaths: preserve ? [...previous.selected, previous.focus, previous.anchor,
+            currentMode === "dev" && photoPath?.startsWith("immich://") ? photoPath : null] : [],
+          isCurrent: () => request === immichRequest,
+        },
+      );
+      if (!page || request !== immichRequest) return;
+      immichAlbum = album;
+      immichActive = true;
+      immichTotal = page.total;
+      immichOffset = page.next;
+      const open = beginOpen({});
+      open.commit(page.frames);
+      open.finish();
+      if (preserve) {
+        const restored = restorePhotoSelection(view, previous);
+        setSelection(restored.selected, view[restored.anchor]?.path ?? null);
+        focusAt(view, restored.index);
+      } else {
+        minRating = 0;
+        filterStory = false;
+        previewFilter = false;
+        storySet = new Set();
+        focusAt(view, 0);
+        selectOnly(view, 0);
+        currentScrollTop = 0;
+      }
+      session.setLastDirectory(IMMICH_ROOT + album);
+      if (!preserve) await switchMode("cull");
+    } catch (error) {
+      if (request === immichRequest) hold(`Could not open Immich: ${error}`);
+    } finally {
+      if (request === immichRequest) immichBusy = false;
+    }
+  }
+
+  async function loadMoreImmich() {
+    if (immichBusy || !immichActive) return;
+    const request = immichRequest;
+    immichBusy = true;
+    try {
+      const page = await invoke("immich_list", {
+        album: immichAlbum || null, offset: immichOffset, descending: sortDesc,
+      });
+      if (request !== immichRequest) return;
+      appendFrames(page.frames);
+      immichOffset = page.next;
+      immichTotal = page.total;
+    } catch (error) {
+      if (request === immichRequest) hold(`Could not load more photos from Immich: ${error}`);
+    } finally {
+      if (request === immichRequest) immichBusy = false;
+    }
+  }
+
   async function cancelApplePhotosTransfer() {
     try {
       await invoke("apple_photos_cancel");
@@ -568,6 +685,23 @@
     apple_photos_cache_limit_gib: 4,
     default_engine: "",
     app_theme: "reveal",
+    immich_url: "",
+    immich_api_key: "",
+    immich_export_enabled: false,
+    google_photos_client_id: "",
+    google_photos_client_secret: "",
+    google_photos_refresh_token: "",
+    google_photos_export_enabled: false,
+  });
+
+  const immichLibrary = $derived({
+    connected: !!(preferences.immich_url && preferences.immich_api_key),
+    active: immichActive,
+    busy: immichBusy || immichConnecting,
+    loaded: immichLoaded,
+    album: immichAlbum,
+    albums: immichAlbums,
+    total: immichLibraryTotal,
   });
 
   // Grid geometry + rail filters — the Swift model's columnsPref/cellAspect/
@@ -1808,18 +1942,13 @@
       win = new WebviewWindow("settings-panel", {
         url: "/settings-panel",
         title: "Settings",
-        width: 640,
-        height: 480,
+        width: 860,
+        height: 580,
+        minWidth: 720,
+        minHeight: 460,
         resizable: true,
         titleBarStyle: "overlay",
         hiddenTitle: true,
-        // Native traffic lights here, Reveal's own drawn ones in the main
-        // window — so macOS's default spot (centre 16pt down, measured
-        // 2026-09-23) sat 4.75pt above the main window's line and off the
-        // pane's inset. Place the ~14pt buttons so their centre lands on the
-        // main window's measured centre (x 23.75, y 20.75 = half of
-        // --titlebar-height, packages/styles/app.scss).
-        trafficLightPosition: new LogicalPosition(17, 14),
       });
       win.once("tauri://created", () => setTimeout(sendSettingsToPanel, 300));
     }
@@ -2391,7 +2520,12 @@
       await openApplePhotos(dir.slice(APPLE_PHOTOS_ROOT.length), { authorize: restoreMode });
       return;
     }
+    if (dir?.startsWith(IMMICH_ROOT)) {
+      await openImmich(dir.slice(IMMICH_ROOT.length));
+      return;
+    }
     leaveApplePhotos();
+    leaveImmich();
     // NOTE: the index stores dirs in the canonical firmlink form
     // (/System/Volumes/Data/mnt/…) — pass paths through verbatim; any
     // "normalization" to the short alias breaks the exact-match query.
@@ -4292,6 +4426,9 @@
           applePhotos={applePhotosLibrary}
           onConnectApplePhotos={connectApplePhotos}
           onRefreshApplePhotos={refreshApplePhotos}
+          immich={immichLibrary}
+          onConnectImmich={() => loadImmichCollections()}
+          onRefreshImmich={() => loadImmichCollections(true)}
           root={library.root}
           roots={library.roots}
           dirs={library.dirs}
@@ -4351,6 +4488,9 @@
             applePhotos={applePhotosLibrary}
             onConnectApplePhotos={connectApplePhotos}
             onRefreshApplePhotos={refreshApplePhotos}
+            immich={immichLibrary}
+            onConnectImmich={() => loadImmichCollections()}
+            onRefreshImmich={() => loadImmichCollections(true)}
             root={library.root}
             roots={library.roots}
             dirs={library.dirs}
@@ -4510,6 +4650,14 @@
             {#if applePhotosOffset < applePhotosTotal}
               <button class="rail-action" onclick={loadMoreApplePhotos} disabled={applePhotosBusy}>
                 {applePhotosBusy ? "Loading..." : "Load more photos"}
+              </button>
+            {/if}
+          {/if}
+          {#if immichActive}
+            <span class="frame-count titlebar-text">{frames.length} / {immichTotal} Immich</span>
+            {#if immichOffset < immichTotal}
+              <button class="rail-action" onclick={loadMoreImmich} disabled={immichBusy}>
+                {immichBusy ? "Loading..." : "Load more photos"}
               </button>
             {/if}
           {/if}

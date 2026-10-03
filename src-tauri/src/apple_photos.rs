@@ -184,6 +184,10 @@ fn sweep_empty_edit_dirs(edits: PathBuf) {
 }
 
 pub fn metadata_path(path: &str) -> Result<PathBuf, String> {
+    if crate::immich::is_asset(path) {
+        let app = &storage()?.app;
+        return crate::immich::metadata_path(app, path);
+    }
     if !is_asset(path) {
         return Ok(PathBuf::from(path));
     }
@@ -196,6 +200,12 @@ pub fn metadata_path(path: &str) -> Result<PathBuf, String> {
 }
 
 pub fn require_file(path: &str) -> Result<(), String> {
+    if crate::immich::is_asset(path) {
+        return Err(
+            "Immich is a remote source. Export this photo before using filesystem actions."
+                .to_string(),
+        );
+    }
     if is_asset(path) {
         Err(
             "Apple Photos is read-only. Export this photo before using filesystem actions."
@@ -307,6 +317,14 @@ pub fn info(path: &str) -> Result<Asset, String> {
 /// Must be called from a blocking worker. A single download at a time bounds
 /// full-resolution memory and prevents simultaneous renders from racing the cache.
 pub fn source(path: &str) -> Result<Source, String> {
+    if crate::immich::is_asset(path) {
+        let app = storage()?.app.clone();
+        let target = crate::immich::source(&app, path)?;
+        return Ok(Source {
+            path: target,
+            _lease: None,
+        });
+    }
     if !is_asset(path) {
         return Ok(Source {
             path: PathBuf::from(path),
