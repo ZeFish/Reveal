@@ -527,7 +527,7 @@
   {#if isTauri}
     <div class="window-controls-zone" data-tauri-drag-region>
       <div class="window-controls" aria-label="Window controls">
-        <button class="window-close" onclick={onClose} aria-label="Close window"></button>
+        <button class="window-close" onclick={() => onClose()} aria-label="Close window"></button>
         <button class="window-minimize" onclick={minimizeWindow} aria-label="Minimize window"></button>
         <button class="window-zoom" onclick={zoomWindow} aria-label="Zoom window"></button>
       </div>
