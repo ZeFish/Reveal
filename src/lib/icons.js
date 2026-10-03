@@ -38,6 +38,8 @@ import stopCircle from "../../../../packages/icon/icons/ph/stop-circle.svg?raw";
 import subtitles from "../../../../packages/icon/icons/ph/subtitles.svg?raw";
 import textB from "../../../../packages/icon/icons/ph/text-b.svg?raw";
 import textItalic from "../../../../packages/icon/icons/ph/text-italic.svg?raw";
+// The Standard Garden mark (packages/icon/icons/stnd): four squares.
+import stndGarden from "../../../../packages/icon/icons/stnd/garden.svg?raw";
 import userCircle from "../../../../packages/icon/icons/ph/user-circle.svg?raw";
 import warning from "../../../../packages/icon/icons/ph/warning.svg?raw";
 import x from "../../../../packages/icon/icons/ph/x.svg?raw";
@@ -79,6 +81,7 @@ export const icons = {
   subtitles,
   "text-b": textB,
   "text-italic": textItalic,
+  "stnd-garden": stndGarden,
   "user-circle": userCircle,
   warning,
   x,

@@ -989,7 +989,7 @@ import { IMMICH_ROOT } from "./immichTree.js";
             <span class="account-avatar">{(garden?.username ?? "?").slice(0, 1).toUpperCase()}</span>
             <span class="account-name">{garden?.username}</span>
           {:else}
-            <Icon name="user-circle" size="14px" />
+            <Icon name="stnd-garden" size="14px" />
             <span>Connect Garden</span>
           {/if}
         </button>

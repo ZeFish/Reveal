@@ -146,7 +146,7 @@
     { id: "immich", label: "Immich", icon: "cloud-arrow-up" },
     { id: "google_photos", label: "Google Photos", icon: "google-photos-logo" },
     { id: "cache", label: "Cache & Storage", icon: "hard-drive" },
-    { id: "garden", label: "Garden Account", icon: "user-circle" },
+    { id: "garden", label: "Garden Account", icon: "stnd-garden" },
     { id: "ai", label: "AI & Automation", icon: "lightning" },
     { id: "about", label: "About", icon: "info" },
   ];
