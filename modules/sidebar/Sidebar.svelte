@@ -1151,13 +1151,13 @@ import { IMMICH_ROOT } from "./immichTree.js";
        margin cancels the card's own inset, so these controls centre on the
        traffic lights and on the rail beside them. */
     height: var(--titlebar-height);
-    margin-top: calc(var(--window-inset) * -1.5);
+    margin-top: calc(var(--window-inset) * -1.25);
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    gap: var(--space-d2);
+    gap: 0;
     /* Native traffic lights overlay the window top-left — start past them. */
-    padding: 0 var(--space) 0 var(--window-controls-offset-sidebar, 78px);
+    padding: 0 var(--space) 0 var(--window-controls-offset-sidebar);
   }
   /* circle.circle — a ring with a centred dot, accent when focus is on. */
   .focus-glyph {
@@ -1229,6 +1229,7 @@ import { IMMICH_ROOT } from "./immichTree.js";
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    font-familly: var(--font-interface);
   }
   .indexing {
     display: inline-flex;
@@ -1266,7 +1267,7 @@ import { IMMICH_ROOT } from "./immichTree.js";
     display: flex;
     align-items: center;
     gap: var(--row-gap);
-    padding: var(--space-d5) 0;
+    padding: var(--space-d2) 0 0 0;
     margin-top: 0;
   }
   .cat-disc {
@@ -1367,6 +1368,7 @@ import { IMMICH_ROOT } from "./immichTree.js";
     /* Right-aligned in a fixed slot so every count shares one right edge. */
     min-width: 2.4em;
     text-align: right;
+    font-family: var(--font-interface);
   }
   /* Fixed slot for the story marker — present on every row (empty or not) so it
      never shifts the count. */

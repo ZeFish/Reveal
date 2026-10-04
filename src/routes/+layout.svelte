@@ -52,7 +52,7 @@
 
 <style>
   :global(:root) {
-    --window-controls-offset-sidebar: 78px;
+    --window-controls-offset-sidebar: 66px;
     /* The photo canvas: unified with the global ground. */
     --canvas: var(--color-background);
     --window-controls-offset-content: 86px;
