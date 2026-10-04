@@ -140,7 +140,6 @@
   const CATEGORIES = [
     { id: "general", label: "General", icon: "gear" },
     { id: "photos", label: "Photos", icon: "image" },
-    { id: "appearance", label: "Appearance", icon: "palette" },
     { id: "locations", label: "Locations", icon: "folder-open" },
     { id: "library", label: "Libraries", icon: "books" },
     { id: "obsidian", label: "Obsidian", icon: "note-pencil" },
@@ -599,6 +598,48 @@
         </div>
         <div class="section-group">
           <div class="section-heading">
+            <Icon name="palette" size="12px" />
+            <span>APPEARANCE</span>
+          </div>
+          <div class="card flush list divided date-card">
+            <div class="setting-row">
+              <div class="row-meta">
+                <span class="row-label">THEME</span>
+                <span class="row-desc">Applies right away, in every open window — no need to Save.</span>
+              </div>
+              <div class="row-control">
+                <Dropdown label="Theme" triggerClass="outline small action-pill-btn" align="end">
+                  {#snippet trigger()}
+                    <span>{themes.find((t) => t.id === preferences.app_theme)?.label ?? "Reveal"}</span>
+                    <Icon name="caret-down" size="10px" />
+                  {/snippet}
+                  {#each themes as theme}
+                    <DropdownItem onclick={() => onSelectTheme(theme.id)}>{theme.label}</DropdownItem>
+                  {/each}
+                </Dropdown>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="row-meta">
+                <span class="row-label">TEXT SIZE</span>
+                <span class="row-desc">Scales the whole interface together — text, spacing and controls.</span>
+              </div>
+              <div class="row-control">
+                <Dropdown label="Text size" triggerClass="outline small action-pill-btn" align="end">
+                  {#snippet trigger()}
+                    <span>{TEXT_SIZES.find((t) => t.px === (preferences.ui_text_size ?? DEFAULT_TEXT_SIZE))?.label ?? "Default"}</span>
+                    <Icon name="caret-down" size="10px" />
+                  {/snippet}
+                  {#each TEXT_SIZES as size}
+                    <DropdownItem onclick={() => onSelectTextSize(size.px)}>{size.label} · {size.px}px</DropdownItem>
+                  {/each}
+                </Dropdown>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="section-group">
+          <div class="section-heading">
             <Icon name="heart" size="12px" />
             <span>OPEN SOURCE &amp; CREDITS</span>
           </div>
@@ -712,45 +753,6 @@
                   <DropdownItem onclick={() => onSetDefaultImportPreset(null)}>None</DropdownItem>
                   {#each presets as preset}
                     <DropdownItem onclick={() => onSetDefaultImportPreset(preset.name)}>{preset.name}</DropdownItem>
-                  {/each}
-                </Dropdown>
-              </div>
-            </div>
-          </div>
-        </div>
-      {:else if activeCategory === "appearance"}
-        <div class="section-group">
-          <div class="card flush list divided date-card">
-            <div class="setting-row">
-              <div class="row-meta">
-                <span class="row-label">THEME</span>
-                <span class="row-desc">Applies right away, in every open window — no need to Save.</span>
-              </div>
-              <div class="row-control">
-                <Dropdown label="Theme" triggerClass="outline small action-pill-btn" align="end">
-                  {#snippet trigger()}
-                    <span>{themes.find((t) => t.id === preferences.app_theme)?.label ?? "Reveal"}</span>
-                    <Icon name="caret-down" size="10px" />
-                  {/snippet}
-                  {#each themes as theme}
-                    <DropdownItem onclick={() => onSelectTheme(theme.id)}>{theme.label}</DropdownItem>
-                  {/each}
-                </Dropdown>
-              </div>
-            </div>
-            <div class="setting-row">
-              <div class="row-meta">
-                <span class="row-label">TEXT SIZE</span>
-                <span class="row-desc">Scales the whole interface together — text, spacing and controls.</span>
-              </div>
-              <div class="row-control">
-                <Dropdown label="Text size" triggerClass="outline small action-pill-btn" align="end">
-                  {#snippet trigger()}
-                    <span>{TEXT_SIZES.find((t) => t.px === (preferences.ui_text_size ?? DEFAULT_TEXT_SIZE))?.label ?? "Default"}</span>
-                    <Icon name="caret-down" size="10px" />
-                  {/snippet}
-                  {#each TEXT_SIZES as size}
-                    <DropdownItem onclick={() => onSelectTextSize(size.px)}>{size.label} · {size.px}px</DropdownItem>
                   {/each}
                 </Dropdown>
               </div>
