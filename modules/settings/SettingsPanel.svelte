@@ -138,6 +138,7 @@
   } = $props();
 
   const CATEGORIES = [
+    { id: "general", label: "General", icon: "gear" },
     { id: "photos", label: "Photos", icon: "image" },
     { id: "appearance", label: "Appearance", icon: "palette" },
     { id: "locations", label: "Locations", icon: "folder-open" },
@@ -148,7 +149,6 @@
     { id: "cache", label: "Cache & Storage", icon: "hard-drive" },
     { id: "garden", label: "Garden Account", icon: "stnd-garden" },
     { id: "ai", label: "AI & Automation", icon: "lightning" },
-    { id: "about", label: "About", icon: "info" },
   ];
   const AI_PROVIDERS = [
     { id: "anthropic", label: "Anthropic (Claude)", modelPlaceholder: "claude-sonnet-5" },
@@ -156,12 +156,12 @@
   ];
   const visibleCategories = $derived(CATEGORIES);
   const aiCullActive = $derived(preferences.ai_cull_mark_story || preferences.ai_cull_export_desktop);
-  let activeCategory = $state("photos");
+  let activeCategory = $state("general");
   // A category that stops being visible (e.g. Apple Photos support changing)
   // shouldn't leave the pane on a hidden section.
   $effect(() => {
     if (!visibleCategories.some((c) => c.id === activeCategory)) {
-      activeCategory = visibleCategories[0]?.id ?? "photos";
+      activeCategory = visibleCategories[0]?.id ?? "general";
     }
   });
 
@@ -534,7 +534,7 @@
     </div>
   {/if}
 
-  <nav class="categories pane" data-tauri-drag-region>
+  <nav class="categories" data-tauri-drag-region>
     <div class="categories-spacer" data-tauri-drag-region></div>
     {#each visibleCategories as cat (cat.id)}
       <button
@@ -550,7 +550,86 @@
 
   <div class="detail">
     <div class="detail-scroll">
-      {#if activeCategory === "photos"}
+      {#if activeCategory === "general"}
+        <div class="section-group">
+          <div class="section-heading">
+            <Icon name="gear" size="12px" />
+            <span>REVEAL</span>
+          </div>
+          <div class="card flush list divided">
+            <div class="setting-row">
+              <div class="row-meta">
+                <span class="row-label">VERSION</span>
+              </div>
+              <div class="row-control"><span class="mono">{appVersion || "—"}</span></div>
+            </div>
+            {#if isTauri}
+              <div class="setting-row">
+                <div class="row-meta">
+                  <span class="row-label">UPDATES</span>
+                  <span class="row-desc">
+                    {#if updater.status === "checking"}Checking…
+                    {:else if updater.status === "uptodate"}Reveal is up to date.
+                    {:else if updater.status === "available"}Reveal {updater.version} is available.
+                    {:else if updater.status === "downloading"}Downloading {updater.version}…
+                    {:else if updater.status === "ready"}Restarting…
+                    {:else if updater.status === "error"}Couldn't check for updates — {updater.error}
+                    {:else}Reveal looks for updates a few seconds after it opens.{/if}
+                  </span>
+                </div>
+                <div class="row-control">
+                  {#if updater.status === "available"}
+                    <button type="button" class="outline small action-pill-btn" onclick={installUpdate}>
+                      <span>Install &amp; restart</span>
+                    </button>
+                  {:else}
+                    <button type="button" class="outline small action-pill-btn" disabled={updater.status === "checking" || updater.status === "downloading" || updater.status === "ready"} onclick={() => checkForUpdate()}>
+                      <span>Check now</span>
+                    </button>
+                  {/if}
+                </div>
+              </div>
+            {/if}
+            <div class="setting-row">
+              <div class="row-meta">
+                <span class="row-desc">Free and open source — a personal darkroom, not a product. Built on the same appetite for crediting the work it stands on that it asks of anyone using it.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="section-group">
+          <div class="section-heading">
+            <Icon name="heart" size="12px" />
+            <span>OPEN SOURCE &amp; CREDITS</span>
+          </div>
+          <div class="card flush list divided">
+            <div class="setting-row">
+              <div class="row-meta">
+                <span class="row-label">SPEKTRAFILM-RS</span>
+                <span class="row-desc">The film-emulation engine behind the Spektra develop mode — turbasvin's Rust port of spektrafilm, pinned per release.</span>
+              </div>
+              <div class="row-control">
+                <button type="button" class="outline small action-pill-btn" onclick={() => openExternal("https://github.com/turbasvin/spektrafilm-rs")}>
+                  <Icon name="arrow-square-out" size="10px" />
+                  <span>GitHub</span>
+                </button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="row-meta">
+                <span class="row-label">RAPIDRAW</span>
+                <span class="row-desc">Timon Käch's GPU-accelerated RAW editor (AGPL-3.0) — a source of real inspiration for where Reveal's own develop engine can go.</span>
+              </div>
+              <div class="row-control">
+                <button type="button" class="outline small action-pill-btn" onclick={() => openExternal("https://github.com/CyberTimon/RapidRAW")}>
+                  <Icon name="arrow-square-out" size="10px" />
+                  <span>GitHub</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      {:else if activeCategory === "photos"}
         <div class="section-group">
           <div class="section-heading">
             <Icon name="image" size="12px" />
@@ -1214,85 +1293,6 @@
             </div>
           </div>
         </div>
-      {:else if activeCategory === "about"}
-        <div class="section-group">
-          <div class="section-heading">
-            <Icon name="info" size="12px" />
-            <span>REVEAL</span>
-          </div>
-          <div class="card flush list divided">
-            <div class="setting-row">
-              <div class="row-meta">
-                <span class="row-label">VERSION</span>
-              </div>
-              <div class="row-control"><span class="mono">{appVersion || "—"}</span></div>
-            </div>
-            {#if isTauri}
-              <div class="setting-row">
-                <div class="row-meta">
-                  <span class="row-label">UPDATES</span>
-                  <span class="row-desc">
-                    {#if updater.status === "checking"}Checking…
-                    {:else if updater.status === "uptodate"}Reveal is up to date.
-                    {:else if updater.status === "available"}Reveal {updater.version} is available.
-                    {:else if updater.status === "downloading"}Downloading {updater.version}…
-                    {:else if updater.status === "ready"}Restarting…
-                    {:else if updater.status === "error"}Couldn't check for updates — {updater.error}
-                    {:else}Reveal looks for updates a few seconds after it opens.{/if}
-                  </span>
-                </div>
-                <div class="row-control">
-                  {#if updater.status === "available"}
-                    <button type="button" class="outline small action-pill-btn" onclick={installUpdate}>
-                      <span>Install &amp; restart</span>
-                    </button>
-                  {:else}
-                    <button type="button" class="outline small action-pill-btn" disabled={updater.status === "checking" || updater.status === "downloading" || updater.status === "ready"} onclick={() => checkForUpdate()}>
-                      <span>Check now</span>
-                    </button>
-                  {/if}
-                </div>
-              </div>
-            {/if}
-            <div class="setting-row">
-              <div class="row-meta">
-                <span class="row-desc">Free and open source — a personal darkroom, not a product. Built on the same appetite for crediting the work it stands on that it asks of anyone using it.</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="section-group">
-          <div class="section-heading">
-            <Icon name="heart" size="12px" />
-            <span>OPEN SOURCE &amp; CREDITS</span>
-          </div>
-          <div class="card flush list divided">
-            <div class="setting-row">
-              <div class="row-meta">
-                <span class="row-label">SPEKTRAFILM-RS</span>
-                <span class="row-desc">The film-emulation engine behind the Spektra develop mode — turbasvin's Rust port of spektrafilm, pinned per release.</span>
-              </div>
-              <div class="row-control">
-                <button type="button" class="outline small action-pill-btn" onclick={() => openExternal("https://github.com/turbasvin/spektrafilm-rs")}>
-                  <Icon name="arrow-square-out" size="10px" />
-                  <span>GitHub</span>
-                </button>
-              </div>
-            </div>
-            <div class="setting-row">
-              <div class="row-meta">
-                <span class="row-label">RAPIDRAW</span>
-                <span class="row-desc">Timon Käch's GPU-accelerated RAW editor (AGPL-3.0) — a source of real inspiration for where Reveal's own develop engine can go.</span>
-              </div>
-              <div class="row-control">
-                <button type="button" class="outline small action-pill-btn" onclick={() => openExternal("https://github.com/CyberTimon/RapidRAW")}>
-                  <Icon name="arrow-square-out" size="10px" />
-                  <span>GitHub</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
       {/if}
     </div>
 
@@ -1342,23 +1342,22 @@
     background: var(--color-background);
   }
 
-  /* Categories — floating pane with identical panel styling as the main window sidebar */
+  /* Categories — sidebar pane for settings */
   .categories {
     width: 200px;
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
     gap: var(--space-d8);
-    margin: var(--window-inset);
+    margin: 0;
     padding: 0 var(--space-d2) var(--space-d2);
     background: var(--color-surface-light-1);
-    border-radius: var(--pane-radius);
-    box-shadow: var(--shadow);
+    border-right: var(--border);
     overflow-y: auto;
   }
-  /* Clears the traffic lights with generous breathing room */
+  /* Clears the traffic lights with balanced breathing room */
   .categories-spacer {
-    height: 58px;
+    height: var(--titlebar-height, 42px);
     flex-shrink: 0;
   }
   .category-btn {
@@ -1367,6 +1366,7 @@
     align-items: center;
     gap: var(--space-d2);
     width: 100%;
+    margin: 0;
     padding: var(--space-d3) calc(var(--space-d4) * 3);
     cursor: pointer;
   }
@@ -1378,7 +1378,7 @@
     flex-direction: column;
   }
   .detail-scroll {
-    padding: 58px var(--space) var(--space);
+    padding: var(--titlebar-height, 42px) var(--space) var(--space);
     overflow-y: auto;
     flex: 1;
     min-height: 0;
