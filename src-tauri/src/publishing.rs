@@ -566,7 +566,7 @@ pub(crate) async fn publish_story(
             .filter(|t| !t.is_empty())
             .or_else(|| target.remote.as_ref().map(|r| r.title.clone()).filter(|t| !t.is_empty()))
             .unwrap_or_else(|| name.clone());
-        let content = story::content_for_publish(dirp, &urls).map_err(|e| e.to_string())?;
+        let content = story::content_for_publish(dirp, &title, &urls).map_err(|e| e.to_string())?;
         emit(total, &name, if updating { "updating" } else { "note" });
         if dry_run {
             let verb = if updating { "would update" } else { "would create" };
@@ -625,18 +625,52 @@ pub(crate) async fn publish_photo(
             .map_err(|e| e.to_string())?;
 
         emit("note");
-        let slug = if apple_photos::is_asset(&path) {
-            format!("{}-{:016x}", reveal_publish::slugify(&stem), developed_preview_source_key(&raw))
-        } else {
+        let caption = sidecar.as_ref().and_then(|s| s.description.clone()).unwrap_or_default();
+        let title = caption
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .map(|line| {
+                if line.chars().count() > 80 {
+                    let mut s: String = line.chars().take(80).collect();
+                    s.push('…');
+                    s
+                } else {
+                    line.to_string()
+                }
+            })
+            .unwrap_or_else(|| stem.clone());
+
+        let slug_base = reveal_publish::slugify(&title);
+        let slug_base = if slug_base.is_empty() {
             reveal_publish::slugify(&stem)
+        } else {
+            slug_base
         };
-        let caption = sidecar.and_then(|s| s.description).unwrap_or_default();
+        let slug_base = if slug_base.is_empty() {
+            "photo".to_string()
+        } else {
+            slug_base
+        };
+        let slug = if apple_photos::is_asset(&path) {
+            format!("{slug_base}-{:016x}", developed_preview_source_key(&raw))
+        } else {
+            slug_base
+        };
+
         let now = chrono::Utc::now().to_rfc3339();
+        let escaped_title = serde_json::to_string(&title).unwrap_or_else(|_| format!("\"{title}\""));
+        let alt = title.replace('[', "").replace(']', "");
+        let caption_block = if caption.trim().is_empty() {
+            String::new()
+        } else {
+            format!("\n\n{caption}")
+        };
         let content = format!(
-            "---\npublish: true\ntype: gallery\ntheme: gallery\ndownload: {allow_download}\ntags:\n  - gallery\n  - photo\ncreated: {now}\nmodified: {now}\n---\n\n![]({url})\n\n{caption}\n"
+            "---\ntitle: {escaped_title}\npublish: true\ntype: gallery\ntheme: gallery\ndownload: {allow_download}\ntags:\n  - gallery\n  - photo\ncreated: {now}\nmodified: {now}\n---\n\n![{alt}]({url}){caption_block}\n"
         );
         client
-            .put_note(&slug, &stem, &content)
+            .put_note(&slug, &title, &content)
             .map_err(|e| e.to_string())?;
         let live = client.live_url(&slug);
         eprintln!("published: {live}");

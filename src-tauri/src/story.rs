@@ -76,8 +76,8 @@ impl StoryNote {
         }
     }
 
-    /// Write the note back to disk, creating parent dirs as needed.
-    pub fn save(&self) -> io::Result<()> {
+    /// Render frontmatter and body into Markdown.
+    pub fn render(&self) -> String {
         let mut out = String::new();
         if !self.frontmatter.is_empty() {
             out.push_str("---\n");
@@ -88,6 +88,12 @@ impl StoryNote {
         if !out.ends_with('\n') {
             out.push('\n');
         }
+        out
+    }
+
+    /// Write the note back to disk, creating parent dirs as needed.
+    pub fn save(&self) -> io::Result<()> {
+        let out = self.render();
         if let Some(parent) = self.url.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -255,14 +261,24 @@ pub fn toggle(dir: &Path, photo_path: &Path) -> std::io::Result<Vec<String>> {
     Ok(parse_stems(&note.body))
 }
 
-/// The note content with `publish: true` guaranteed in frontmatter and each
-/// `![[stem.jpg]]` rewritten to its CDN url. Local file is left untouched
+/// The note content with `publish: true` and `title` guaranteed in frontmatter,
+/// and each `![[stem.jpg]]` rewritten to its CDN url. Local file is left untouched
 /// except for the publish flag + garden-url.
 pub fn content_for_publish(
     dir: &Path,
+    title: &str,
     urls: &[(String, String)], // (stem, cdn url)
 ) -> std::io::Result<String> {
-    let mut content = std::fs::read_to_string(note_path(dir))?;
+    let raw = std::fs::read_to_string(note_path(dir))?;
+    let mut note = StoryNote::parse(&raw, &note_path(dir));
+    if note.frontmatter_value("publish").is_none() {
+        note.set_frontmatter("publish", Some("true"));
+    }
+    if note.frontmatter_value("title").is_none() {
+        let escaped = serde_json::to_string(title).unwrap_or_else(|_| format!("\"{title}\""));
+        note.set_frontmatter("title", Some(&escaped));
+    }
+    let mut content = note.render();
     for (stem, url) in urls {
         content = content.replace(&format!("![[{stem}.jpg]]"), &format!("![{stem}]({url})"));
     }
@@ -433,5 +449,21 @@ mod tests {
         // The composer's stale frontmatter did NOT overwrite the disk frontmatter.
         assert_eq!(reloaded.frontmatter_value("color-dark-background"), Some("#15110D".to_string()));
         assert_eq!(reloaded.frontmatter_value("pinned"), Some("true".to_string()));
+    }
+
+    #[test]
+    fn content_for_publish_ensures_title_and_publish() {
+        use std::fs;
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        let note_path = super::note_path(dir);
+        fs::write(&note_path, "![[A01.jpg]]\nProse\n").unwrap();
+
+        let urls = vec![("A01".to_string(), "https://cdn.test/A01.jpg".to_string())];
+        let published = super::content_for_publish(dir, "My Story", &urls).unwrap();
+
+        assert!(published.contains("publish: true"));
+        assert!(published.contains("title: \"My Story\""));
+        assert!(published.contains("![A01](https://cdn.test/A01.jpg)"));
     }
 }
