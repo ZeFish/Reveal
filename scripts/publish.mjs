@@ -37,6 +37,8 @@ if (!fs.existsSync(KEY)) {
 // 1. Build. The key goes in through the environment (the CLI wants its
 // contents, not a path), never printed or put on a command line.
 console.log(`Building Reveal ${version}…`);
+execFileSync("pnpm", ["generate:garden-themes"], { cwd: appDir, stdio: "inherit" });
+execFileSync("pnpm", ["build:web"], { cwd: appDir, stdio: "inherit" });
 execFileSync("pnpm", ["tauri", "build"], {
   cwd: appDir,
   stdio: "inherit",

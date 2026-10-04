@@ -1762,6 +1762,7 @@ pub fn run() {
                     eprintln!("js: {msg}");
                     let response = HttpResponse::builder()
                         .header("Content-Type", "text/plain")
+                        .header("Access-Control-Allow-Origin", "*")
                         .body(b"ok".to_vec())
                         .unwrap();
                     responder.respond(response);
