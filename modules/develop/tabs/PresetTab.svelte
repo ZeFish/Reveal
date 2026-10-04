@@ -223,7 +223,7 @@
         bind:value={newName}
         onkeydown={(e) => e.key === "Enter" && saveCurrent()}
       />
-      <button class="secondary save-btn" onclick={saveCurrent} disabled={!newName.trim() || !recipe || busy}>
+      <button class="accent save-btn" onclick={saveCurrent} disabled={!newName.trim() || !recipe || busy}>
         <Icon name="plus" size="10px" />
         <span>Save</span>
       </button>

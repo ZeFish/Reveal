@@ -1300,7 +1300,7 @@
     <footer class="settings-footer">
       <div class="footer-actions">
         <button type="button" class="outline small btn-cancel" onclick={() => onClose()}>CANCEL</button>
-        <button type="button" class="secondary small btn-save" onclick={save} disabled={saving || cacheBusy}>SAVE</button>
+        <button type="button" class="accent small btn-save" onclick={save} disabled={saving || cacheBusy}>SAVE</button>
       </div>
     </footer>
   </div>

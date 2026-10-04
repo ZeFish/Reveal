@@ -952,11 +952,11 @@ import { IMMICH_ROOT } from "./immichTree.js";
               </button>
             {/if}
             <div class="secondary-actions">
-              <button class="action-btn secondary" onclick={() => onDevelopStory()} title="Develop every photo in the story">
+              <button class="action-btn accent" onclick={() => onDevelopStory()} title="Develop every photo in the story">
                 <Icon name="sliders-horizontal" size="10px" />
                 <span>Develop</span>
               </button>
-              <button class="action-btn secondary" onclick={() => onExportLocalStory()} disabled={publishing} title="Export the photos locally">
+              <button class="action-btn accent" onclick={() => onExportLocalStory()} disabled={publishing} title="Export the photos locally">
                 <Icon name="export" size="10px" />
                 <span>Export</span>
               </button>
@@ -1557,7 +1557,7 @@ import { IMMICH_ROOT } from "./immichTree.js";
     display: flex;
     gap: var(--space-d3);
   }
-  .action-btn.secondary {
+  .action-btn.accent {
     flex: 1;
     min-width: 0;
     display: flex;

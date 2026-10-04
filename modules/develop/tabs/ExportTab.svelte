@@ -119,7 +119,7 @@
         }}
       />
     </div>
-    <button class="secondary panel-btn" onclick={() => onExport()} disabled={!photoPath}>Export</button>
+    <button class="accent panel-btn" onclick={() => onExport()} disabled={!photoPath}>Export</button>
     <button class="outline panel-btn" onclick={() => onExportDaily()} disabled={!photoPath}>Daily note (Obsidian)</button>
     <div class="frow">
       <span class="din frow-label">Allow download</span>
@@ -132,7 +132,7 @@
         onchange={toggleAllowDownload}
       />
     </div>
-    <button class="secondary panel-btn" onclick={publishPhoto} disabled={!photoPath || publishing}>
+    <button class="accent panel-btn" onclick={publishPhoto} disabled={!photoPath || publishing}>
       {publishing ? "Publishing…" : "Publish (Garden)"}
     </button>
     {#if publishStatus}

@@ -85,7 +85,7 @@
 
       <div class="btn-row mt">
         <button class="outline panel-btn half" onclick={resetRecipe}>Reset</button>
-        <button class="secondary panel-btn half" onclick={() => onExport()} disabled={!photoPath}>Export</button>
+        <button class="accent panel-btn half" onclick={() => onExport()} disabled={!photoPath}>Export</button>
       </div>
     {/if}
     </div>

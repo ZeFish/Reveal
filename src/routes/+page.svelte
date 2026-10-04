@@ -4579,7 +4579,7 @@
           {/if}
 
           <!-- Star filter -->
-          <Dropdown label="Filter by rating" triggerClass={`ghost ${minRating > 0 || filterStory ? "secondary" : ""}`}>
+          <Dropdown label="Filter by rating" triggerClass={`ghost ${minRating > 0 || filterStory ? "accent" : ""}`}>
             {#snippet trigger()}
               <Icon name="star" size="12px" />
               {#if minRating > 0}
@@ -4973,7 +4973,7 @@
           </div>
           <div class="modal-footer">
             <button onclick={async () => { await saveCatalogNote(); catalogOpen = false; }}>Save</button>
-            <button class="secondary" onclick={() => (catalogOpen = false)}>Close</button>
+            <button class="accent" onclick={() => (catalogOpen = false)}>Close</button>
           </div>
       </Dialog>
     {/if}
