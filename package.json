@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@stnd/fonts": "^0.5.2",
-    "@stnd/styles": "^0.13.0",
+    "@stnd/styles": "^0.13.1",
     "@stnd/ui": "^0.8.8",
     "@tauri-apps/api": "^2.12.1",
     "@tauri-apps/plugin-process": "^2.4.0",
