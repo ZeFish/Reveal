@@ -137,23 +137,42 @@
     engines = [],
   } = $props();
 
-  const CATEGORIES = [
-    { id: "general", label: "General", icon: "gear" },
-    { id: "photos", label: "Photos", icon: "image" },
-    { id: "locations", label: "Locations", icon: "folder-open" },
-    { id: "library", label: "Libraries", icon: "books" },
-    { id: "obsidian", label: "Obsidian", icon: "note-pencil" },
-    { id: "immich", label: "Immich", icon: "cloud-arrow-up" },
-    { id: "google_photos", label: "Google Photos", icon: "google-photos-logo" },
-    { id: "cache", label: "Cache & Storage", icon: "hard-drive" },
-    { id: "garden", label: "Garden Account", icon: "stnd-garden" },
-    { id: "ai", label: "AI & Automation", icon: "lightning" },
+  const SECTIONS = [
+    {
+      title: "",
+      items: [
+        { id: "general", label: "General", icon: "gear" },
+      ],
+    },
+    {
+      title: "PHOTO LIBRARY",
+      items: [
+        { id: "library", label: "Libraries", icon: "books" },
+        { id: "import_export", label: "Import & Export", icon: "arrows-down-up" },
+      ],
+    },
+    {
+      title: "INTEGRATIONS",
+      items: [
+        { id: "garden", label: "Garden Account", icon: "stnd-garden" },
+        { id: "obsidian", label: "Obsidian", icon: "note-pencil" },
+        { id: "immich", label: "Immich", icon: "cloud-arrow-up" },
+        { id: "google_photos", label: "Google Photos", icon: "google-photos-logo" },
+      ],
+    },
+    {
+      title: "SYSTEM",
+      items: [
+        { id: "cache", label: "Cache & Storage", icon: "hard-drive" },
+        { id: "ai", label: "AI & Automation", icon: "lightning" },
+      ],
+    },
   ];
   const AI_PROVIDERS = [
     { id: "anthropic", label: "Anthropic (Claude)", modelPlaceholder: "claude-sonnet-5" },
     { id: "gemini", label: "Google (Gemini)", modelPlaceholder: "gemini-2.5-flash" },
   ];
-  const visibleCategories = $derived(CATEGORIES);
+  const visibleCategories = $derived(SECTIONS.flatMap((s) => s.items));
   const aiCullActive = $derived(preferences.ai_cull_mark_story || preferences.ai_cull_export_desktop);
   let activeCategory = $state("general");
   // A category that stops being visible (e.g. Apple Photos support changing)
@@ -375,6 +394,17 @@
   let immichTesting = $state(false);
   let immichMessage = $state("");
   let immichError = $state("");
+  let immichDetailsOpen = $state(false);
+  const immichConnected = $derived(Boolean(preferences.immich_url && preferences.immich_api_key));
+
+  function disconnectImmich() {
+    preferences.immich_url = "";
+    preferences.immich_api_key = "";
+    preferences.immich_export_enabled = false;
+    immichMessage = "";
+    immichError = "";
+    immichDetailsOpen = false;
+  }
 
   async function testImmich() {
     if (!preferences.immich_url || !preferences.immich_api_key) {
@@ -404,6 +434,7 @@
   let googleAuthorizing = $state(false);
   let googleMessage = $state("");
   let googleError = $state("");
+  let googleDetailsOpen = $state(false);
   const googleConnected = $derived(Boolean(preferences.google_photos_refresh_token));
 
   async function authorizeGooglePhotos() {
@@ -453,6 +484,7 @@
       preferences.google_photos_export_enabled = false;
       googleMessage = "Disconnected from Google Photos";
       googleError = "";
+      googleDetailsOpen = false;
     } catch (err) {
       googleError = String(err);
     }
@@ -535,15 +567,22 @@
 
   <nav class="categories" data-tauri-drag-region>
     <div class="categories-spacer" data-tauri-drag-region></div>
-    {#each visibleCategories as cat (cat.id)}
-      <button
-        class="item category-btn"
-        aria-current={activeCategory === cat.id ? "true" : undefined}
-        onclick={() => (activeCategory = cat.id)}
-      >
-        <Icon name={cat.icon} size="14px" />
-        <span>{cat.label}</span>
-      </button>
+    {#each SECTIONS as section, sIdx}
+      {#if section.title}
+        <div class="nav-section-title" class:nav-section-spaced={sIdx > 0}>{section.title}</div>
+      {/if}
+      <div class="nav-section-items">
+        {#each section.items as cat (cat.id)}
+          <button
+            class="item category-btn"
+            aria-current={activeCategory === cat.id ? "true" : undefined}
+            onclick={() => (activeCategory = cat.id)}
+          >
+            <Icon name={cat.icon} size="14px" />
+            <span>{cat.label}</span>
+          </button>
+        {/each}
+      </div>
     {/each}
   </nav>
 
@@ -559,36 +598,33 @@
             <div class="setting-row">
               <div class="row-meta">
                 <span class="row-label">VERSION</span>
-              </div>
-              <div class="row-control"><span class="mono">{appVersion || "—"}</span></div>
-            </div>
-            {#if isTauri}
-              <div class="setting-row">
-                <div class="row-meta">
-                  <span class="row-label">UPDATES</span>
+                {#if isTauri && updater.status && updater.status !== "idle"}
                   <span class="row-desc">
-                    {#if updater.status === "checking"}Checking…
+                    {#if updater.status === "checking"}Checking for updates…
                     {:else if updater.status === "uptodate"}Reveal is up to date.
                     {:else if updater.status === "available"}Reveal {updater.version} is available.
                     {:else if updater.status === "downloading"}Downloading {updater.version}…
                     {:else if updater.status === "ready"}Restarting…
                     {:else if updater.status === "error"}Couldn't check for updates — {updater.error}
-                    {:else}Reveal looks for updates a few seconds after it opens.{/if}
+                    {/if}
                   </span>
-                </div>
-                <div class="row-control">
+                {/if}
+              </div>
+              <div class="row-control version-control">
+                {#if isTauri}
                   {#if updater.status === "available"}
                     <button type="button" class="outline small action-pill-btn" onclick={installUpdate}>
                       <span>Install &amp; restart</span>
                     </button>
                   {:else}
                     <button type="button" class="outline small action-pill-btn" disabled={updater.status === "checking" || updater.status === "downloading" || updater.status === "ready"} onclick={() => checkForUpdate()}>
-                      <span>Check now</span>
+                      <span>{updater.status === "checking" ? "Checking…" : "Check for update"}</span>
                     </button>
                   {/if}
-                </div>
+                {/if}
+                <span class="mono">{appVersion || "—"}</span>
               </div>
-            {/if}
+            </div>
             <div class="setting-row">
               <div class="row-meta">
                 <span class="row-desc">Free and open source — a personal darkroom, not a product. Built on the same appetite for crediting the work it stands on that it asks of anyone using it.</span>
@@ -670,11 +706,11 @@
             </div>
           </div>
         </div>
-      {:else if activeCategory === "photos"}
+      {:else if activeCategory === "import_export"}
         <div class="section-group">
           <div class="section-heading">
-            <Icon name="image" size="12px" />
-            <span>PHOTO ORGANIZATION</span>
+            <Icon name="arrows-down-up" size="12px" />
+            <span>PHOTO ORGANIZATION &amp; IMPORT</span>
           </div>
           <div class="card flush list divided date-card">
             <div class="setting-row">
@@ -691,7 +727,9 @@
                     spellcheck="false"
                   />
                   <Dropdown label="Date folder presets" triggerClass="ghost icon preset-toggle-btn" align="end">
-                    {#snippet trigger()}<Icon name="caret-down" size="10px" />{/snippet}
+                    {#snippet trigger()}
+                      <Icon name="caret-down" size="10px" />
+                    {/snippet}
                     {#each datePresets as preset}
                       <DropdownItem onclick={() => selectDatePattern(preset.pattern)}>
                         <span class="preset-option">
@@ -719,26 +757,6 @@
                 />
               </div>
             </div>
-          </div>
-          <div class="card flush list divided">
-            <div class="setting-row">
-              <div class="row-meta">
-                <span class="row-label">DEFAULT DEVELOP ENGINE</span>
-                <span class="row-desc">Engine applied to photos that don't have settings yet — a freshly arrived import.</span>
-              </div>
-              <div class="row-control">
-                <Dropdown label="Default engine" triggerClass="outline small action-pill-btn" align="end">
-                  {#snippet trigger()}
-                    <span>{engines.find((e) => e.id === preferences.default_engine)?.label ?? "None"}</span>
-                    <Icon name="caret-down" size="10px" />
-                  {/snippet}
-                  <DropdownItem onclick={() => (preferences.default_engine = "")}>None</DropdownItem>
-                  {#each engines as engine}
-                    <DropdownItem onclick={() => (preferences.default_engine = engine.id)}>{engine.label}</DropdownItem>
-                  {/each}
-                </Dropdown>
-              </div>
-            </div>
             <div class="setting-row">
               <div class="row-meta">
                 <span class="row-label">DEFAULT IMPORT PRESET</span>
@@ -759,11 +777,10 @@
             </div>
           </div>
         </div>
-      {:else if activeCategory === "locations"}
         <div class="section-group">
           <div class="section-heading">
             <Icon name="folder-open" size="12px" />
-            <span>LOCATIONS &amp; EXPORT</span>
+            <span>EXPORT &amp; ASSETS</span>
           </div>
           <div class="card flush list divided">
             <div class="setting-row">
@@ -888,129 +905,182 @@
         <div class="section-group">
           <div class="section-heading">
             <Icon name="cloud-arrow-up" size="12px" />
-            <span>IMMICH INTEGRATION</span>
+            <span>IMMICH CONNECTION</span>
           </div>
           <ManualLink page="reference/settings/#immich" label="Immich integration in the manual" />
           <div class="card flush list divided">
+            {#if immichConnected}
+              <div class="setting-row">
+                <div class="row-meta">
+                  <span class="row-label">ACCOUNT STATUS</span>
+                  <span class="row-desc">
+                    {#if immichMessage}
+                      {immichMessage}
+                    {:else}
+                      Connected to Immich at <span class="mono">{preferences.immich_url}</span>.
+                    {/if}
+                  </span>
+                </div>
+                <div class="row-control cache-actions">
+                  <button
+                    type="button"
+                    class="outline small action-pill-btn"
+                    disabled={immichTesting}
+                    onclick={testImmich}
+                  >
+                    {immichTesting ? "VERIFYING…" : "VERIFY CONNECTION"}
+                  </button>
+                  <button
+                    type="button"
+                    class="outline small action-pill-btn"
+                    onclick={disconnectImmich}
+                  >
+                    DISCONNECT
+                  </button>
+                </div>
+              </div>
+              <button
+                type="button"
+                class="accordion-header"
+                onclick={() => (immichDetailsOpen = !immichDetailsOpen)}
+                aria-expanded={immichDetailsOpen}
+              >
+                <div class="row-meta">
+                  <span class="row-label">CONNECTION SETTINGS</span>
+                  <span class="row-desc">Server URL and API key</span>
+                </div>
+                <div class="row-control">
+                  <Icon name={immichDetailsOpen ? "caret-down" : "caret-right"} size="11px" />
+                </div>
+              </button>
+              {#if immichDetailsOpen}
+                <div class="setting-row sub-row">
+                  <div class="row-meta">
+                    <span class="row-label">SERVER URL</span>
+                    <span class="row-desc">Base URL of your Immich instance.</span>
+                  </div>
+                  <div class="row-control">
+                    <input
+                      class="mono-input"
+                      bind:value={preferences.immich_url}
+                      placeholder="http://immich.local:2283"
+                      spellcheck="false"
+                    />
+                  </div>
+                </div>
+                <div class="setting-row sub-row">
+                  <div class="row-meta">
+                    <span class="row-label">API KEY</span>
+                    <span class="row-desc">Generate in your Immich Account Settings → API Keys.</span>
+                  </div>
+                  <div class="row-control">
+                    <input
+                      type="password"
+                      class="mono-input"
+                      bind:value={preferences.immich_api_key}
+                      placeholder="Paste your Immich API key"
+                      spellcheck="false"
+                    />
+                  </div>
+                </div>
+              {/if}
+            {:else}
+              <div class="setting-row">
+                <div class="row-meta">
+                  <span class="row-label">SERVER URL</span>
+                  <span class="row-desc">Base URL of your Immich instance (e.g. <code>http://immich.local:2283</code> or <code>https://immich.yourdomain.com</code>).</span>
+                </div>
+                <div class="row-control">
+                  <input
+                    class="mono-input"
+                    bind:value={preferences.immich_url}
+                    placeholder="http://immich.local:2283"
+                    spellcheck="false"
+                  />
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="row-meta">
+                  <span class="row-label">API KEY</span>
+                  <span class="row-desc">Generate an API key in your Immich Account Settings → API Keys.</span>
+                </div>
+                <div class="row-control">
+                  <input
+                    type="password"
+                    class="mono-input"
+                    bind:value={preferences.immich_api_key}
+                    placeholder="Paste your Immich API key"
+                    spellcheck="false"
+                  />
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="row-meta">
+                  <span class="row-label">VERIFY CONNECTION</span>
+                  <span class="row-desc">Test that Reveal can reach your server and authenticate.</span>
+                </div>
+                <div class="row-control">
+                  <button
+                    type="button"
+                    class="outline small action-pill-btn"
+                    disabled={immichTesting || !preferences.immich_url || !preferences.immich_api_key}
+                    onclick={testImmich}
+                  >
+                    {immichTesting ? "TESTING…" : "TEST CONNECTION"}
+                  </button>
+                </div>
+              </div>
+            {/if}
+          </div>
+          {#if immichError}<div role="alert"><Alert class="error">{immichError}</Alert></div>{/if}
+          {#if immichMessage && !immichConnected}<div role="status"><Alert class="info">{immichMessage}</Alert></div>{/if}
+        </div>
+
+        <div class="section-group">
+          <div class="section-heading">
+            <Icon name="cloud-arrow-up" size="12px" />
+            <span>EXPORT &amp; SYNC</span>
+          </div>
+          <div class="card flush list divided" class:disabled-card={!immichConnected}>
             <div class="setting-row">
               <div class="row-meta">
                 <span class="row-label">AUTO-UPLOAD ON EXPORT</span>
-                <span class="row-desc">Automatically upload developed JPEGs to your Immich server upon export.</span>
-              </div>
-              <div class="row-control">
-                <input type="checkbox" role="switch" bind:checked={preferences.immich_export_enabled} />
-              </div>
-            </div>
-            <div class="setting-row">
-              <div class="row-meta">
-                <span class="row-label">SERVER URL</span>
-                <span class="row-desc">Base URL of your Immich instance (e.g. <code>http://immich.local:2283</code> or <code>https://immich.yourdomain.com</code>).</span>
+                <span class="row-desc">
+                  {#if immichConnected}
+                    Automatically upload developed JPEGs to your Immich server upon export.
+                  {:else}
+                    Connect to your Immich server above to enable automatic uploads.
+                  {/if}
+                </span>
               </div>
               <div class="row-control">
                 <input
-                  class="mono-input"
-                  bind:value={preferences.immich_url}
-                  placeholder="http://immich.local:2283"
-                  spellcheck="false"
+                  type="checkbox"
+                  role="switch"
+                  disabled={!immichConnected}
+                  bind:checked={preferences.immich_export_enabled}
                 />
-              </div>
-            </div>
-            <div class="setting-row">
-              <div class="row-meta">
-                <span class="row-label">API KEY</span>
-                <span class="row-desc">Generate an API key in your Immich Account Settings → API Keys.</span>
-              </div>
-              <div class="row-control">
-                <input
-                  type="password"
-                  class="mono-input"
-                  bind:value={preferences.immich_api_key}
-                  placeholder="Paste your Immich API key"
-                  spellcheck="false"
-                />
-              </div>
-            </div>
-            <div class="setting-row">
-              <div class="row-meta">
-                <span class="row-label">VERIFY CONNECTION</span>
-                <span class="row-desc">Test that Reveal can reach your server and authenticate.</span>
-              </div>
-              <div class="row-control">
-                <button
-                  type="button"
-                  class="outline small action-pill-btn"
-                  disabled={immichTesting || !preferences.immich_url || !preferences.immich_api_key}
-                  onclick={testImmich}
-                >
-                  {immichTesting ? "TESTING…" : "TEST CONNECTION"}
-                </button>
               </div>
             </div>
           </div>
-          {#if immichError}<div role="alert"><Alert class="error">{immichError}</Alert></div>{/if}
-          {#if immichMessage}<div role="status"><Alert class="info">{immichMessage}</Alert></div>{/if}
         </div>
       {:else if activeCategory === "google_photos"}
         <div class="section-group">
           <div class="section-heading">
             <Icon name="google-photos-logo" size="12px" />
-            <span>GOOGLE PHOTOS INTEGRATION</span>
+            <span>GOOGLE PHOTOS CONNECTION</span>
           </div>
           <ManualLink page="reference/settings/#google-photos" label="Google Photos setup and permissions in the manual" />
           <div class="card flush list divided">
-            <div class="setting-row">
-              <div class="row-meta">
-                <span class="row-label">AUTO-UPLOAD ON EXPORT</span>
-                <span class="row-desc">Automatically upload developed JPEGs to your Google Photos library upon export.</span>
-              </div>
-              <div class="row-control">
-                <input type="checkbox" role="switch" disabled={!googleConnected} bind:checked={preferences.google_photos_export_enabled} />
-              </div>
-            </div>
-            <div class="setting-row">
-              <div class="row-meta">
-                <span class="row-label">CLIENT ID</span>
-                <span class="row-desc">OAuth 2.0 Client ID for Desktop application from your Google Cloud Console.</span>
-              </div>
-              <div class="row-control">
-                <input
-                  class="mono-input"
-                  bind:value={preferences.google_photos_client_id}
-                  placeholder="xxxx.apps.googleusercontent.com"
-                  spellcheck="false"
-                  disabled={googleConnected || googleAuthorizing}
-                />
-              </div>
-            </div>
-            <div class="setting-row">
-              <div class="row-meta">
-                <span class="row-label">CLIENT SECRET</span>
-                <span class="row-desc">OAuth 2.0 Client Secret from your Google Cloud Console.</span>
-              </div>
-              <div class="row-control">
-                <input
-                  type="password"
-                  class="mono-input"
-                  bind:value={preferences.google_photos_client_secret}
-                  placeholder="Paste client secret"
-                  spellcheck="false"
-                  disabled={googleConnected || googleAuthorizing}
-                />
-              </div>
-            </div>
-            <div class="setting-row">
-              <div class="row-meta">
-                <span class="row-label">ACCOUNT STATUS</span>
-                <span class="row-desc">
-                  {#if googleConnected}
+            {#if googleConnected}
+              <div class="setting-row">
+                <div class="row-meta">
+                  <span class="row-label">ACCOUNT STATUS</span>
+                  <span class="row-desc">
                     Connected to Google Photos. Reveal has permission to add exported photos to your library.
-                  {:else}
-                    Reveal opens your web browser to sign in and grant upload permission to your Google Photos library.
-                  {/if}
-                </span>
-              </div>
-              <div class="row-control cache-actions">
-                {#if googleConnected}
+                  </span>
+                </div>
+                <div class="row-control cache-actions">
                   <button
                     type="button"
                     class="outline small action-pill-btn"
@@ -1026,7 +1096,95 @@
                   >
                     DISCONNECT
                   </button>
-                {:else}
+                </div>
+              </div>
+              <button
+                type="button"
+                class="accordion-header"
+                onclick={() => (googleDetailsOpen = !googleDetailsOpen)}
+                aria-expanded={googleDetailsOpen}
+              >
+                <div class="row-meta">
+                  <span class="row-label">OAUTH CREDENTIALS</span>
+                  <span class="row-desc">Client ID and Client Secret</span>
+                </div>
+                <div class="row-control">
+                  <Icon name={googleDetailsOpen ? "caret-down" : "caret-right"} size="11px" />
+                </div>
+              </button>
+              {#if googleDetailsOpen}
+                <div class="setting-row sub-row">
+                  <div class="row-meta">
+                    <span class="row-label">CLIENT ID</span>
+                    <span class="row-desc">OAuth 2.0 Client ID from Google Cloud Console.</span>
+                  </div>
+                  <div class="row-control">
+                    <input
+                      class="mono-input"
+                      bind:value={preferences.google_photos_client_id}
+                      placeholder="xxxx.apps.googleusercontent.com"
+                      spellcheck="false"
+                      disabled={googleAuthorizing}
+                    />
+                  </div>
+                </div>
+                <div class="setting-row sub-row">
+                  <div class="row-meta">
+                    <span class="row-label">CLIENT SECRET</span>
+                    <span class="row-desc">OAuth 2.0 Client Secret from Google Cloud Console.</span>
+                  </div>
+                  <div class="row-control">
+                    <input
+                      type="password"
+                      class="mono-input"
+                      bind:value={preferences.google_photos_client_secret}
+                      placeholder="Paste client secret"
+                      spellcheck="false"
+                      disabled={googleAuthorizing}
+                    />
+                  </div>
+                </div>
+              {/if}
+            {:else}
+              <div class="setting-row">
+                <div class="row-meta">
+                  <span class="row-label">CLIENT ID</span>
+                  <span class="row-desc">OAuth 2.0 Client ID for Desktop application from your Google Cloud Console.</span>
+                </div>
+                <div class="row-control">
+                  <input
+                    class="mono-input"
+                    bind:value={preferences.google_photos_client_id}
+                    placeholder="xxxx.apps.googleusercontent.com"
+                    spellcheck="false"
+                    disabled={googleAuthorizing}
+                  />
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="row-meta">
+                  <span class="row-label">CLIENT SECRET</span>
+                  <span class="row-desc">OAuth 2.0 Client Secret from your Google Cloud Console.</span>
+                </div>
+                <div class="row-control">
+                  <input
+                    type="password"
+                    class="mono-input"
+                    bind:value={preferences.google_photos_client_secret}
+                    placeholder="Paste client secret"
+                    spellcheck="false"
+                    disabled={googleAuthorizing}
+                  />
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="row-meta">
+                  <span class="row-label">ACCOUNT STATUS</span>
+                  <span class="row-desc">
+                    Reveal opens your web browser to sign in and grant upload permission to your Google Photos library.
+                  </span>
+                </div>
+                <div class="row-control">
                   <button
                     type="button"
                     class="outline small action-pill-btn"
@@ -1035,12 +1193,41 @@
                   >
                     {googleAuthorizing ? "SIGNING IN…" : "CONNECT WITH GOOGLE…"}
                   </button>
-                {/if}
+                </div>
               </div>
-            </div>
+            {/if}
           </div>
           {#if googleError}<div role="alert"><Alert class="error">{googleError}</Alert></div>{/if}
           {#if googleMessage}<div role="status"><Alert class="info">{googleMessage}</Alert></div>{/if}
+        </div>
+
+        <div class="section-group">
+          <div class="section-heading">
+            <Icon name="google-photos-logo" size="12px" />
+            <span>EXPORT &amp; SYNC</span>
+          </div>
+          <div class="card flush list divided" class:disabled-card={!googleConnected}>
+            <div class="setting-row">
+              <div class="row-meta">
+                <span class="row-label">AUTO-UPLOAD ON EXPORT</span>
+                <span class="row-desc">
+                  {#if googleConnected}
+                    Automatically upload developed JPEGs to your Google Photos library upon export.
+                  {:else}
+                    Connect your Google account above to enable automatic uploads.
+                  {/if}
+                </span>
+              </div>
+              <div class="row-control">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  disabled={!googleConnected}
+                  bind:checked={preferences.google_photos_export_enabled}
+                />
+              </div>
+            </div>
+          </div>
         </div>
       {:else if activeCategory === "library"}
         <div class="section-group">
@@ -1049,6 +1236,25 @@
             <span>CATALOGUED LIBRARIES</span>
           </div>
           <div class="card flush list divided">
+              <div class="card flush list divided">
+                <div class="setting-row">
+                  <div class="row-meta">
+                    <span class="row-label">ADD A LIBRARY</span>
+                    <!-- Said plainly because an offline NAS looks exactly like a
+                         deleted folder, and "Remove" is the button next to it. -->
+                    <span class="row-desc">
+                      Removing a library only forgets it here — no photo is ever deleted from disk.
+                      The ratings, captions and story marks the catalogue holds for it do go, and
+                      come back only by reindexing.
+                    </span>
+                  </div>
+                  <div class="row-control">
+                    <button type="button" class="outline small action-pill-btn" disabled={libBusy} onclick={addLibrary}>
+                      Add folder…
+                    </button>
+                  </div>
+                </div>
+              </div>
             {#if libraries === null}
               <div class="setting-row"><span class="row-desc">Reading libraries…</span></div>
             {:else if libraries.length === 0}
@@ -1087,25 +1293,7 @@
               {/each}
             {/if}
           </div>
-          <div class="card flush list divided">
-            <div class="setting-row">
-              <div class="row-meta">
-                <span class="row-label">ADD A LIBRARY</span>
-                <!-- Said plainly because an offline NAS looks exactly like a
-                     deleted folder, and "Remove" is the button next to it. -->
-                <span class="row-desc">
-                  Removing a library only forgets it here — no photo is ever deleted from disk.
-                  The ratings, captions and story marks the catalogue holds for it do go, and
-                  come back only by reindexing.
-                </span>
-              </div>
-              <div class="row-control">
-                <button type="button" class="outline small action-pill-btn" disabled={libBusy} onclick={addLibrary}>
-                  Add folder…
-                </button>
-              </div>
-            </div>
-          </div>
+
           {#if libError}<div role="alert"><Alert class="error">{libError}</Alert></div>{/if}
         </div>
 
@@ -1362,6 +1550,26 @@
     height: var(--titlebar-height, 42px);
     flex-shrink: 0;
   }
+  .nav-section-title {
+    font-size: var(--scale-d3, 0.7rem);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-muted);
+    opacity: 0.7;
+    padding: var(--space-d4) calc(var(--space-d4) * 3) var(--space-d8);
+    user-select: none;
+  }
+  .nav-section-spaced {
+    margin-top: var(--space-d3);
+    padding-top: var(--space-d3);
+    border-top: var(--border);
+  }
+  .nav-section-items {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-d8);
+  }
   .category-btn {
     box-sizing: border-box;
     display: flex;
@@ -1394,6 +1602,7 @@
   }
 
   .cache-actions { flex-wrap: wrap; gap: var(--space-half); }
+  .version-control { gap: var(--space-half); }
 
   .section-group {
     display: flex;
@@ -1419,6 +1628,32 @@
     justify-content: space-between;
     padding: calc(var(--space-d4) * 3) var(--space);
     gap: var(--space);
+  }
+
+  .accordion-header {
+    all: unset;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: calc(var(--space-d4) * 3) var(--space);
+    gap: var(--space);
+    cursor: pointer;
+    background: transparent;
+    transition: background var(--duration-instant) var(--ease-soft);
+  }
+  .accordion-header:hover {
+    background: var(--color-surface);
+  }
+
+  .sub-row {
+    background: color-mix(in srgb, var(--color-foreground) 3%, transparent);
+    padding-left: calc(var(--space) + var(--space-d4));
+  }
+
+  .disabled-card {
+    opacity: 0.6;
   }
 
   .row-meta {
