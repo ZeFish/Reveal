@@ -1376,6 +1376,7 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
+    box-shadow: var(--shadow-inset);
   }
   .detail-scroll {
     padding: var(--titlebar-height, 42px) var(--space) var(--space);
