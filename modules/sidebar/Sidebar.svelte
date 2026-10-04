@@ -1193,17 +1193,36 @@ import { IMMICH_ROOT } from "./immichTree.js";
 
   .tree {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
+    overflow-x: hidden;
     padding-block: var(--space-d2);
     display: flex;
     flex-direction: column;
     gap: 0;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--color-foreground) 20%, transparent) transparent;
+  }
+  .tree::-webkit-scrollbar {
+    width: 4px;
+  }
+  .tree::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .tree::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--color-foreground) 20%, transparent);
+    border-radius: 4px;
+  }
+  .tree::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--color-foreground) 40%, transparent);
   }
 
   .lib-row,
   .dir-row {
     display: flex;
     align-items: center;
+    min-height: calc(var(--space) * var(--ratio-halfstep));
+    line-height: 1;
   }
   /* Every row in the tree — All Library, a catalogue, a folder — shares the
      same columns: a caret slot (--lead), the name, the count, and a trailing
@@ -1214,12 +1233,12 @@ import { IMMICH_ROOT } from "./immichTree.js";
   .tree {
     --lead: 10px;
     --trail: 14px;
-    --row-gap: 5px;
+    --row-gap: var(--space-d4);
     --indent: 6px;
   }
   .lib-row {
     gap: var(--row-gap);
-    padding: var(--space-d5) 0;
+    padding: var(--space-d5) var(--space-d4) var(--space-d5) var(--indent);
   }
   .lead {
     width: var(--lead);
@@ -1229,7 +1248,10 @@ import { IMMICH_ROOT } from "./immichTree.js";
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    font-familly: var(--font-interface);
+    line-height: 1;
+    text-box: trim-both cap alphabetic;
+    text-box-trim: trim-both;
+    text-box-edge: cap alphabetic;
   }
   .indexing {
     display: inline-flex;
@@ -1267,7 +1289,9 @@ import { IMMICH_ROOT } from "./immichTree.js";
     display: flex;
     align-items: center;
     gap: var(--row-gap);
-    padding: var(--space-d2) 0 0 0;
+    min-height: calc(var(--space) * var(--ratio-halfstep));
+    line-height: 1;
+    padding: var(--space-d2) var(--space-d4) 0 0;
     margin-top: 0;
   }
   .cat-disc {
@@ -1278,18 +1302,25 @@ import { IMMICH_ROOT } from "./immichTree.js";
     width: var(--lead);
     height: 14px;
     flex-shrink: 0;
-    padding:0;
+    padding: 0;
   }
   .section-main {
-    text-box: cap alphabetic;
     min-width: 0;
     cursor: pointer;
-    padding:0;
+    padding: 0;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    font-family: inherit;
   }
   .section-name {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    line-height: 1;
+    text-box: trim-both cap alphabetic;
+    text-box-trim: trim-both;
+    text-box-edge: cap alphabetic;
   }
   .section-main.import-dest .section-name,
   .dir-row.import-dest .dir-name {
@@ -1301,7 +1332,7 @@ import { IMMICH_ROOT } from "./immichTree.js";
     /* Tight: the name's own line box already gives a row its height, and with
        6px above and below plus a gap between rows the tree read as a list of
        separate buttons rather than one outline. */
-    padding: var(--space-d5) 0 var(--space-d5) calc((var(--depth) + 1) * var(--indent));
+    padding: var(--space-d5) var(--space-d4) var(--space-d5) calc((var(--depth) + 1) * var(--indent));
     position: relative;
     transition: all var(--transition-fast);
   }
@@ -1321,17 +1352,7 @@ import { IMMICH_ROOT } from "./immichTree.js";
     all: unset;
     cursor: pointer;
     width: var(--lead);
-    height: 8px;
-    box-sizing: content-box;
-    /* The visible chevron stays 8px, but an 8x8 hit target is easy to miss
-       by a couple pixels — a near-miss lands on .dir-row instead, which
-       only ever EXPANDS (never collapses) and no-ops when the folder is
-       already current, so the click appeared to do nothing (reproduced
-       2026-08-04). Padding widens the clickable area to 20x20 without
-       shifting layout — the matching negative margin cancels the padding's
-       footprint, so siblings sit exactly where they did before. */
-    padding: var(--space-d3);
-    margin: calc(var(--space-d3) * -1);
+    height: 14px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1350,6 +1371,7 @@ import { IMMICH_ROOT } from "./immichTree.js";
   }
   span.disc {
     cursor: default;
+    height: 14px;
   }
 
   .dir-name {
@@ -1357,6 +1379,10 @@ import { IMMICH_ROOT } from "./immichTree.js";
     overflow: hidden;
     text-overflow: ellipsis;
     min-width: 0;
+    line-height: 1;
+    text-box: trim-both cap alphabetic;
+    text-box-trim: trim-both;
+    text-box-edge: cap alphabetic;
     transition: color var(--duration-instant);
   }
   .dir-spacer {
@@ -1369,11 +1395,16 @@ import { IMMICH_ROOT } from "./immichTree.js";
     min-width: 2.4em;
     text-align: right;
     font-family: var(--font-interface);
+    line-height: 1;
+    text-box: trim-both cap alphabetic;
+    text-box-trim: trim-both;
+    text-box-edge: cap alphabetic;
   }
   /* Fixed slot for the story marker — present on every row (empty or not) so it
      never shifts the count. */
   .story-slot {
     width: var(--trail);
+    height: 14px;
     flex-shrink: 0;
     display: flex;
     align-items: center;
