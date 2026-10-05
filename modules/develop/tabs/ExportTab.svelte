@@ -1,7 +1,6 @@
 <script>
   import { invoke } from "@tauri-apps/api/core";
-  import { isTauri } from "$lib/api.js";
-  import Icon from "$lib/components/Icon.svelte";
+  import { isTauri, Icon, Destination } from "@modules/core";
 
   let {
     installedEditors = [],
@@ -11,6 +10,7 @@
     photoPath,
     publishing = $bindable(false),
     publishStatus = $bindable(""),
+    activeDestinationId = $bindable("folder"),
     // What each of these actually DOES differs by host (docked: call the
     // main window's own function directly; detached: relay over IPC) — see
     // DevelopPanel.svelte. publishPhoto stays local below since it's a plain
@@ -66,6 +66,15 @@
 
 <div class="pane-scroll">
   <div class="sec-body">
+    <div class="frow">
+      <span class="din frow-label">Destination</span>
+      <span class="spacer"></span>
+      <select class="panel-select" bind:value={activeDestinationId}>
+        <option value="folder">Local Folder</option>
+        <option value="obsidian">Obsidian Daily Note</option>
+        <option value="garden">Garden (Web)</option>
+      </select>
+    </div>
     {#if installedEditors.length > 0}
       <div class="frow">
         <span class="din frow-label">Editor</span>
@@ -82,69 +91,77 @@
         </select>
       </div>
     {/if}
-    <div class="frow">
-      <span class="din frow-label">Folder</span>
-      <span class="spacer"></span>
-      <button
-        class="ghost folder-pick"
-        onclick={() => onChooseExportFolder()}
-        title="Choose the export folder"
-      >
-        <span class="mono">{exportFolder ? exportFolder.split("/").pop() : "Desktop"}</span>
-        <Icon name="folder-open" size="10px" />
+    {#if activeDestinationId === "folder"}
+      <div class="frow">
+        <span class="din frow-label">Folder</span>
+        <span class="spacer"></span>
+        <button
+          class="ghost folder-pick"
+          onclick={() => onChooseExportFolder()}
+          title="Choose the export folder"
+        >
+          <span class="mono">{exportFolder ? exportFolder.split("/").pop() : "Desktop"}</span>
+          <Icon name="folder-open" size="10px" />
+        </button>
+      </div>
+    {/if}
+    {#if activeDestinationId === "folder" || activeDestinationId === "obsidian"}
+      <div class="frow">
+        <span class="din frow-label">Size</span>
+        <span class="spacer"></span>
+        <select class="panel-select" bind:value={exportEdge} onchange={exportSettingsChanged}>
+          <option value={0}>Full</option>
+          <option value={4096}>4096</option>
+          <option value={2048}>2048</option>
+          <option value={1600}>1600</option>
+          <option value={1024}>1024</option>
+        </select>
+      </div>
+      <div class="frow">
+        <span class="din frow-label">White border</span>
+        <span class="spacer"></span>
+        <input
+          type="checkbox"
+          role="switch"
+          aria-label="White border"
+          checked={exportBorder}
+          onchange={() => {
+            exportBorder = !exportBorder;
+            exportSettingsChanged();
+          }}
+        />
+      </div>
+    {/if}
+    {#if activeDestinationId === "folder"}
+      <button class="accent panel-btn" onclick={() => onExport()} disabled={!photoPath}>Export to Folder</button>
+    {:else if activeDestinationId === "obsidian"}
+      <button class="accent panel-btn" onclick={() => onExportDaily()} disabled={!photoPath}>Send to Daily Note</button>
+    {:else if activeDestinationId === "garden"}
+      <div class="frow">
+        <span class="din frow-label">Allow download</span>
+        <span class="spacer"></span>
+        <input
+          type="checkbox"
+          role="switch"
+          aria-label="Allow download"
+          checked={allowDownload}
+          onchange={toggleAllowDownload}
+        />
+      </div>
+      <button class="accent panel-btn" onclick={publishPhoto} disabled={!photoPath || publishing}>
+        {publishing ? "Publishing…" : "Publish to Garden"}
       </button>
-    </div>
-    <div class="frow">
-      <span class="din frow-label">Size</span>
-      <span class="spacer"></span>
-      <select class="panel-select" bind:value={exportEdge} onchange={exportSettingsChanged}>
-        <option value={0}>Full</option>
-        <option value={4096}>4096</option>
-        <option value={2048}>2048</option>
-        <option value={1600}>1600</option>
-        <option value={1024}>1024</option>
-      </select>
-    </div>
-    <div class="frow">
-      <span class="din frow-label">White border</span>
-      <span class="spacer"></span>
-      <input
-        type="checkbox"
-        role="switch"
-        aria-label="White border"
-        checked={exportBorder}
-        onchange={() => {
-          exportBorder = !exportBorder;
-          exportSettingsChanged();
-        }}
-      />
-    </div>
-    <button class="accent panel-btn" onclick={() => onExport()} disabled={!photoPath}>Export</button>
-    <button class="outline panel-btn" onclick={() => onExportDaily()} disabled={!photoPath}>Daily note (Obsidian)</button>
-    <div class="frow">
-      <span class="din frow-label">Allow download</span>
-      <span class="spacer"></span>
-      <input
-        type="checkbox"
-        role="switch"
-        aria-label="Allow download"
-        checked={allowDownload}
-        onchange={toggleAllowDownload}
-      />
-    </div>
-    <button class="accent panel-btn" onclick={publishPhoto} disabled={!photoPath || publishing}>
-      {publishing ? "Publishing…" : "Publish (Garden)"}
-    </button>
-    {#if publishStatus}
-      {#if publishStatus.startsWith("http")}
-        <a
-          class="hint published-link"
-          href={publishStatus}
-          onclick={(e) => { e.preventDefault(); invoke("open_path", { path: publishStatus }); }}
-          title="Open the published page"
-        >{publishStatus}</a>
-      {:else}
-        <p class="hint">{publishStatus}</p>
+      {#if publishStatus}
+        {#if publishStatus.startsWith("http")}
+          <a
+            class="hint published-link"
+            href={publishStatus}
+            onclick={(e) => { e.preventDefault(); invoke("open_path", { path: publishStatus }); }}
+            title="Open the published page"
+          >{publishStatus}</a>
+        {:else}
+          <p class="hint">{publishStatus}</p>
+        {/if}
       {/if}
     {/if}
   </div>

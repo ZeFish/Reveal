@@ -711,37 +711,24 @@ fn apply_local_contrast_masked(
     if amount == 0.0 || mask < 0.001 {
         return (r, g, b);
     }
-    // Every caller's slider (zone_*_contrast at -50..50, clarity at
-    // -40..60, structure at -30..50 — all percent-like, matching this
-    // group's saturation sliders) hands `amount` in here raw, but both
-    // branches below treat it as a small fraction: the positive branch
-    // feeds it straight into a base-2 EXPONENT (2^(log_ratio * amount)),
-    // and the negative branch uses it as a 0..1 blend weight. Fed a raw
-    // value in the tens, a single slider step already blew past what
-    // either branch was designed for — reported live as "way too much"
-    // from just one step off zero on zone contrast. /100 brings the full
-    // slider range down to the -0.5..0.5-ish span both formulas expect.
     let amount = amount * 0.01;
-
-    if amount < 0.0 {
-        let blur_amount = -amount * mask;
-        let center_luma = (luma(r, g, b)).max(0.0001);
-        let scale = t_blurred / center_luma;
-        let br = r * scale;
-        let bg = g * scale;
-        let bb = b * scale;
-        return (
-            r * (1.0 - blur_amount) + br * blur_amount,
-            g * (1.0 - blur_amount) + bg * blur_amount,
-            b * (1.0 - blur_amount) + bb * blur_amount,
-        );
-    }
 
     let center_luma = (luma(r, g, b)).max(0.0);
     let safe_center_luma = center_luma.max(0.0001);
     let safe_blurred_luma = t_blurred.max(0.0001);
     let log_ratio = (safe_center_luma / safe_blurred_luma).log2();
-    let contrast_factor = 2.0f32.powf(log_ratio * amount);
+
+    // When amount > 0, boost local micro-contrast (clarity/structure).
+    // When amount < 0, soften micro-contrast with edge dampening (Lightroom style),
+    // NEVER blending in a raw low-res Gaussian blur buffer.
+    let effective_amount = if amount < 0.0 {
+        let edge_dampener = 1.0 / (1.0 + log_ratio.abs() * 0.8);
+        amount * edge_dampener
+    } else {
+        amount
+    };
+
+    let contrast_factor = 2.0f32.powf(log_ratio * effective_amount);
     let fr = r * contrast_factor;
     let fg = g * contrast_factor;
     let fb = b * contrast_factor;
@@ -758,14 +745,10 @@ fn apply_local_contrast(r: f32, g: f32, b: f32, t_blurred: f32, amount: f32) -> 
         return (r, g, b);
     }
 
-    let mask = if amount < 0.0 {
-        1.0
-    } else {
-        let center_luma = (luma(r, g, b)).max(0.0);
-        let shadow_protection = smoothstep(0.0, 0.03, center_luma);
-        let highlight_protection = 1.0 - smoothstep(0.9, 1.0, center_luma);
-        shadow_protection * highlight_protection
-    };
+    let center_luma = (luma(r, g, b)).max(0.0);
+    let shadow_protection = smoothstep(0.0, 0.03, center_luma);
+    let highlight_protection = 1.0 - smoothstep(0.9, 1.0, center_luma);
+    let mask = shadow_protection * highlight_protection;
 
     apply_local_contrast_masked(r, g, b, t_blurred, amount, mask)
 }
@@ -908,15 +891,20 @@ pub(crate) fn develop_rapid_with(
         || midtones_tint != [0.0, 0.0, 0.0]
         || highlights_tint != [0.0, 0.0, 0.0];
 
-    let zone_shadows_exposure = recipe.zone_shadows_exposure;
-    let zone_shadows_contrast = recipe.zone_shadows_contrast;
-    let zone_shadows_saturation = recipe.zone_shadows_saturation;
-    let zone_midtones_exposure = recipe.zone_midtones_exposure;
-    let zone_midtones_contrast = recipe.zone_midtones_contrast;
-    let zone_midtones_saturation = recipe.zone_midtones_saturation;
-    let zone_highlights_exposure = recipe.zone_highlights_exposure;
-    let zone_highlights_contrast = recipe.zone_highlights_contrast;
-    let zone_highlights_saturation = recipe.zone_highlights_saturation;
+    let zs = &recipe.zone_shadows;
+    let zm = &recipe.zone_midtones;
+    let zh = &recipe.zone_highlights;
+
+    let zone_shadows_exposure = recipe.zone_shadows_exposure + zs.exposure_ev;
+    let zone_shadows_contrast = recipe.zone_shadows_contrast + zs.contrast;
+    let zone_shadows_saturation = recipe.zone_shadows_saturation + zs.saturation;
+    let zone_midtones_exposure = recipe.zone_midtones_exposure + zm.exposure_ev;
+    let zone_midtones_contrast = recipe.zone_midtones_contrast + zm.contrast;
+    let zone_midtones_saturation = recipe.zone_midtones_saturation + zm.saturation;
+    let zone_highlights_exposure = recipe.zone_highlights_exposure + zh.exposure_ev;
+    let zone_highlights_contrast = recipe.zone_highlights_contrast + zh.contrast;
+    let zone_highlights_saturation = recipe.zone_highlights_saturation + zh.saturation;
+
     let has_zones = zone_shadows_exposure != 0.0
         || zone_shadows_contrast != 0.0
         || zone_shadows_saturation != 0.0
@@ -925,10 +913,10 @@ pub(crate) fn develop_rapid_with(
         || zone_midtones_saturation != 0.0
         || zone_highlights_exposure != 0.0
         || zone_highlights_contrast != 0.0
-        || zone_highlights_saturation != 0.0;
-    let has_zone_contrast =
-        zone_shadows_contrast != 0.0 || zone_midtones_contrast != 0.0 || zone_highlights_contrast != 0.0;
-
+        || zone_highlights_saturation != 0.0
+        || zs.is_active()
+        || zm.is_active()
+        || zh.is_active();
     // Global Whites multiplier (Whites processed first)
     let w_mult = if whites != 0.0 {
         let white_level = 1.0 - whites * 0.25;
@@ -938,13 +926,15 @@ pub(crate) fn develop_rapid_with(
     };
 
     // Build blurred guidance map if shadows, blacks, clarity, structure,
-    // dehaze, or a zone-contrast slider are active (Phase 2)
+    // or dehaze are active (Phase 2)
     let (blurred, down_w, down_h) = if shadows != 0.0
         || blacks != 0.0
         || clarity != 0.0
         || structure != 0.0
         || dehaze != 0.0
-        || has_zone_contrast
+        || zs.clarity != 0.0
+        || zm.clarity != 0.0
+        || zh.clarity != 0.0
         {
             let down_w = (width / 8).max(1);
             let down_h = (height / 8).max(1);
@@ -1281,47 +1271,50 @@ pub(crate) fn develop_rapid_with(
                     b *= factor;
                 }
 
-                if !blurred.is_empty() {
+                // Zone WB (Temperature & Tint)
+                let z_temp = zs.temperature * shadow_weight + zm.temperature * midtone_weight + zh.temperature * highlight_weight;
+                let z_tint = zs.tint * shadow_weight + zm.tint * midtone_weight + zh.tint * highlight_weight;
+                if z_temp.abs() > 0.001 || z_tint.abs() > 0.001 {
+                    let t_sh = z_tint / 100.0;
+                    let g_m = (1.0 - t_sh * 0.5).max(0.1);
+                    let r_m = (1.0 + t_sh * 0.25).max(0.1) * 2.0f32.powf(z_temp * 0.01);
+                    let b_m = (1.0 + t_sh * 0.25).max(0.1) * 2.0f32.powf(-z_temp * 0.01);
+                    r *= r_m;
+                    g *= g_m;
+                    b *= b_m;
+                }
+
+                // Zone contrast: parametric tonal curve modulation per zone (no spatial blur)
+                if zone_shadows_contrast != 0.0
+                    || zone_midtones_contrast != 0.0
+                    || zone_highlights_contrast != 0.0
+                {
+                    let lum_linear = (luma(r, g, b)).max(0.0);
+                    let t = lum_linear.sqrt().min(1.0);
+                    let cs = zone_shadows_contrast * 0.01;
+                    let cm = zone_midtones_contrast * 0.01;
+                    let ch = zone_highlights_contrast * 0.01;
+                    let dt = (t - 0.18) * cs * shadow_weight * 0.5
+                        + (t - 0.50) * cm * midtone_weight * 0.5
+                        + (t - 0.75) * ch * highlight_weight * 0.5;
+                    let t_new = (t + dt).clamp(0.0, 2.0);
+                    let lum_new = t_new * t_new;
+                    if lum_linear > 0.0001 {
+                        let scale = lum_new / lum_linear;
+                        r *= scale;
+                        g *= scale;
+                        b *= scale;
+                    }
+                }
+
+                // Zone clarity
+                let z_clarity = zs.clarity * shadow_weight + zm.clarity * midtone_weight + zh.clarity * highlight_weight;
+                if !blurred.is_empty() && z_clarity.abs() > 0.001 {
                     let t_blurred = get_blurred_luma(x_coord, y_coord, &blurred, down_w, down_h);
-                    if zone_shadows_contrast != 0.0 {
-                        let (nr, ng, nb) = apply_local_contrast_masked(
-                            r,
-                            g,
-                            b,
-                            t_blurred,
-                            zone_shadows_contrast,
-                            shadow_weight,
-                        );
-                        r = nr;
-                        g = ng;
-                        b = nb;
-                    }
-                    if zone_midtones_contrast != 0.0 {
-                        let (nr, ng, nb) = apply_local_contrast_masked(
-                            r,
-                            g,
-                            b,
-                            t_blurred,
-                            zone_midtones_contrast,
-                            midtone_weight,
-                        );
-                        r = nr;
-                        g = ng;
-                        b = nb;
-                    }
-                    if zone_highlights_contrast != 0.0 {
-                        let (nr, ng, nb) = apply_local_contrast_masked(
-                            r,
-                            g,
-                            b,
-                            t_blurred,
-                            zone_highlights_contrast,
-                            highlight_weight,
-                        );
-                        r = nr;
-                        g = ng;
-                        b = nb;
-                    }
+                    let (cr, cg, cb) = apply_local_contrast(r, g, b, t_blurred, z_clarity);
+                    r = cr;
+                    g = cg;
+                    b = cb;
                 }
 
                 let blended_sat = zone_shadows_saturation * shadow_weight
@@ -2563,8 +2556,8 @@ mod tests {
     }
 
     #[test]
-    fn test_zone_contrast_gate_builds_guidance_map() {
-        // Local luma variation for a local-contrast pass to act on.
+    fn test_zone_contrast_modulates_render_output() {
+        // Local luma variation for a zone contrast pass to act on.
         let mut data = Vec::with_capacity(4 * 4 * 3);
         for y in 0..4 {
             for x in 0..4 {
@@ -2580,16 +2573,12 @@ mod tests {
 
         let mut zoned = Recipe::default();
         zoned.engine = "rapid".to_string();
-        // Only a zone-contrast field is set — shadows/blacks/clarity/
-        // structure/dehaze all stay at their 0.0 default, so the guidance
-        // map only gets built if zone-contrast is itself part of the gate.
         zoned.zone_midtones_contrast = -30.0;
         let out_zoned = develop_rapid(&input, &zoned, Path::new(""));
 
         assert_ne!(
             out_zoned.data, out_base.data,
-            "a zone-contrast-only recipe must actually change the render output \
-             (regression guard: the guidance-map gate must include zone-contrast fields)"
+            "a zone-contrast-only recipe must actually change the render output"
         );
     }
 }

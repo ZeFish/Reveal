@@ -1,14 +1,14 @@
-@use "../../../packages/styles/app";
+@use "../../../packages/themes/macos/macos";
 
-// Reveal — app adapter over the Standard framework.
+// Reveal — app adapter over the Standard framework and macOS native theme.
 //
 // standard.scss is a NOTE framework: it assumes a document read in a
 // browser — fluid type that grows with the viewport, a mobile breakpoint
 // that BUMPS text size up on narrow screens, a reading measure on body.
 // An app window is none of that: density is fixed, chrome is chrome, and
-// a narrow window is just a small window. The app TOKENS for that (type
-// scale, motion, radius, window chrome) live in the framework, in
-// packages/styles/app.scss, so every app shares them. What stays here is
+// a narrow window is just a small window. The app TOKENS for window chrome
+// live in packages/styles/_standard-01-token.scss, and the default native
+// system theme lives in packages/themes/macos/macos.scss. What stays here is
 // Reveal's own app-shell behaviour. Import it AFTER the theme.
 
 /* Title-bar text sits on its capitals, not its line box: a line box keeps
@@ -151,4 +151,10 @@ input[type="range"] {
     height: var(--space-d2);
     margin-top: calc((var(--space-d4) - var(--space-d2)) / 2);
   }
+}
+
+/* 6. In an application, clicking or holding an image (e.g. for the loupe or
+   dragging) must never pop it out to a fixed fullscreen viewport. */
+img:active {
+  position: static;
 }

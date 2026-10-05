@@ -1,22 +1,52 @@
 <script>
-  import Icon from "$lib/components/Icon.svelte";
+  import { Icon } from "@modules/core";
 
   let { recipe = $bindable(), edited = () => {} } = $props();
 
-  const aspects = [
-    ["Original", "original"],
-    ["Free", "free"],
-    ["1:1 Square", "1:1"],
-    ["3:2", "3:2"],
-    ["4:3", "4:3"],
-    ["16:9", "16:9"],
+  const aspectPresets = [
+    { label: "Original", value: "original" },
+    { label: "Libre", value: "free" },
+    { label: "1:1", value: "1:1" },
+    { label: "4:5", value: "4:5" },
+    { label: "3:2", value: "3:2" },
+    { label: "4:3", value: "4:3" },
+    { label: "16:9", value: "16:9" },
   ];
+
+  const canFlipOrientation = $derived.by(() => {
+    const a = recipe?.crop_aspect;
+    if (!a || a === "original" || a === "free") return false;
+    const parts = a.split(":");
+    return parts.length === 2 && parts[0] !== parts[1];
+  });
+
+  const isPortrait = $derived.by(() => {
+    const a = recipe?.crop_aspect;
+    if (!a || !a.includes(":")) return false;
+    const parts = a.split(":").map(Number);
+    return parts.length === 2 && parts[0] < parts[1];
+  });
 
   /** @param {string} a */
   function setAspect(a) {
     if (!recipe) return;
     recipe.crop_aspect = a;
+    if (a === "original") {
+      recipe.crop_x = 0;
+      recipe.crop_y = 0;
+      recipe.crop_w = 1;
+      recipe.crop_h = 1;
+    }
     edited();
+  }
+
+  function toggleAspectOrientation() {
+    if (!recipe?.crop_aspect) return;
+    const parts = recipe.crop_aspect.split(":");
+    if (parts.length === 2 && parts[0] !== parts[1]) {
+      recipe.crop_aspect = `${parts[1]}:${parts[0]}`;
+      edited();
+    }
   }
 
   /** @param {string | number} val */
@@ -37,6 +67,10 @@
   function resetCrop() {
     if (!recipe) return;
     recipe.crop_aspect = "original";
+    recipe.crop_x = 0;
+    recipe.crop_y = 0;
+    recipe.crop_w = 1;
+    recipe.crop_h = 1;
     recipe.crop_angle = 0;
     recipe.flip_h = false;
     recipe.flip_v = false;
@@ -48,16 +82,33 @@
   <section class="section">
     <div class="section-title">
       <span class="din">Proportions</span>
-      <button class="reset-btn" onclick={resetCrop} title="Reset the crop">Reset</button>
+      <div class="title-actions">
+        {#if canFlipOrientation}
+          <button
+            type="button"
+            class="orientation-btn chip"
+            onclick={toggleAspectOrientation}
+            title="Basculer format Paysage / Portrait ({recipe?.crop_aspect})"
+            aria-label="Basculer format Paysage / Portrait"
+          >
+            <span class="aspect-badge">{recipe?.crop_aspect}</span>
+            <span>{isPortrait ? "Portrait" : "Paysage"} ⇄</span>
+          </button>
+        {/if}
+        <button class="reset-btn" onclick={resetCrop} title="Réinitialiser le recadrage">Reset</button>
+      </div>
     </div>
     <div class="aspect-grid">
-      {#each aspects as [label, a]}
+      {#each aspectPresets as preset}
+        {@const isActive =
+          (recipe?.crop_aspect ?? "original") === preset.value ||
+          (preset.value.includes(":") && (recipe?.crop_aspect ?? "") === preset.value.split(":").reverse().join(":"))}
         <button
           class="chip"
-          aria-pressed={(recipe?.crop_aspect ?? "original") === a}
-          onclick={() => setAspect(a)}
+          aria-pressed={isActive}
+          onclick={() => setAspect(preset.value)}
         >
-          {label}
+          {preset.label}
         </button>
       {/each}
     </div>
@@ -138,6 +189,26 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+  }
+
+  .title-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-d2);
+  }
+
+  .orientation-btn {
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-d3);
+    padding: var(--space-d4) var(--space-d2);
+    font-size: var(--scale-d2);
+  }
+
+  .aspect-badge {
+    font-weight: bold;
+    opacity: 0.8;
   }
 
   .reset-btn {

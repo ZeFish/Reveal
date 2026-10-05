@@ -2,8 +2,7 @@
   import { onMount, onDestroy } from "svelte";
   import { listen, emit } from "@tauri-apps/api/event";
   import { invoke } from "@tauri-apps/api/core";
-  import { isTauri } from "$lib/api.js";
-  import Icon from "$lib/components/Icon.svelte";
+  import { isTauri, Icon } from "@modules/core";
 
   /** @typedef {{ id: string, label: string }} EngineInfo */
   let {

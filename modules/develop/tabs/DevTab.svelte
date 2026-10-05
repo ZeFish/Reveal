@@ -1,6 +1,6 @@
 <script>
   import EngineRunner from "@modules/develop/EngineRunner.svelte";
-  import { DEFAULT_PHOTO_SIZE, PHOTO_SIZE_MIN, PHOTO_SIZE_MAX } from "$lib/session.js";
+  import { DEFAULT_PHOTO_SIZE, PHOTO_SIZE_MIN, PHOTO_SIZE_MAX } from "@modules/core";
   import Scopes from "@modules/develop/Scopes.svelte";
 
   let {
@@ -29,12 +29,24 @@
     // (see DevelopView.svelte / onPhotoPointerDown in +page.svelte).
     photoScale = $bindable(DEFAULT_PHOTO_SIZE),
     onPhotoScaleChanged = () => {},
+    activeZone = $bindable("global"),
+    onSetZoneMask = () => {},
   } = $props();
+
+  /** @param {string} id */
+  function handleEngineChanged(id) {
+    if (id !== "rapid" && activeZone !== "global") {
+      activeZone = "global";
+      onSetZoneMask(null);
+    }
+    engineChanged(id);
+  }
 </script>
 
 <div class="pane-scroll">
   <div class="sec-body">
     <Scopes {histogram} {scopes} />
+
     <div class="frow">
       <span class="din frow-label">Photo Size</span>
       <input
@@ -51,43 +63,50 @@
       />
       <span class="val mono">{photoScale}%</span>
     </div>
+
     <div class="engine-row">
       <div class="btn-group" role="group" aria-label="Engine">
         <button
           type="button"
           aria-pressed={!developEngine}
-          onclick={() => engineChanged("none")}
+          onclick={() => handleEngineChanged("none")}
         >None</button>
         {#each engines as e}
           <button
             type="button"
             aria-pressed={developEngine === e.id}
-            onclick={() => engineChanged(e.id)}
+            onclick={() => handleEngineChanged(e.id)}
           >{e.label}</button>
         {/each}
       </div>
     </div>
-    <div class="engine-scope" class:inactive={!developEngine}>
-    {#if activeEngine}
-      <EngineRunner
-        engine={activeEngine}
-        bind:recipe={recipe}
-        {films}
-        {papers}
-        {luts}
-        {edited}
-        resetControl={resetOne}
-        {addLutLayer}
-        {removeLutLayer}
-        {updateLutOpacity}
-        {setLutFile}
-      />
 
-      <div class="btn-row mt">
-        <button class="outline panel-btn half" onclick={resetRecipe}>Reset</button>
-        <button class="accent panel-btn half" onclick={() => onExport()} disabled={!photoPath}>Export</button>
-      </div>
-    {/if}
+    <div class="engine-scope" class:inactive={!developEngine}>
+      {#if activeEngine}
+        <EngineRunner
+          engine={activeEngine}
+          bind:recipe={recipe}
+          bind:activeZone={activeZone}
+          {films}
+          {papers}
+          {luts}
+          {edited}
+          resetControl={resetOne}
+          {addLutLayer}
+          {removeLutLayer}
+          {updateLutOpacity}
+          {setLutFile}
+          {resetRecipe}
+          {onSetZoneMask}
+        />
+
+        <div class="btn-row mt">
+          <button class="outline panel-btn half" onclick={resetRecipe}>
+            Reset
+          </button>
+          <button class="accent panel-btn half" onclick={() => onExport()} disabled={!photoPath}>Export</button>
+        </div>
+      {/if}
     </div>
   </div>
 </div>
@@ -101,6 +120,7 @@
     gap: calc(var(--space-d4) * 3);
     font-size:11px;
   }
+
 
   .sec-body {
     display: flex;

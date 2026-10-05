@@ -14,7 +14,7 @@ import { oklchToRgb, hslToRgb, toHex, mix } from "../../../packages/themes/_scri
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const themesDir = path.resolve(__dirname, "../../../packages/themes");
-const outPath = path.resolve(__dirname, "../src/lib/garden-themes.generated.json");
+const outPath = path.resolve(__dirname, "../modules/core/garden-themes.generated.json");
 
 const HEX6_RE = /^#[0-9a-fA-F]{6}$/;
 const HEX3_RE = /^#([0-9a-fA-F])([0-9a-fA-F])([0-9a-fA-F])$/;

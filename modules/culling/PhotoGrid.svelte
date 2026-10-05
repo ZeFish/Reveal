@@ -9,7 +9,7 @@
   // container class app-specific: Standard's global `.grid` utility flows
   // children by column, which would turn this contact sheet into one long row.
   import PhotoCell from "./PhotoCell.svelte";
-  import Icon from "$lib/components/Icon.svelte";
+  import { Icon } from "@modules/core";
   import { untrack } from "svelte";
 
   /** @param {HTMLElement} node */
@@ -277,7 +277,7 @@
   <div
     class="photo-grid"
     class:masonry={layout === "masonry"}
-    style="--cols: {cols}; --gap: {gap}px; --cellw: {cellW}px; padding-top: {gap / 2 +
+    style="--cols: {cols}; --gap: {gap}px; --cellw: {cellW}px; --cellW: {cellW}px; padding-top: {gap / 2 +
       padTop}px; padding-bottom: {64 + padBottom}px"
   >
     {#snippet cell(/** @type {PhotoFrame} */ f, /** @type {number} */ i)}

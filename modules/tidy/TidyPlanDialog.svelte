@@ -7,8 +7,8 @@
   import Dialog from "@stnd/ui/Dialog.svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
-  import { isTauri } from "$lib/api.js";
-  import ManualLink from "$lib/components/ManualLink.svelte";
+  import { isTauri } from "@modules/core";
+  import { ManualLink } from "@modules/core";
 
   /**
    * `preview` is a plan that is already made: tests and screenshots hand one

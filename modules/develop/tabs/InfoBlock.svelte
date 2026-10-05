@@ -1,6 +1,6 @@
 <script>
   import { invoke } from "@tauri-apps/api/core";
-  import Icon from "$lib/components/Icon.svelte";
+  import { Icon } from "@modules/core";
 
   let {
     picked,
@@ -263,7 +263,7 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-d4);
-    min-height: calc(var(--font-text-size) * var(--line-height) + 8px);
+    min-height: calc(var(--font-text-size, 13px) * var(--line-height, 1.4) + 8px);
     padding: var(--space-d4) var(--space-d3);
     background: var(--color-surface);
     border: var(--stroke-width) solid var(--color-border);

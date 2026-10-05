@@ -83,6 +83,10 @@ struct Params {
     shadows_tint: vec4<f32>,
     midtones_tint: vec4<f32>,
     highlights_tint: vec4<f32>,
+
+    zone_shadows_wb: vec4<f32>,
+    zone_midtones_wb: vec4<f32>,
+    zone_highlights_wb: vec4<f32>,
 }
 
 @group(0) @binding(0) var<storage, read> in_data: array<f32>;
@@ -236,19 +240,18 @@ fn local_contrast_masked(c: vec3<f32>, t_blurred: f32, amount_in: f32, mask: f32
     if (amount_in == 0.0 || mask < 0.001) { return c; }
     let amount = amount_in * 0.01;
 
-    if (amount < 0.0) {
-        let blur_amount = -amount * mask;
-        let center_luma = max(luma_of(c), 0.0001);
-        let scale = t_blurred / center_luma;
-        let blurred_c = c * scale;
-        return c * (1.0 - blur_amount) + blurred_c * blur_amount;
-    }
-
     let center_luma = max(luma_of(c), 0.0);
     let safe_center = max(center_luma, 0.0001);
     let safe_blur = max(t_blurred, 0.0001);
     let log_ratio = log2(safe_center / safe_blur);
-    let contrast_factor = exp2(log_ratio * amount);
+
+    var effective_amount = amount;
+    if (amount < 0.0) {
+        let edge_dampener = 1.0 / (1.0 + abs(log_ratio) * 0.8);
+        effective_amount = amount * edge_dampener;
+    }
+
+    let contrast_factor = exp2(log_ratio * effective_amount);
     let f = c * contrast_factor;
     return c * (1.0 - mask) + f * mask;
 }
@@ -256,13 +259,10 @@ fn local_contrast_masked(c: vec3<f32>, t_blurred: f32, amount_in: f32, mask: f32
 /// rapid.rs::apply_local_contrast — the shadow/highlight-protected mask.
 fn local_contrast(c: vec3<f32>, t_blurred: f32, amount: f32) -> vec3<f32> {
     if (amount == 0.0) { return c; }
-    var mask = 1.0;
-    if (amount >= 0.0) {
-        let center_luma = max(luma_of(c), 0.0);
-        let shadow_protection = sstep(0.0, 0.03, center_luma);
-        let highlight_protection = 1.0 - sstep(0.9, 1.0, center_luma);
-        mask = shadow_protection * highlight_protection;
-    }
+    let center_luma = max(luma_of(c), 0.0);
+    let shadow_protection = sstep(0.0, 0.03, center_luma);
+    let highlight_protection = 1.0 - sstep(0.9, 1.0, center_luma);
+    let mask = shadow_protection * highlight_protection;
     return local_contrast_masked(c, t_blurred, amount, mask);
 }
 
@@ -580,17 +580,39 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             + p.zone_highlights_exposure * w.z;
         if (blended_ev != 0.0) { c = c * exp2(blended_ev); }
 
-        if (has_blur) {
+        // Zone WB (Temp & Tint)
+        let z_temp = p.zone_shadows_wb.x * w.x + p.zone_midtones_wb.x * w.y + p.zone_highlights_wb.x * w.z;
+        let z_tint = p.zone_shadows_wb.y * w.x + p.zone_midtones_wb.y * w.y + p.zone_highlights_wb.y * w.z;
+        if (abs(z_temp) > 0.001 || abs(z_tint) > 0.001) {
+            let t_sh = z_tint / 100.0;
+            let g_m = max(1.0 - t_sh * 0.5, 0.1);
+            let r_m = max(1.0 + t_sh * 0.25, 0.1) * exp2(z_temp * 0.01);
+            let b_m = max(1.0 + t_sh * 0.25, 0.1) * exp2(-z_temp * 0.01);
+            c = c * vec3<f32>(r_m, g_m, b_m);
+        }
+
+        // Zone contrast: parametric tonal curve modulation per zone (no spatial blur)
+        if (p.zone_shadows_contrast != 0.0 || p.zone_midtones_contrast != 0.0 || p.zone_highlights_contrast != 0.0) {
+            let lum_linear = max(luma_of(c), 0.0);
+            let t = min(sqrt(lum_linear), 1.0);
+            let cs = p.zone_shadows_contrast * 0.01;
+            let cm = p.zone_midtones_contrast * 0.01;
+            let ch = p.zone_highlights_contrast * 0.01;
+            let dt = (t - 0.18) * cs * w.x * 0.5
+                + (t - 0.50) * cm * w.y * 0.5
+                + (t - 0.75) * ch * w.z * 0.5;
+            let t_new = clamp(t + dt, 0.0, 2.0);
+            let lum_new = t_new * t_new;
+            if (lum_linear > 0.0001) {
+                c = c * (lum_new / lum_linear);
+            }
+        }
+
+        // Zone clarity
+        let z_clarity = p.zone_shadows_wb.z * w.x + p.zone_midtones_wb.z * w.y + p.zone_highlights_wb.z * w.z;
+        if (has_blur && abs(z_clarity) > 0.001) {
             let t_blurred = blurred_luma(x, y);
-            if (p.zone_shadows_contrast != 0.0) {
-                c = local_contrast_masked(c, t_blurred, p.zone_shadows_contrast, w.x);
-            }
-            if (p.zone_midtones_contrast != 0.0) {
-                c = local_contrast_masked(c, t_blurred, p.zone_midtones_contrast, w.y);
-            }
-            if (p.zone_highlights_contrast != 0.0) {
-                c = local_contrast_masked(c, t_blurred, p.zone_highlights_contrast, w.z);
-            }
+            c = local_contrast(c, t_blurred, z_clarity);
         }
 
         let blended_sat = p.zone_shadows_saturation * w.x

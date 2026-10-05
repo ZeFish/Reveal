@@ -172,6 +172,14 @@ pub struct Recipe {
     pub zone_highlights_contrast: f32,
     pub zone_highlights_saturation: f32,
 
+    /// Full zone-specific grading adjustments (Shadows, Midtones, Highlights)
+    #[serde(default)]
+    pub zone_shadows: ZoneAdjustments,
+    #[serde(default)]
+    pub zone_midtones: ZoneAdjustments,
+    #[serde(default)]
+    pub zone_highlights: ZoneAdjustments,
+
     // Expose all RapidRaw sliders
     pub brightness: f32,
     pub blacks: f32,
@@ -209,7 +217,7 @@ pub struct Recipe {
     #[serde(default = "default_curve")]
     pub curve_b: Vec<[f32; 2]>,
 
-    /// User `.cube` LUTs applied to the raw scene-linear input in Rapid engine only,
+    // User `.cube` LUTs applied to the raw scene-linear input in Rapid engine only,
     /// before exposure and tone controls — a creative pre-grade for digital RAW.
     /// Spektra ignores these. Stacked in order.
     #[serde(default)]
@@ -219,6 +227,26 @@ pub struct Recipe {
     #[serde(default)]
     pub rapid_post_luts: Vec<LutLayer>,
 
+    // Crop & Orientation controls
+    #[serde(default)]
+    pub crop_x: f32,
+    #[serde(default)]
+    pub crop_y: f32,
+    #[serde(default = "default_crop_dim")]
+    pub crop_w: f32,
+    #[serde(default = "default_crop_dim")]
+    pub crop_h: f32,
+    #[serde(default = "default_crop_aspect")]
+    pub crop_aspect: String,
+    #[serde(default)]
+    pub crop_angle: f32,
+    #[serde(default)]
+    pub flip_h: bool,
+    #[serde(default)]
+    pub flip_v: bool,
+    #[serde(default = "default_true")]
+    pub apply_crop: bool,
+
     // Deprecated: kept for backward compatibility during migration.
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -226,6 +254,14 @@ pub struct Recipe {
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub post_luts: Vec<LutLayer>,
+}
+
+fn default_crop_dim() -> f32 {
+    1.0
+}
+
+fn default_crop_aspect() -> String {
+    "original".to_string()
 }
 
 fn default_agx_look() -> String {
@@ -299,6 +335,92 @@ fn default_lut_opacity() -> f32 {
     1.0
 }
 
+/// Adjustments localized to a specific luminance zone (shadows, midtones, highlights).
+/// Evaluated weighted by `zone_weights(c)`.
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, Default)]
+pub struct ZoneAdjustments {
+    #[serde(default)]
+    pub exposure_ev: f32,
+    #[serde(default)]
+    pub contrast: f32,
+    #[serde(default)]
+    pub brightness: f32,
+    #[serde(default)]
+    pub temperature: f32,
+    #[serde(default)]
+    pub tint: f32,
+    #[serde(default)]
+    pub saturation: f32,
+    #[serde(default)]
+    pub vibrance: f32,
+    #[serde(default)]
+    pub whites: f32,
+    #[serde(default)]
+    pub highlights: f32,
+    #[serde(default)]
+    pub midtones: f32,
+    #[serde(default)]
+    pub shadows: f32,
+    #[serde(default)]
+    pub blacks: f32,
+    #[serde(default)]
+    pub clarity: f32,
+    #[serde(default)]
+    pub structure: f32,
+    #[serde(default)]
+    pub dehaze: f32,
+    #[serde(default)]
+    pub grain_amount: f32,
+    #[serde(default)]
+    pub hsl_hue: Vec<f32>,
+    #[serde(default)]
+    pub hsl_sat: Vec<f32>,
+    #[serde(default)]
+    pub hsl_lum: Vec<f32>,
+    #[serde(default)]
+    pub curve_luma: Vec<[f32; 2]>,
+    #[serde(default)]
+    pub curve_r: Vec<[f32; 2]>,
+    #[serde(default)]
+    pub curve_g: Vec<[f32; 2]>,
+    #[serde(default)]
+    pub curve_b: Vec<[f32; 2]>,
+    #[serde(default)]
+    pub pre_luts: Vec<LutLayer>,
+    #[serde(default)]
+    pub post_luts: Vec<LutLayer>,
+}
+
+impl ZoneAdjustments {
+    pub fn is_active(&self) -> bool {
+        self.exposure_ev != 0.0
+            || self.contrast != 0.0
+            || self.brightness != 0.0
+            || self.temperature != 0.0
+            || self.tint != 0.0
+            || self.saturation != 0.0
+            || self.vibrance != 0.0
+            || self.whites != 0.0
+            || self.highlights != 0.0
+            || self.midtones != 0.0
+            || self.shadows != 0.0
+            || self.blacks != 0.0
+            || self.clarity != 0.0
+            || self.structure != 0.0
+            || self.dehaze != 0.0
+            || self.grain_amount != 0.0
+            || self.hsl_hue.iter().any(|&v| v != 0.0)
+            || self.hsl_sat.iter().any(|&v| v != 0.0)
+            || self.hsl_lum.iter().any(|&v| v != 0.0)
+            || !self.curve_luma.is_empty()
+            || !self.curve_r.is_empty()
+            || !self.curve_g.is_empty()
+            || !self.curve_b.is_empty()
+            || !self.pre_luts.is_empty()
+            || !self.post_luts.is_empty()
+    }
+}
+
 impl Default for Recipe {
     fn default() -> Self {
         Self {
@@ -356,6 +478,9 @@ impl Default for Recipe {
             zone_highlights_exposure: 0.0,
             zone_highlights_contrast: 0.0,
             zone_highlights_saturation: 0.0,
+            zone_shadows: ZoneAdjustments::default(),
+            zone_midtones: ZoneAdjustments::default(),
+            zone_highlights: ZoneAdjustments::default(),
             brightness: 0.0,
             blacks: 0.0,
             vibrance: 0.0,
@@ -375,6 +500,15 @@ impl Default for Recipe {
             curve_b: default_curve(),
             rapid_pre_luts: Vec::new(),
             rapid_post_luts: Vec::new(),
+            crop_x: 0.0,
+            crop_y: 0.0,
+            crop_w: 1.0,
+            crop_h: 1.0,
+            crop_aspect: "original".to_string(),
+            crop_angle: 0.0,
+            flip_h: false,
+            flip_v: false,
+            apply_crop: true,
             pre_luts: Vec::new(),
             post_luts: Vec::new(),
         }
@@ -669,7 +803,11 @@ impl Engine {
             .get(&recipe.engine)
             .context("resolving render engine from registry")?;
 
-        let result = render_engine.render(&input, &recipe, &self.luts_dir)?;
+        let mut result = render_engine.render(&input, &recipe, &self.luts_dir)?;
+
+        if recipe.apply_crop {
+            result = crop_and_flip(&result, &recipe);
+        }
 
         let render_ms = t.elapsed().as_millis();
 
@@ -1141,6 +1279,53 @@ fn downscale(img: &ImageBuf, max_px: u32) -> ImageBuf {
     ImageBuf::from_data(nw as u32, nh as u32, data)
 }
 
+/// Apply crop coordinates (normalized 0..1) and flip_h / flip_v to an ImageBuf.
+pub fn crop_and_flip(img: &ImageBuf, recipe: &Recipe) -> ImageBuf {
+    let (src_w, src_h) = (img.width as usize, img.height as usize);
+    if src_w == 0 || src_h == 0 {
+        return img.clone();
+    }
+
+    let needs_crop = recipe.crop_w > 0.0
+        && recipe.crop_h > 0.0
+        && (recipe.crop_w < 0.999 || recipe.crop_h < 0.999 || recipe.crop_x > 0.001 || recipe.crop_y > 0.001);
+    let needs_flip = recipe.flip_h || recipe.flip_v;
+
+    if !needs_crop && !needs_flip {
+        return img.clone();
+    }
+
+    let cx = (recipe.crop_x.clamp(0.0, 1.0) * src_w as f32).floor() as usize;
+    let cy = (recipe.crop_y.clamp(0.0, 1.0) * src_h as f32).floor() as usize;
+    let cw = (recipe.crop_w.clamp(0.01, 1.0) * src_w as f32).round() as usize;
+    let ch = (recipe.crop_h.clamp(0.01, 1.0) * src_h as f32).round() as usize;
+
+    let x0 = cx.min(src_w.saturating_sub(1));
+    let y0 = cy.min(src_h.saturating_sub(1));
+    let x1 = (x0 + cw).min(src_w).max(x0 + 1);
+    let y1 = (y0 + ch).min(src_h).max(y0 + 1);
+    let out_w = x1 - x0;
+    let out_h = y1 - y0;
+
+    let mut out_data = Vec::with_capacity(out_w * out_h * 3);
+    for out_y in 0..out_h {
+        let src_y = if recipe.flip_v { y1 - 1 - out_y } else { y0 + out_y };
+        for out_x in 0..out_w {
+            let src_x = if recipe.flip_h { x1 - 1 - out_x } else { x0 + out_x };
+            let idx = (src_y * src_w + src_x) * 3;
+            if idx + 2 < img.data.len() {
+                out_data.push(img.data[idx]);
+                out_data.push(img.data[idx + 1]);
+                out_data.push(img.data[idx + 2]);
+            } else {
+                out_data.extend_from_slice(&[0.0, 0.0, 0.0]);
+            }
+        }
+    }
+
+    ImageBuf::from_data(out_w as u32, out_h as u32, out_data)
+}
+
 /// Quantize a pipeline result (display-encoded sRGB, [0,1]) to 8-bit —
 /// `round_ties_even` stays numpy-identical with the reference tools.
 fn quantize_rgb8(img: &ImageBuf) -> Vec<u8> {
@@ -1497,4 +1682,21 @@ mod decode_gate_tests {
         }
         assert!(gates.0.lock().unwrap().len() <= 2);
     }
+
+    #[test]
+    fn crop_and_flip_reduces_dimensions_and_inverts() {
+        let input = ImageBuf::from_data(100, 100, vec![1.0f32; 100 * 100 * 3]);
+        let mut recipe = Recipe::default();
+        recipe.crop_x = 0.25;
+        recipe.crop_y = 0.25;
+        recipe.crop_w = 0.5;
+        recipe.crop_h = 0.5;
+        recipe.flip_h = true;
+
+        let cropped = crop_and_flip(&input, &recipe);
+        assert_eq!(cropped.width, 50);
+        assert_eq!(cropped.height, 50);
+        assert_eq!(cropped.data.len(), 50 * 50 * 3);
+    }
 }
+

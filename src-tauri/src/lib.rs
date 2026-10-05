@@ -2217,14 +2217,50 @@ pub fn run() {
                 }
             }
             #[cfg(target_os = "macos")]
-            if matches!(event, tauri::WindowEvent::Focused(true)) {
-                let focus_enabled = window
-                    .app_handle()
+            if let tauri::WindowEvent::Focused(focused) = event {
+                let app = window.app_handle().clone();
+                let focus_enabled = app
                     .try_state::<FocusState>()
                     .map(|state| *state.0.lock().unwrap())
                     .unwrap_or(false);
                 if focus_enabled {
-                    let _ = apply_focus_backdrop(&window.app_handle(), true);
+                    if *focused {
+                        let has_presence = app
+                            .try_state::<FocusPresenceState>()
+                            .map(|state| !state.0.lock().unwrap().is_empty())
+                            .unwrap_or(false);
+                        if has_presence {
+                            let _ = apply_focus_backdrop(&app, true);
+                        }
+                    } else {
+                        let delayed_app = app.clone();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_millis(220));
+                            let is_active = unsafe {
+                                use objc::{class, msg_send, sel, sel_impl};
+                                let ns_app: *mut objc::runtime::Object =
+                                    msg_send![class!(NSApplication), sharedApplication];
+                                if !ns_app.is_null() {
+                                    let is_act: objc::runtime::BOOL = msg_send![ns_app, isActive];
+                                    let key_win: *mut objc::runtime::Object =
+                                        msg_send![ns_app, keyWindow];
+                                    is_act == objc::runtime::YES && !key_win.is_null()
+                                } else {
+                                    false
+                                }
+                            };
+                            let has_presence = delayed_app
+                                .try_state::<FocusPresenceState>()
+                                .map(|state| !state.0.lock().unwrap().is_empty())
+                                .unwrap_or(false);
+                            if !is_active || !has_presence {
+                                let main_app = delayed_app.clone();
+                                let _ = delayed_app.run_on_main_thread(move || {
+                                    let _ = apply_focus_backdrop(&main_app, false);
+                                });
+                            }
+                        });
+                    }
                 }
             }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

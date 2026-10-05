@@ -80,10 +80,7 @@
       <button class="outline small add-lut-btn" onclick={addLayer}>+ LUT</button>
     </div>
 
-    {#if layers.length === 0}
-
-    {:else}
-      {#each layers as layer, idx}
+    {#each layers as layer, idx}
       <div class="lut-layer-card">
         <div class="frow layer-row">
           <select class="lut-file-pick" value={layer.name} onchange={(e) => setFile(idx, e.currentTarget.value)}>
@@ -118,7 +115,6 @@
         {/if}
       </div>
     {/each}
-  {/if}
 </div>
 
 <style>

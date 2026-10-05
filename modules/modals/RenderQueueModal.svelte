@@ -24,14 +24,14 @@
 
 <!-- Floating panel, not a modal: no backdrop, so the grid/develop canvas
      behind it stays fully clickable while an activity is in flight. -->
-<div class="queue-panel" role="dialog" aria-label="Activity">
-  <div class="modal-header">
+<div class="queue-panel card" role="dialog" aria-label="Activity">
+  <header class="modal-header">
     <h3>ACTIVITY</h3>
     {#if canCancelActive}
       <button class="queue-cancel" onclick={onCancelQueue}>Cancel Queue</button>
     {/if}
     <button class="close-btn" onclick={onClose} aria-label="Close activity panel">✕</button>
-  </div>
+  </header>
   <div class="modal-body queue-list">
     {#if activityQueue.length === 0}
       <p class="empty-queue">No activity this session.</p>

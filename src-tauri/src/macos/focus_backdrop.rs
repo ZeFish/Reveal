@@ -131,6 +131,7 @@ unsafe fn ensure_panel() -> Result<*mut Object, String> {
     let _: () = msg_send![panel, setHasShadow: false];
     let _: () = msg_send![panel, setIgnoresMouseEvents: true];
     let _: () = msg_send![panel, setLevel: NS_NORMAL_WINDOW_LEVEL];
+    let _: () = msg_send![panel, setHidesOnDeactivate: YES];
     let behavior = NS_WINDOW_COLLECTION_CAN_JOIN_ALL_SPACES
         | NS_WINDOW_COLLECTION_STATIONARY
         | NS_WINDOW_COLLECTION_IGNORES_CYCLE

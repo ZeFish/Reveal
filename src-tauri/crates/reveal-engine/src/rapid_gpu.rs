@@ -88,6 +88,10 @@ struct Params {
     shadows_tint: [f32; 4],
     midtones_tint: [f32; 4],
     highlights_tint: [f32; 4],
+
+    zone_shadows_wb: [f32; 4],
+    zone_midtones_wb: [f32; 4],
+    zone_highlights_wb: [f32; 4],
 }
 
 struct Gpu {
@@ -251,6 +255,18 @@ pub struct Inputs<'a> {
 /// Run the per-pixel stage on the GPU. `None` means "couldn't" — never
 /// "produced nothing"; the caller runs the CPU loop on `None`.
 pub fn run(inputs: &Inputs, recipe: &Recipe) -> Option<ImageBuf> {
+    static GPU_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = GPU_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        run_inner(inputs, recipe)
+    }))
+    .unwrap_or_else(|err| {
+        eprintln!("rapid gpu: panic caught, falling back to CPU: {err:?}");
+        None
+    })
+}
+
+fn run_inner(inputs: &Inputs, recipe: &Recipe) -> Option<ImageBuf> {
     let g = gpu()?;
     let total = inputs.width * inputs.height * 3;
     if total == 0 || inputs.data.len() < total {
@@ -306,15 +322,15 @@ pub fn run(inputs: &Inputs, recipe: &Recipe) -> Option<ImageBuf> {
         highlight_desat: recipe.highlight_desat,
         use_logc: u32::from(recipe.use_logc),
         agx_look,
-        zone_shadows_exposure: recipe.zone_shadows_exposure,
-        zone_shadows_contrast: recipe.zone_shadows_contrast,
-        zone_shadows_saturation: recipe.zone_shadows_saturation,
-        zone_midtones_exposure: recipe.zone_midtones_exposure,
-        zone_midtones_contrast: recipe.zone_midtones_contrast,
-        zone_midtones_saturation: recipe.zone_midtones_saturation,
-        zone_highlights_exposure: recipe.zone_highlights_exposure,
-        zone_highlights_contrast: recipe.zone_highlights_contrast,
-        zone_highlights_saturation: recipe.zone_highlights_saturation,
+        zone_shadows_exposure: recipe.zone_shadows_exposure + recipe.zone_shadows.exposure_ev,
+        zone_shadows_contrast: recipe.zone_shadows_contrast + recipe.zone_shadows.contrast,
+        zone_shadows_saturation: recipe.zone_shadows_saturation + recipe.zone_shadows.saturation,
+        zone_midtones_exposure: recipe.zone_midtones_exposure + recipe.zone_midtones.exposure_ev,
+        zone_midtones_contrast: recipe.zone_midtones_contrast + recipe.zone_midtones.contrast,
+        zone_midtones_saturation: recipe.zone_midtones_saturation + recipe.zone_midtones.saturation,
+        zone_highlights_exposure: recipe.zone_highlights_exposure + recipe.zone_highlights.exposure_ev,
+        zone_highlights_contrast: recipe.zone_highlights_contrast + recipe.zone_highlights.contrast,
+        zone_highlights_saturation: recipe.zone_highlights_saturation + recipe.zone_highlights.saturation,
         curve_luma: u32::from(inputs.curves[0].is_some()),
         curve_r: u32::from(inputs.curves[1].is_some()),
         curve_g: u32::from(inputs.curves[2].is_some()),
@@ -325,6 +341,24 @@ pub fn run(inputs: &Inputs, recipe: &Recipe) -> Option<ImageBuf> {
         shadows_tint: tint4(recipe.shadows_tint),
         midtones_tint: tint4(recipe.midtones_tint),
         highlights_tint: tint4(recipe.highlights_tint),
+        zone_shadows_wb: [
+            recipe.zone_shadows.temperature,
+            recipe.zone_shadows.tint,
+            recipe.zone_shadows.clarity,
+            recipe.zone_shadows.brightness + recipe.zone_shadows.midtones,
+        ],
+        zone_midtones_wb: [
+            recipe.zone_midtones.temperature,
+            recipe.zone_midtones.tint,
+            recipe.zone_midtones.clarity,
+            recipe.zone_midtones.brightness + recipe.zone_midtones.midtones,
+        ],
+        zone_highlights_wb: [
+            recipe.zone_highlights.temperature,
+            recipe.zone_highlights.tint,
+            recipe.zone_highlights.clarity,
+            recipe.zone_highlights.brightness + recipe.zone_highlights.midtones,
+        ],
     };
 
     // aux = 8 hue + 8 sat + 8 lum, then four 256-entry curve LUTs. An

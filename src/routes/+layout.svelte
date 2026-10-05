@@ -2,8 +2,7 @@
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
-  import { isTauri } from "$lib/api.js";
-  import { applyTheme, applyTextSize } from "$lib/app-theme.js";
+  import { isTauri, applyTheme, applyTextSize } from "@modules/core";
   // The Standard visual identity — framework-agnostic pieces of the monorepo.
   import "@stnd/styles/standard.scss";
   // Fonts and theme are not reachable through their packages' exports maps
@@ -13,7 +12,7 @@
   import "../../../../packages/fonts/din-condensed/din-condensed.css";
   import "../../../../packages/fonts/ibm-plex/ibm-plex.css";
   import "../../../../packages/fonts/newsreader/newsreader.css";
-  import "../../../../packages/themes/reveal/reveal.scss";
+  import "../../../../packages/themes/macos/macos.scss";
   // App adapter — re-grounds the note framework's tokens for an app window
   // (fixed UI scale, no mobile bump, no reading measure). Must come last.
   import "../app.scss";
@@ -21,8 +20,6 @@
   let { children } = $props();
 
   onMount(() => {
-    document.documentElement.classList.add("js-image-zoom-enabled");
-
     // Every Reveal window (main, dev-panel, settings-panel, import-panel)
     // loads this layout — the one place to boot the saved app theme and
     // stay in sync when another window changes it live.

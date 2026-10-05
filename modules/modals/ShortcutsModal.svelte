@@ -1,6 +1,6 @@
 <script>
   import Dialog from "@stnd/ui/Dialog.svelte";
-  import ManualLink from "$lib/components/ManualLink.svelte";
+  import { ManualLink } from "@modules/core";
   /**
    * @typedef {Object} Props
    * @property {() => void} [onClose]
@@ -15,18 +15,19 @@
       <h2>KEYBOARD SHORTCUTS</h2>
       <button class="close-btn" onclick={onClose} aria-label="Close keyboard shortcuts">✕</button>
     </header>
-    <div class="shortcuts-grid">
+    <div class="body shortcuts-grid">
       <div class="shortcut-group">
         <h3>NAVIGATION</h3>
         <div class="shortcut-row"><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd> <span>Navigate the grid</span></div>
         <div class="shortcut-row"><kbd>Space</kbd> <span>Preview — single photo ↔ grid</span></div>
         <div class="shortcut-row"><kbd>g</kbd> <span>Back to grid</span></div>
-        <div class="shortcut-row"><kbd>m</kbd> <span>Masonry ↔ grid</span></div>
+        <div class="shortcut-row"><kbd>m</kbd> <span>Masonry ↔ grid (Cull) / Zone mask (Dev)</span></div>
         <div class="shortcut-row"><kbd>f</kbd> <span>Full screen</span></div>
         <div class="shortcut-row"><kbd>l</kbd> <span>Toggle light / dark (system)</span></div>
-        <div class="shortcut-row"><kbd>+</kbd> <span>Zoom in (fewer photos)</span></div>
-        <div class="shortcut-row"><kbd>−</kbd> <span>Zoom out (more photos)</span></div>
-        <div class="shortcut-row"><kbd>⇧</kbd> <kbd>+</kbd> / <kbd>⇧</kbd> <kbd>−</kbd> <span>Grid margin</span></div>
+        <div class="shortcut-row"><kbd>+</kbd> <span>Zoom in: photo size (Dev) / fewer photos (Grid)</span></div>
+        <div class="shortcut-row"><kbd>−</kbd> <span>Zoom out: photo size (Dev) / more photos (Grid)</span></div>
+        <div class="shortcut-row"><kbd>⌘</kbd> <kbd>0</kbd> <span>Reset photo size (Dev)</span></div>
+        <div class="shortcut-row"><kbd>⇧</kbd> <kbd>+</kbd> / <kbd>⇧</kbd> <kbd>−</kbd> <span>Grid margin (Grid)</span></div>
       </div>
       <div class="shortcut-group">
         <h3>RATING & SELECTION</h3>

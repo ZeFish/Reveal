@@ -10,7 +10,7 @@
   // drew a curve the renderer doesn't apply, the shape on screen would be a
   // lie exactly where it matters most (steep segments, where Catmull-Rom
   // overshoots and a tone curve must not).
-  import Icon from "$lib/components/Icon.svelte";
+  import { Icon } from "@modules/core";
 
   let {
     /** @type {{ id: string, label: string, channels: {id: string, label: string, color: string}[] }} */

@@ -4,8 +4,7 @@
   // and collected read as ONE state: light mode deepens the drop-shadow, dark
   // mode re-colours the ring to a visible gray — never an accent border, the
   // chrome must not pull the eye off the image.
-  import Icon from "$lib/components/Icon.svelte";
-  import { thumbUrl } from "$lib/thumbUrl.js";
+  import { Photo, Icon } from "@modules/core";
 
   /**
    * @typedef {Object} Props
@@ -178,7 +177,7 @@
     <img
       data-no-zoom
       bind:this={imgEl}
-      src={attempt ? `${thumbUrl(path, previewVersion)}&r=${attempt}` : thumbUrl(path, previewVersion)}
+      src={Photo.thumb(path, { version: previewVersion, attempt })}
       alt={name}
       loading="eager"
       decoding="async"
@@ -295,6 +294,7 @@
        the hairline edge comes from the shadow. */
     --mat: 6px;
     padding: var(--mat);
+    padding:0;
     background: var(--color-surface-light-1);
     border-radius: max(1px, var(--radius));
     /* The quiet print-on-a-table depth. */
@@ -308,16 +308,15 @@
     isolation: isolate;
   }
   .cell:hover .matte {
-      background: var(--color-surface-light-2);
       box-shadow: var(--shadow-hover), var(--shadow-glow);
   }
   .cell.selected {
     z-index: 5;
   }
   .cell.selected .matte {
+    padding: var(--mat);
     box-shadow: var(--shadow-hover), var(--shadow-glow);
     transform: translateY(-1px) translateZ(0);
-    background: var(--color-surface-light-3);
   }
 
   /* A border used to be the mat, and CSS rounds a border's inner edge for
@@ -369,15 +368,11 @@
     align-items: center;
     justify-content: center;
     background: var(--color-surface);
-    color: var(--color-foreground);
-    opacity: 0.16;
+    color: var(--color-shadow);
   }
   .matte:not(.loaded) {
     background: var(--color-surface-dark-1);
     box-shadow: var(--shadow-inset);
-  }
-  .placeholder.failed {
-    opacity: 0.32;
   }
 
   .stars-overlay {
@@ -425,7 +420,7 @@
     top: 100%;
     left: 0;
     right: 0;
-    margin-top: var(--space-d4);
+    margin-top: var(--space-d2);
     display: flex;
     justify-content: center;
     pointer-events: none;
@@ -438,6 +433,9 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    color: var(--color-muted);
+    font-family: var(--font-interface);
+    font-size: var(--scale-d2);
   }
   .render-badge {
     position: absolute;

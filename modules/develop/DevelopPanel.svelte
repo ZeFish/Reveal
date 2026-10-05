@@ -15,11 +15,8 @@
   // owned by the caller, not this component, because what happens after the
   // mutation is exactly the thing that differs between the two hosts.
   import { invoke } from "@tauri-apps/api/core";
-  import { DEFAULT_PHOTO_SIZE } from "$lib/session.js";
-  import { isTauri } from "$lib/api.js";
-  import Icon from "$lib/components/Icon.svelte";
+  import { DEFAULT_PHOTO_SIZE, isTauri, openManual, TAB_PAGES, Icon } from "@modules/core";
   import InfoBlock from "./tabs/InfoBlock.svelte";
-  import { openManual, TAB_PAGES } from "$lib/manual.js";
   import DevTab from "./tabs/DevTab.svelte";
   import CropTab from "./tabs/CropTab.svelte";
   import PresetTab from "./tabs/PresetTab.svelte";
@@ -56,6 +53,8 @@
     publishing = $bindable(false),
     publishStatus = $bindable(""),
     showClipping = false,
+    checkLayer = "none",
+    onSelectCheckLayer = () => {},
     toggleClipping = () => {},
     showCaption = false,
     toggleCaptionOverlay = () => {},
@@ -105,6 +104,8 @@
     // detached (see routes/dev-panel/+page.svelte).
     photoScale = $bindable(DEFAULT_PHOTO_SIZE),
     onPhotoScaleChanged = () => {},
+    activeZone = $bindable("global"),
+    onSetZoneMask = () => {},
   } = $props();
 
   // developEngine holds the Rust engine id ("spektra" | "rapid" | null).
@@ -138,6 +139,20 @@
     if (exif.focal_mm) parts.push(`${Math.round(exif.focal_mm)}mm`);
     return parts.join("   ");
   });
+
+  let showCheckMenu = $state(false);
+
+  let effectiveCheckLayer = $derived(
+    checkLayer !== "none" ? checkLayer : (showClipping ? "clipping" : "none")
+  );
+
+  let checkLayerTitle = $derived(
+    effectiveCheckLayer === "clipping" ? "Écrêtage" :
+    effectiveCheckLayer === "false_color" ? "False Color" :
+    effectiveCheckLayer === "saturation" ? "Saturation" :
+    effectiveCheckLayer === "hue" ? "Teintes (Hue)" :
+    effectiveCheckLayer === "solar" ? "Solarisation" : "Désactivé"
+  );
 </script>
 
 <div class="panel">
@@ -152,17 +167,31 @@
       >
         <Icon name={detached ? "arrows-in-simple" : "arrow-square-out"} size="12px" />
       </button>
-      <button
-        class="header-util-btn ghost"
-        aria-pressed={showClipping}
-        onclick={() => toggleClipping()}
-        title="Clipping warning (highlights & shadows)"
-      >
-        <Icon name="circle-half" size="12px" />
-        {#if showClipping}
-          <span class="clip-indicator"></span>
+      <div class="check-menu-wrapper">
+        <button
+          class="header-util-btn ghost"
+          class:active={effectiveCheckLayer !== "none"}
+          aria-pressed={effectiveCheckLayer !== "none"}
+          onclick={() => toggleClipping()}
+          oncontextmenu={(e) => { e.preventDefault(); showCheckMenu = !showCheckMenu; }}
+          title={`Check Layer (${checkLayerTitle}) — Clic pour activer, clic-droit pour choisir`}
+        >
+          <Icon name="circle-half" size="12px" />
+          {#if effectiveCheckLayer !== "none"}
+            <span class="clip-indicator {effectiveCheckLayer}"></span>
+          {/if}
+        </button>
+        {#if showCheckMenu}
+          <div class="check-menu-popover card" role="menu">
+            <button class="check-menu-item" class:selected={effectiveCheckLayer === "none"} onclick={() => { onSelectCheckLayer("none"); showCheckMenu = false; }}>Désactivé</button>
+            <button class="check-menu-item" class:selected={effectiveCheckLayer === "clipping"} onclick={() => { onSelectCheckLayer("clipping"); showCheckMenu = false; }}>Écrêtage (Hautes/Basses)</button>
+            <button class="check-menu-item" class:selected={effectiveCheckLayer === "false_color"} onclick={() => { onSelectCheckLayer("false_color"); showCheckMenu = false; }}>False Color (IRE Vidéo)</button>
+            <button class="check-menu-item" class:selected={effectiveCheckLayer === "saturation"} onclick={() => { onSelectCheckLayer("saturation"); showCheckMenu = false; }}>Masque de Saturation</button>
+            <button class="check-menu-item" class:selected={effectiveCheckLayer === "hue"} onclick={() => { onSelectCheckLayer("hue"); showCheckMenu = false; }}>Masque des Teintes (Hue)</button>
+            <button class="check-menu-item" class:selected={effectiveCheckLayer === "solar"} onclick={() => { onSelectCheckLayer("solar"); showCheckMenu = false; }}>Solarisation (Micro-contraste)</button>
+          </div>
         {/if}
-      </button>
+      </div>
       <button
         class="header-util-btn ghost"
         aria-pressed={showCaption}
@@ -209,6 +238,8 @@
     {#if activeTab === 'dev'}
       <DevTab
         bind:recipe
+        bind:activeZone
+        {onSetZoneMask}
         {engines}
         {developEngine}
         {activeEngine}
@@ -311,6 +342,45 @@
     width: 24px;
     height: 24px;
   }
+  .check-menu-wrapper {
+    position: relative;
+    display: inline-flex;
+  }
+  .check-menu-popover {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 50;
+    min-width: 190px;
+    padding: var(--space-d4);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    background: var(--color-surface);
+    box-shadow: var(--shadow-raised);
+    border-radius: var(--radius);
+  }
+  .check-menu-item {
+    text-align: left;
+    padding: 5px 8px;
+    font-size: 0.72rem;
+    border-radius: calc(var(--radius) - 2px);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--color-muted);
+
+    &:hover {
+      background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
+      color: var(--color-foreground);
+    }
+    &.selected {
+      background: var(--color-foreground);
+      color: var(--color-background);
+      font-weight: 600;
+    }
+  }
+
   .clip-indicator {
     position: absolute;
     bottom: 2px;
@@ -319,6 +389,12 @@
     height: 5px;
     border-radius: 50%;
     background: var(--color-accent);
+
+    &.clipping { background: #ef4444; }
+    &.false_color { background: #22c55e; }
+    &.saturation { background: #ec4899; }
+    &.hue { background: #06b6d4; }
+    &.solar { background: #e2e8f0; }
   }
 
   .hairline {
