@@ -42,7 +42,7 @@
 
 <div class="section-group">
   <div class="section-heading">
-    <Icon name="user-circle" size="12px" />
+    <Icon name="user-circle" size="var(--icon-md)" />
     <span>GARDEN ACCOUNT</span>
   </div>
   <div class="card flush list divided">

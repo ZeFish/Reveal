@@ -174,7 +174,7 @@
         onmouseleave={onScheduleSidebarPeekClose}
         title="Folder panel (B)"
       >
-        <Icon name="sidebar-simple" size="12px" />
+        <Icon name="sidebar-simple" size="var(--icon-md)" />
       </button>
       <button
         class="ghost icon small"
@@ -185,7 +185,7 @@
         <span class="focus-glyph" class:on={focusOn}></span>
       </button>
       <button class="ghost icon small" onclick={onToggleAppearance} title="Toggle system light / dark mode (l)">
-        <Icon name="circle-half" size="12px" />
+        <Icon name="circle-half" size="var(--icon-md)" />
       </button>
       <button class="wordmark" onclick={onShowShortcuts} title="Keyboard shortcuts">
         {curDir && curDir !== rootDir ? (dirLabel(curDir) ?? "").toUpperCase() : "REVEAL"}
@@ -196,7 +196,7 @@
   <!-- Filter (Rating, Pick, Story) -->
   <Dropdown label="Filter photos" triggerClass={`ghost ${minRating > 0 || filterStory || pickFilter !== "all" || textFilter ? "accent" : ""}`}>
     {#snippet trigger()}
-      <Icon name="funnel" size="12px" />
+      <Icon name="funnel" size="var(--icon-md)" />
       {#if minRating > 0}
         <span class="badge">{minRating}★</span>
       {:else if pickFilter === "picks"}
@@ -212,37 +212,37 @@
       disabled={applePhotosActive}
     >
       Story board only
-      {#if filterStory}<Icon name="check" size="10px" />{/if}
+      {#if filterStory}<Icon name="check" size="var(--icon-sm)" />{/if}
     </DropdownItem>
     <DropdownSeparator />
     <DropdownItem role="menuitemradio" aria-checked={pickFilter === "all"} onclick={() => onSetPickFilter("all")}>
       All flags
-      {#if pickFilter === "all"}<Icon name="check" size="10px" />{/if}
+      {#if pickFilter === "all"}<Icon name="check" size="var(--icon-sm)" />{/if}
     </DropdownItem>
     <DropdownItem role="menuitemradio" aria-checked={pickFilter === "picks"} onclick={() => onSetPickFilter("picks")}>
       Picks only
-      {#if pickFilter === "picks"}<Icon name="check" size="10px" />{/if}
+      {#if pickFilter === "picks"}<Icon name="check" size="var(--icon-sm)" />{/if}
     </DropdownItem>
     <DropdownItem role="menuitemradio" aria-checked={pickFilter === "unflagged"} onclick={() => onSetPickFilter("unflagged")}>
       Unflagged only
-      {#if pickFilter === "unflagged"}<Icon name="check" size="10px" />{/if}
+      {#if pickFilter === "unflagged"}<Icon name="check" size="var(--icon-sm)" />{/if}
     </DropdownItem>
     <DropdownItem role="menuitemradio" aria-checked={pickFilter === "rejected"} onclick={() => onSetPickFilter("rejected")}>
       Rejected only
-      {#if pickFilter === "rejected"}<Icon name="check" size="10px" />{/if}
+      {#if pickFilter === "rejected"}<Icon name="check" size="var(--icon-sm)" />{/if}
     </DropdownItem>
     <DropdownSeparator />
     {#each [0, 1, 2, 3, 4, 5] as n}
       <DropdownItem role="menuitemradio" aria-checked={minRating === n} onclick={() => onSetMinRating(n)}>
         {n === 0 ? "Any rating" : `≥ ${n} ★`}
-        {#if minRating === n}<Icon name="check" size="10px" />{/if}
+        {#if minRating === n}<Icon name="check" size="var(--icon-sm)" />{/if}
       </DropdownItem>
     {/each}
   </Dropdown>
 
   <!-- Instant Search -->
   <div class="search-box">
-    <Icon name="magnifying-glass" size="10px" class="search-ico" />
+    <Icon name="magnifying-glass" size="var(--icon-sm)" class="search-ico" />
     <input
       type="text"
       class="search-input"
@@ -253,7 +253,7 @@
     />
     {#if textFilter}
       <button class="search-clear" onclick={() => onSetTextFilter("")} title="Clear filter">
-        <Icon name="x" size="8px" />
+        <Icon name="x" size="var(--icon-sm)" />
       </button>
     {/if}
   </div>
@@ -261,7 +261,7 @@
   <!-- Sort -->
   <Dropdown label="Sort photos" triggerClass="ghost icon">
     {#snippet trigger()}
-      <Icon name="arrows-down-up" size="12px" />
+      <Icon name="arrows-down-up" size="var(--icon-md)" />
     {/snippet}
     <DropdownItem
       role="menuitemradio"
@@ -269,7 +269,7 @@
       onclick={() => onSetSortDesc(false)}
     >
       Oldest first
-      {#if !sortDesc}<Icon name="check" size="10px" />{/if}
+      {#if !sortDesc}<Icon name="check" size="var(--icon-sm)" />{/if}
     </DropdownItem>
     <DropdownItem
       role="menuitemradio"
@@ -277,11 +277,11 @@
       onclick={() => onSetSortDesc(true)}
     >
       Newest first
-      {#if sortDesc}<Icon name="check" size="10px" />{/if}
+      {#if sortDesc}<Icon name="check" size="var(--icon-sm)" />{/if}
     </DropdownItem>
   </Dropdown>
 
-  <span class="frame-count titlebar-text">
+  <span class="frame-count font-monospace muted text-sm titlebar-text">
     {#if viewLength !== framesLength}
       {viewLength}/{framesLength} FRAMES
     {:else}
@@ -348,7 +348,7 @@
       <span class="chip-count">{activity.progress.done}/{activity.progress.total}</span>
       <progress class="chip-bar" value={activity.progress.done} max={activity.progress.total || 1}></progress>
       <button class="chip-stop" onclick={onStopImport} title="Stop the import">
-        <Icon name="x" size="9px" />
+        <Icon name="x" size="var(--icon-sm)" />
       </button>
     </span>
   {/if}
@@ -369,7 +369,7 @@
       <span class="chip-count">{activity.progress.done}/{activity.progress.total}</span>
       <progress class="chip-bar" value={activity.progress.done} max={activity.progress.total || 1}></progress>
       <button class="chip-stop" onclick={onStopCull} title="Stop the AI cull">
-        <Icon name="x" size="9px" />
+        <Icon name="x" size="var(--icon-sm)" />
       </button>
     </span>
   {/if}
@@ -381,7 +381,7 @@
       title="View the published note on Garden"
       aria-label="View the published note on Garden"
     >
-      <Icon name="arrow-square-out" size="12px" />
+      <Icon name="arrow-square-out" size="var(--icon-md)" />
     </button>
   {/if}
 
@@ -392,7 +392,7 @@
       disabled={!!activity.progress}
       title={selectionCount > 1 ? (selectionCount === viewLength ? `Export all photos (${viewLength}) (r)` : `Export the ${selectionCount} selected photos (r)`) : `Export the selected photo (r)`}
     >
-      <Icon name="export" size="12px" />
+      <Icon name="export" size="var(--icon-md)" />
     </button>
   {/if}
 
@@ -405,7 +405,7 @@
         aria-label="Grid layout"
         title="Grid layout"
       >
-        <Icon name={layout === "masonry" ? "rows" : "grid-four"} size="12px" />
+        <Icon name={layout === "masonry" ? "rows" : "grid-four"} size="var(--icon-md)" />
       </button>
     {/snippet}
     <div class="layout-controls">
@@ -418,7 +418,7 @@
           }}
         >
           <span class="item-label">Open on the web</span>
-          <Icon name="arrow-square-out" size="10px" />
+          <Icon name="arrow-square-out" size="var(--icon-sm)" />
         </button>
       {/if}
       {#if storySetSize && gardenSignedIn}
@@ -432,7 +432,7 @@
           disabled={!!activity.progress}
         >
           <span class="item-label">{publishVerb} l'histoire ({storySetSize})</span>
-          <Icon name="lightning" size="10px" />
+          <Icon name="lightning" size="var(--icon-sm)" />
         </button>
       {/if}
       {#if canCullFolder}
@@ -446,7 +446,7 @@
           disabled={!!activity.progress}
         >
           <span class="item-label">AI Culling</span>
-          <Icon name="lightning" size="10px" />
+          <Icon name="lightning" size="var(--icon-sm)" />
         </button>
       {/if}
       {#if publishedUrl || storySetSize || canCullFolder}
@@ -475,7 +475,7 @@
         {#if masonryTooBig}
           <span class="item-note">{framesLength} &gt; {masonryLimit}</span>
         {:else if layout === "masonry"}
-          <Icon name="check" size="10px" />
+          <Icon name="check" size="var(--icon-sm)" />
         {/if}
       </button>
       {#if layout !== "masonry"}
@@ -492,7 +492,7 @@
           onclick={onToggleFillCells}
         >
           <span class="item-label">{fillCells ? "Fill cells" : "Keep aspect ratio"}</span>
-          {#if !fillCells}<Icon name="check" size="10px" />{/if}
+          {#if !fillCells}<Icon name="check" size="var(--icon-sm)" />{/if}
         </button>
       {/if}
       <div class="std-menu-separator"></div>
@@ -569,6 +569,10 @@
     box-sizing: border-box;
     cursor: pointer;
     flex-shrink: 0;
+    min-height: var(--control-h);
+    padding-block: 0;
+    display: inline-flex;
+    align-items: center;
   }
   .rail-action:disabled {
     cursor: default;
@@ -635,8 +639,8 @@
     position: relative;
     background: var(--color-surface);
     border-radius: var(--radius-sm);
-    padding: 0 var(--space-d4);
-    height: 20px;
+    padding: 0 var(--space-d3);
+    height: var(--control-h);
     width: 120px;
     transition: width var(--duration-fast, 0.15s);
   }
@@ -652,7 +656,7 @@
   }
   .search-input {
     all: unset;
-    font-size: 10px;
+    font-size: 11px;
     width: 100%;
     color: var(--color-foreground);
   }

@@ -108,6 +108,21 @@ describe("modules/story", () => {
       expect(onRefreshed).toHaveBeenCalled();
     });
 
+    it("toggleStoryWithPath marks the photo before the disk answers and unmarks it on failure", async () => {
+      /** @type {(e?: any) => void} */
+      let fail = () => {};
+      vi.mocked(invoke).mockImplementation(
+        (cmd) => cmd === "story_toggle" ? new Promise((_, reject) => { fail = reject; }) : Promise.resolve(),
+      );
+      storyState.storySet = new Set();
+
+      const done = toggleStoryWithPath("/Photos/IMG_007.JPG", "/Photos");
+      expect(storyState.storySet.has("IMG_007")).toBe(true);
+      fail("offline");
+      await done;
+      expect(storyState.storySet.has("IMG_007")).toBe(false);
+    });
+
     it("buildGridProse correctly maps prose blocks to rows", () => {
       const blocks = [
         { isPhoto: true, stem: "IMG_001" },

@@ -13,9 +13,10 @@ import { PREVIEW_PX } from "./developOperations.js";
  * The full-resolution developed sidecar, for single-photo views.
  * @param {string} path
  * @param {number} [version]
+ * @param {boolean} [asShot] the camera's own picture, whatever develop settings the photo carries
  */
-export function previewUrl(path, version = 0) {
-  return Photo.thumb(path, { version, size: 2048, priority: true });
+export function previewUrl(path, version = 0, asShot = false) {
+  return Photo.thumb(path, { version, size: 2048, priority: true, asShot });
 }
 
 /**

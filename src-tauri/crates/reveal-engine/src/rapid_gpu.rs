@@ -16,25 +16,15 @@ use std::sync::OnceLock;
 use spektrafilm_math::image::ImageBuf;
 use wgpu::util::DeviceExt;
 
+use crate::rapid::{Layer, Layers};
 use crate::Recipe;
 
-/// Mirrors `Params` in rapid.wgsl field for field. Scalars only plus three
-/// trailing vec4s — no `vec3` and no arrays, because a uniform block gives
-/// `vec3` 16-byte alignment and `array<f32, N>` a 16-byte STRIDE, either of
-/// which would silently shift every field after it.
+/// Mirrors `Adj` in rapid.wgsl field for field: one adjustment layer (the
+/// global one, or a tonal zone). 20 words — a uniform array's stride must be a
+/// multiple of 16 bytes, and 80 is.
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct Params {
-    width: u32,
-    height: u32,
-    down_w: u32,
-    down_h: u32,
-
-    has_blurred: u32,
-    has_hsl: u32,
-    has_color_wheels: u32,
-    has_zones: u32,
-
+struct Adj {
     w_mult: f32,
     exposure_factor: f32,
     r_temp: f32,
@@ -56,42 +46,79 @@ struct Params {
     saturation_adj: f32,
 
     vibrance: f32,
+    has_hsl: u32,
+    curve_mask: u32,
+    layer_on: u32,
+}
+
+impl Adj {
+    fn pack(layer: &Layer, active: bool) -> Self {
+        let a = &layer.adjust;
+        let curve_mask = layer
+            .curves
+            .iter()
+            .enumerate()
+            .fold(0u32, |m, (i, c)| m | (u32::from(c.is_some()) << i));
+        Self {
+            w_mult: a.w_mult,
+            exposure_factor: a.exposure_factor,
+            r_temp: a.r_temp,
+            r_tint: a.r_tint,
+            g_tint: a.g_tint,
+            b_temp: a.b_temp,
+            b_tint: a.b_tint,
+            brightness_adj: a.brightness_adj,
+            clarity: a.clarity,
+            structure: a.structure,
+            dehaze: a.dehaze,
+            contrast: a.contrast,
+            shadows: a.shadows,
+            blacks: a.blacks,
+            highlights: a.highlights,
+            saturation_adj: a.saturation_adj,
+            vibrance: a.vibrance,
+            has_hsl: u32::from(a.has_hsl),
+            curve_mask,
+            layer_on: u32::from(active),
+        }
+    }
+}
+
+/// Mirrors `Params` in rapid.wgsl field for field. Scalars, three vec4s and a
+/// 4-long array of `Adj` — no `vec3` and no bare arrays of scalars, because a
+/// uniform block gives `vec3` 16-byte alignment and `array<f32, N>` a 16-byte
+/// STRIDE, either of which would silently shift every field after it.
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct Params {
+    width: u32,
+    height: u32,
+    down_w: u32,
+    down_h: u32,
+
+    has_blurred: u32,
+    has_color_wheels: u32,
+    zone_mask: u32,
+    _pad0: u32,
+
     vignette_amount: f32,
     vignette_midpoint: f32,
     vignette_roundness: f32,
-
     vignette_feather: f32,
+
     highlight_desat: f32,
     use_logc: u32,
     agx_look: u32,
-
-    zone_shadows_exposure: f32,
-    zone_shadows_contrast: f32,
-    zone_shadows_saturation: f32,
-    zone_midtones_exposure: f32,
-
-    zone_midtones_contrast: f32,
-    zone_midtones_saturation: f32,
-    zone_highlights_exposure: f32,
-    zone_highlights_contrast: f32,
-
-    zone_highlights_saturation: f32,
-    curve_luma: u32,
-    curve_r: u32,
-    curve_g: u32,
-
-    curve_b: u32,
-    _pad0: u32,
     _pad1: u32,
-    _pad2: u32,
+
+    // black, white of the global layer, then black, white of the zones.
+    range: [f32; 4],
 
     shadows_tint: [f32; 4],
     midtones_tint: [f32; 4],
     highlights_tint: [f32; 4],
 
-    zone_shadows_wb: [f32; 4],
-    zone_midtones_wb: [f32; 4],
-    zone_highlights_wb: [f32; 4],
+    adj: [Adj; 4],
 }
 
 struct Gpu {
@@ -214,7 +241,7 @@ pub fn enabled() -> bool {
 
 /// Everything the shader needs that isn't derivable from the `Recipe`, so
 /// the CPU side stays the single place these are computed.
-pub struct Inputs<'a> {
+pub(crate) struct Inputs<'a> {
     pub width: usize,
     pub height: usize,
     /// Scene-linear RGB, already through the pre-LUT stack.
@@ -223,38 +250,24 @@ pub struct Inputs<'a> {
     pub blurred: &'a [f32],
     pub down_w: usize,
     pub down_h: usize,
-    pub w_mult: f32,
-    pub exposure_factor: f32,
-    pub r_temp: f32,
-    pub r_tint: f32,
-    pub g_tint: f32,
-    pub b_temp: f32,
-    pub b_tint: f32,
-    pub brightness_adj: f32,
-    pub saturation_adj: f32,
-    // develop_rapid rescales most tone sliders (÷100) into locals before the
-    // pixel loop. They're carried here rather than re-read from the Recipe
-    // so that scaling lives in exactly one place — reading `recipe.clarity`
-    // here instead once made the GPU path 100x too strong, which is the kind
-    // of drift the CPU/GPU equivalence test exists to catch.
-    pub contrast: f32,
-    pub shadows: f32,
-    pub blacks: f32,
-    pub highlights: f32,
-    pub clarity: f32,
-    pub structure: f32,
-    pub dehaze: f32,
-    pub vibrance: f32,
-    pub has_hsl: bool,
+    /// The global layer and the three tonal zones, already scaled into the units
+    /// the pixel loop works in (develop_rapid scales most tone sliders ÷100
+    /// once, in `Adjust::new`; reading `recipe.clarity` here instead once made
+    /// the GPU path 100x too strong, the kind of drift the CPU/GPU equivalence
+    /// test exists to catch).
+    pub layers: &'a Layers,
+    /// Which zones are modified. Untouched ones are not run at all.
+    pub zone_active: [bool; 3],
     pub has_color_wheels: bool,
-    pub has_zones: bool,
-    /// The four tone-curve LUTs, `None` where the curve is identity.
-    pub curves: [Option<Vec<f32>>; 4],
+    /// The photo's black and white as the global layer receives them, and as
+    /// the zones receive them (after the global layer's exposure and Whites).
+    pub range: crate::rapid::PhotoRange,
+    pub zone_range: crate::rapid::PhotoRange,
 }
 
 /// Run the per-pixel stage on the GPU. `None` means "couldn't" — never
 /// "produced nothing"; the caller runs the CPU loop on `None`.
-pub fn run(inputs: &Inputs, recipe: &Recipe) -> Option<ImageBuf> {
+pub(crate) fn run(inputs: &Inputs, recipe: &Recipe) -> Option<ImageBuf> {
     static GPU_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _guard = GPU_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -289,32 +302,23 @@ fn run_inner(inputs: &Inputs, recipe: &Recipe) -> Option<ImageBuf> {
     };
     let tint4 = |t: [f32; 3]| [t[0], t[1], t[2], 0.0];
 
+    let layers = inputs.layers;
+    let zone_mask = inputs
+        .zone_active
+        .iter()
+        .enumerate()
+        .fold(0u32, |m, (i, on)| m | (u32::from(*on) << i));
+    let all: [&Layer; 4] = [&layers.global, &layers.zones[0], &layers.zones[1], &layers.zones[2]];
+
     let params = Params {
         width: inputs.width as u32,
         height: inputs.height as u32,
         down_w: inputs.down_w.max(1) as u32,
         down_h: inputs.down_h.max(1) as u32,
         has_blurred: u32::from(!inputs.blurred.is_empty()),
-        has_hsl: u32::from(inputs.has_hsl),
         has_color_wheels: u32::from(inputs.has_color_wheels),
-        has_zones: u32::from(inputs.has_zones),
-        w_mult: inputs.w_mult,
-        exposure_factor: inputs.exposure_factor,
-        r_temp: inputs.r_temp,
-        r_tint: inputs.r_tint,
-        g_tint: inputs.g_tint,
-        b_temp: inputs.b_temp,
-        b_tint: inputs.b_tint,
-        brightness_adj: inputs.brightness_adj,
-        clarity: inputs.clarity,
-        structure: inputs.structure,
-        dehaze: inputs.dehaze,
-        contrast: inputs.contrast,
-        shadows: inputs.shadows,
-        blacks: inputs.blacks,
-        highlights: inputs.highlights,
-        saturation_adj: inputs.saturation_adj,
-        vibrance: inputs.vibrance,
+        zone_mask,
+        _pad0: 0,
         vignette_amount: recipe.vignette_amount,
         vignette_midpoint: recipe.vignette_midpoint,
         vignette_roundness: recipe.vignette_roundness,
@@ -322,58 +326,38 @@ fn run_inner(inputs: &Inputs, recipe: &Recipe) -> Option<ImageBuf> {
         highlight_desat: recipe.highlight_desat,
         use_logc: u32::from(recipe.use_logc),
         agx_look,
-        zone_shadows_exposure: recipe.zone_shadows_exposure + recipe.zone_shadows.exposure_ev,
-        zone_shadows_contrast: recipe.zone_shadows_contrast + recipe.zone_shadows.contrast,
-        zone_shadows_saturation: recipe.zone_shadows_saturation + recipe.zone_shadows.saturation,
-        zone_midtones_exposure: recipe.zone_midtones_exposure + recipe.zone_midtones.exposure_ev,
-        zone_midtones_contrast: recipe.zone_midtones_contrast + recipe.zone_midtones.contrast,
-        zone_midtones_saturation: recipe.zone_midtones_saturation + recipe.zone_midtones.saturation,
-        zone_highlights_exposure: recipe.zone_highlights_exposure + recipe.zone_highlights.exposure_ev,
-        zone_highlights_contrast: recipe.zone_highlights_contrast + recipe.zone_highlights.contrast,
-        zone_highlights_saturation: recipe.zone_highlights_saturation + recipe.zone_highlights.saturation,
-        curve_luma: u32::from(inputs.curves[0].is_some()),
-        curve_r: u32::from(inputs.curves[1].is_some()),
-        curve_g: u32::from(inputs.curves[2].is_some()),
-        curve_b: u32::from(inputs.curves[3].is_some()),
-        _pad0: 0,
         _pad1: 0,
-        _pad2: 0,
+        range: [
+            inputs.range.black,
+            inputs.range.white,
+            inputs.zone_range.black,
+            inputs.zone_range.white,
+        ],
         shadows_tint: tint4(recipe.shadows_tint),
         midtones_tint: tint4(recipe.midtones_tint),
         highlights_tint: tint4(recipe.highlights_tint),
-        zone_shadows_wb: [
-            recipe.zone_shadows.temperature,
-            recipe.zone_shadows.tint,
-            recipe.zone_shadows.clarity,
-            recipe.zone_shadows.brightness + recipe.zone_shadows.midtones,
-        ],
-        zone_midtones_wb: [
-            recipe.zone_midtones.temperature,
-            recipe.zone_midtones.tint,
-            recipe.zone_midtones.clarity,
-            recipe.zone_midtones.brightness + recipe.zone_midtones.midtones,
-        ],
-        zone_highlights_wb: [
-            recipe.zone_highlights.temperature,
-            recipe.zone_highlights.tint,
-            recipe.zone_highlights.clarity,
-            recipe.zone_highlights.brightness + recipe.zone_highlights.midtones,
+        adj: [
+            Adj::pack(all[0], true),
+            Adj::pack(all[1], inputs.zone_active[0]),
+            Adj::pack(all[2], inputs.zone_active[1]),
+            Adj::pack(all[3], inputs.zone_active[2]),
         ],
     };
 
-    // aux = 8 hue + 8 sat + 8 lum, then four 256-entry curve LUTs. An
-    // identity curve still occupies its slot (filled with a ramp) so the
-    // shader's indexing stays fixed; its flag above is what turns it off.
-    let mut aux = Vec::with_capacity(24 + 4 * crate::curves::LUT_SIZE);
-    for src in [&recipe.hsl_hue, &recipe.hsl_sat, &recipe.hsl_lum] {
-        for i in 0..8 {
-            aux.push(src.get(i).copied().unwrap_or(0.0));
+    // aux = per layer (global, then the three zones): 8 hue + 8 sat + 8 lum, then
+    // four 256-entry curve LUTs. An identity curve still occupies its slot
+    // (filled with a ramp) so the shader's indexing stays fixed; its bit in the
+    // layer's `curve_mask` is what turns it off.
+    let mut aux = Vec::with_capacity(4 * (24 + 4 * crate::curves::LUT_SIZE));
+    for layer in all {
+        for row in &layer.adjust.hsl {
+            aux.extend_from_slice(row);
         }
-    }
-    for curve in &inputs.curves {
-        match curve {
-            Some(lut) => aux.extend_from_slice(lut),
-            None => aux.extend((0..crate::curves::LUT_SIZE).map(|i| i as f32 / (crate::curves::LUT_SIZE - 1) as f32)),
+        for curve in &layer.curves {
+            match curve {
+                Some(lut) => aux.extend_from_slice(lut),
+                None => aux.extend((0..crate::curves::LUT_SIZE).map(|i| i as f32 / (crate::curves::LUT_SIZE - 1) as f32)),
+            }
         }
     }
 

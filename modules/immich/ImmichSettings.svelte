@@ -57,7 +57,7 @@
 
 <div class="section-group">
   <div class="section-heading">
-    <Icon name="cloud-arrow-up" size="12px" />
+    <Icon name="cloud-arrow-up" size="var(--icon-md)" />
     <span>IMMICH CONNECTION</span>
   </div>
   <ManualLink page="reference/settings/#immich" label="Immich integration in the manual" />
@@ -103,7 +103,7 @@
           <span class="row-desc">Server URL and API key</span>
         </div>
         <div class="row-control">
-          <Icon name={immichDetailsOpen ? "caret-down" : "caret-right"} size="11px" />
+          <Icon name={immichDetailsOpen ? "caret-down" : "caret-right"} size="var(--icon-md)" />
         </div>
       </button>
       {#if immichDetailsOpen}
@@ -191,7 +191,7 @@
 
 <div class="section-group">
   <div class="section-heading">
-    <Icon name="cloud-arrow-up" size="12px" />
+    <Icon name="cloud-arrow-up" size="var(--icon-md)" />
     <span>EXPORT &amp; SYNC</span>
   </div>
   <div class="card flush list divided" class:disabled-card={!immichConnected}>

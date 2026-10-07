@@ -18,17 +18,10 @@
 //     uniform block has a 16-byte stride, which would silently misread the
 //     HSL bands and curve LUTs.
 
-struct Params {
-    width: u32,
-    height: u32,
-    down_w: u32,
-    down_h: u32,
-
-    has_blurred: u32,
-    has_hsl: u32,
-    has_color_wheels: u32,
-    has_zones: u32,
-
+// One adjustment layer — mirrors `Adjust` in rapid.rs. Layer 0 is the global
+// one, 1..3 are the shadows / midtones / highlights zones. 20 words: the array
+// stride of a uniform block must be a multiple of 16 bytes, and 80 is.
+struct Adj {
     w_mult: f32,
     exposure_factor: f32,
     r_temp: f32,
@@ -50,50 +43,54 @@ struct Params {
     saturation_adj: f32,
 
     vibrance: f32,
+    has_hsl: u32,
+    // Bit 0 luma, 1 red, 2 green, 3 blue: which of the layer's curves are set.
+    curve_mask: u32,
+    layer_on: u32,
+}
+
+struct Params {
+    width: u32,
+    height: u32,
+    down_w: u32,
+    down_h: u32,
+
+    has_blurred: u32,
+    has_color_wheels: u32,
+    // Bit i set: zone i (0 shadows, 1 midtones, 2 highlights) is modified.
+    // Untouched zones are never run, so a global-only recipe costs what it did
+    // before zones existed.
+    zone_mask: u32,
+    _pad0: u32,
+
     vignette_amount: f32,
     vignette_midpoint: f32,
     vignette_roundness: f32,
-
     vignette_feather: f32,
+
     highlight_desat: f32,
     use_logc: u32,
     agx_look: u32,
-
-    zone_shadows_exposure: f32,
-    zone_shadows_contrast: f32,
-    zone_shadows_saturation: f32,
-    zone_midtones_exposure: f32,
-
-    zone_midtones_contrast: f32,
-    zone_midtones_saturation: f32,
-    zone_highlights_exposure: f32,
-    zone_highlights_contrast: f32,
-
-    zone_highlights_saturation: f32,
-    curve_luma: u32,
-    curve_r: u32,
-    curve_g: u32,
-
-    curve_b: u32,
-    _pad0: u32,
     _pad1: u32,
-    _pad2: u32,
+
+    // The photo's own black and white, in stops re 1.0 (rapid.rs::PhotoRange):
+    // x,y for the global layer, z,w for the zones.
+    range: vec4<f32>,
 
     // vec4 so the trailing component pads the vec3 the CPU side stores.
     shadows_tint: vec4<f32>,
     midtones_tint: vec4<f32>,
     highlights_tint: vec4<f32>,
 
-    zone_shadows_wb: vec4<f32>,
-    zone_midtones_wb: vec4<f32>,
-    zone_highlights_wb: vec4<f32>,
+    adj: array<Adj, 4>,
 }
 
 @group(0) @binding(0) var<storage, read> in_data: array<f32>;
 @group(0) @binding(1) var<storage, read_write> out_data: array<f32>;
 @group(0) @binding(2) var<storage, read> blurred: array<f32>;
 @group(0) @binding(3) var<uniform> p: Params;
-// HSL bands (8 hue, 8 sat, 8 lum) then four 256-entry curve LUTs.
+// Per layer: HSL bands (8 hue, 8 sat, 8 lum) then four 256-entry curve LUTs,
+// layers laid end to end (global first, then the three zones).
 @group(0) @binding(4) var<storage, read> aux: array<f32>;
 
 const HSL_HUE: u32 = 0u;
@@ -101,6 +98,11 @@ const HSL_SAT: u32 = 8u;
 const HSL_LUM: u32 = 16u;
 const CURVE_BASE: u32 = 24u;
 const CURVE_STRIDE: u32 = 256u;
+const AUX_LAYER: u32 = 24u + 4u * 256u;
+
+// rapid.rs::RANGE_BLACK_REF / RANGE_WHITE_REF
+const RANGE_BLACK_REF: f32 = -9.0;
+const RANGE_WHITE_REF: f32 = 0.0;
 
 const AGX_MIDDLE_GREY: f32 = 0.18;
 const AGX_EPSILON: f32 = 1.0e-6;
@@ -242,7 +244,8 @@ fn local_contrast_masked(c: vec3<f32>, t_blurred: f32, amount_in: f32, mask: f32
 
     let center_luma = max(luma_of(c), 0.0);
     let safe_center = max(center_luma, 0.0001);
-    let safe_blur = max(t_blurred, 0.0001);
+    // The guidance map holds gamma-encoded luminance: back to linear first.
+    let safe_blur = pow(max(t_blurred, 0.0001), 2.2);
     let log_ratio = log2(safe_center / safe_blur);
 
     var effective_amount = amount;
@@ -438,8 +441,8 @@ fn logc3_encode(x: f32) -> f32 {
 }
 
 /// curves.rs::sample — linear interpolation between LUT entries.
-fn curve_sample(slot: u32, x_in: f32) -> f32 {
-    let base = CURVE_BASE + slot * CURVE_STRIDE;
+fn curve_sample(layer: u32, slot: u32, x_in: f32) -> f32 {
+    let base = layer * AUX_LAYER + CURVE_BASE + slot * CURVE_STRIDE;
     let x = clamp(x_in, 0.0, 1.0) * f32(CURVE_STRIDE - 1u);
     let i = u32(x);
     if (i >= CURVE_STRIDE - 1u) { return aux[base + CURVE_STRIDE - 1u]; }
@@ -447,37 +450,45 @@ fn curve_sample(slot: u32, x_in: f32) -> f32 {
     return aux[base + i] * (1.0 - f) + aux[base + i + 1u] * f;
 }
 
-@compute @workgroup_size(8, 8, 1)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let x = gid.x;
-    let y = gid.y;
-    if (x >= p.width || y >= p.height) { return; }
-    let idx = (y * p.width + x) * 3u;
-
-    // 1. Whites multiplier, exposure, temp & tint WB
+/// Stages 1–5 of rapid.rs `Adjust::tone`: white point, exposure and white
+/// balance, local contrast, filmic brightness, contrast, shadows and blacks,
+/// highlights.
+fn tone(c_in: vec3<f32>, a: Adj, x: u32, y: u32, range: vec2<f32>) -> vec3<f32> {
+    // 1. Exposure, temp & tint WB, then Whites: a gain weighted by how close the
+    // pixel is to the photo's own white (rapid.rs::Adjust::whites_gain).
     var c = vec3<f32>(
-        in_data[idx] * p.w_mult * p.exposure_factor * p.r_temp * p.r_tint,
-        in_data[idx + 1u] * p.w_mult * p.exposure_factor * p.g_tint,
-        in_data[idx + 2u] * p.w_mult * p.exposure_factor * p.b_temp * p.b_tint,
+        c_in.x * a.exposure_factor * a.r_temp * a.r_tint,
+        c_in.y * a.exposure_factor * a.g_tint,
+        c_in.z * a.exposure_factor * a.b_temp * a.b_tint,
     );
+    let exposure_stops = log2(max(a.exposure_factor, 1.0e-6));
+    if (a.w_mult != 1.0) {
+        let d = log2(max(max(luma_of(c), 0.0), 1.0e-6)) - (range.y + exposure_stops);
+        let gw = 1.0 + (a.w_mult - 1.0) * sstep(-6.0, 0.0, d);
+        c = c * gw;
+    }
+    var white_now = range.y + exposure_stops;
+    if (a.w_mult != 1.0) { white_now = white_now + log2(a.w_mult); }
+    let black_scale = exp2(RANGE_BLACK_REF - (range.x + exposure_stops));
+    let white_scale = exp2(RANGE_WHITE_REF - white_now);
 
     let has_blur = p.has_blurred == 1u;
 
     // Clarity, structure, dehaze (guidance map)
-    if ((p.clarity != 0.0 || p.structure != 0.0 || p.dehaze != 0.0) && has_blur) {
+    if ((a.clarity != 0.0 || a.structure != 0.0 || a.dehaze != 0.0) && has_blur) {
         let t_blurred = blurred_luma(x, y);
-        if (p.clarity != 0.0) { c = local_contrast(c, t_blurred, p.clarity); }
-        if (p.structure != 0.0) { c = local_contrast(c, t_blurred, p.structure); }
-        if (p.dehaze != 0.0) { c = apply_dehaze(c, t_blurred, p.dehaze); }
+        if (a.clarity != 0.0) { c = local_contrast(c, t_blurred, a.clarity); }
+        if (a.structure != 0.0) { c = local_contrast(c, t_blurred, a.structure); }
+        if (a.dehaze != 0.0) { c = apply_dehaze(c, t_blurred, a.dehaze); }
     }
 
     // 2. Filmic exposure / brightness
-    if (p.brightness_adj != 0.0) { c = apply_filmic_exposure(c, p.brightness_adj); }
+    if (a.brightness_adj != 0.0) { c = apply_filmic_exposure(c, a.brightness_adj); }
 
     // 3. Perceptual S-curve contrast around 0.5 in 1/2.2 space
-    if (abs(p.contrast) > 1e-4) {
+    if (abs(a.contrast) > 1e-4) {
         let g_power = 2.2;
-        let strength = exp2(p.contrast * 1.25);
+        let strength = exp2(a.contrast * 1.25);
         var outc = c;
         for (var i = 0u; i < 3u; i = i + 1u) {
             let safe_val = max(c[i], 0.0);
@@ -496,15 +507,17 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
 
     // 4. Shadows & blacks
-    if (p.shadows != 0.0 || p.blacks != 0.0) {
-        let luma_linear = max(luma_of(c), 0.0);
+    if (a.shadows != 0.0 || a.blacks != 0.0) {
+        // The profiles are calibrated for a black at RANGE_BLACK_REF; move the pixel
+        // and its neighbourhood by the photo's own offset (the lift is a ratio).
+        let luma_linear = max(luma_of(c) * black_scale, 0.0);
         let safe_pixel_luma = max(luma_linear, 0.0001);
         let t_pixel = pow(safe_pixel_luma, 0.4545);
         var t_blurred = 0.0;
-        if (has_blur) { t_blurred = blurred_luma(x, y); }
+        if (has_blur) { t_blurred = blurred_luma(x, y) * pow(black_scale, 0.4545); }
 
-        let shadow_lift = p.shadows * t_pixel * pow(max(1.0 - t_pixel, 0.0), 4.5);
-        let black_lift = p.blacks * t_pixel * pow(max(1.0 - t_pixel, 0.0), 12.0);
+        let shadow_lift = a.shadows * t_pixel * pow(max(1.0 - t_pixel, 0.0), 4.5);
+        let black_lift = a.blacks * t_pixel * pow(max(1.0 - t_pixel, 0.0), 12.0);
         let lift_amount = max(shadow_lift + black_lift, 0.0);
         let t_pixel_curved = max(t_pixel + shadow_lift + black_lift, 0.0);
 
@@ -535,104 +548,49 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
 
     // 5. Highlights
-    if (p.highlights != 0.0) {
-        let pixel_luma = max(luma_of(c), 0.0);
+    if (a.highlights != 0.0) {
+        let pixel_luma = max(luma_of(c) * white_scale, 0.0);
         let safe_pixel_luma = max(pixel_luma, 0.0001);
         let pixel_mask_input = tanh(safe_pixel_luma * 1.5);
         let highlight_mask = sstep(0.3, 0.95, pixel_mask_input);
 
         if (highlight_mask > 0.001) {
             var adjusted: vec3<f32>;
-            if (p.highlights < 0.0) {
+            if (a.highlights < 0.0) {
                 var new_luma: f32;
                 if (pixel_luma <= 1.0) {
-                    new_luma = pow(pixel_luma, 1.0 - p.highlights * 1.75);
+                    new_luma = pow(pixel_luma, 1.0 - a.highlights * 1.75);
                 } else {
                     let luma_excess = pixel_luma - 1.0;
-                    let compression_strength = -p.highlights * 6.0;
+                    let compression_strength = -a.highlights * 6.0;
                     new_luma = 1.0 + luma_excess / (1.0 + luma_excess * compression_strength);
                 }
                 let luma_scale = new_luma / safe_pixel_luma;
                 let tonal = c * luma_scale;
                 let desat = sstep(1.0, 10.0, pixel_luma);
-                adjusted = tonal * (1.0 - desat) + vec3<f32>(new_luma) * desat;
+                adjusted = tonal * (1.0 - desat) + vec3<f32>(new_luma / white_scale) * desat;
             } else {
-                adjusted = c * exp2(p.highlights * 1.75);
+                adjusted = c * exp2(a.highlights * 1.75);
             }
             c = c * (1.0 - highlight_mask) + adjusted * highlight_mask;
         }
     }
 
-    // 6. 3-way colour wheels
-    if (p.has_color_wheels == 1u) {
-        let w = zone_weights(c);
-        c = c
-            + p.shadows_tint.rgb * w.x * 0.2
-            + p.midtones_tint.rgb * w.y * 0.2
-            + p.highlights_tint.rgb * w.z * 0.2;
-    }
+    return c;
+}
 
-    // 6a. Zone tone shaping
-    if (p.has_zones == 1u) {
-        let w = zone_weights(c);
-        let blended_ev = p.zone_shadows_exposure * w.x
-            + p.zone_midtones_exposure * w.y
-            + p.zone_highlights_exposure * w.z;
-        if (blended_ev != 0.0) { c = c * exp2(blended_ev); }
-
-        // Zone WB (Temp & Tint)
-        let z_temp = p.zone_shadows_wb.x * w.x + p.zone_midtones_wb.x * w.y + p.zone_highlights_wb.x * w.z;
-        let z_tint = p.zone_shadows_wb.y * w.x + p.zone_midtones_wb.y * w.y + p.zone_highlights_wb.y * w.z;
-        if (abs(z_temp) > 0.001 || abs(z_tint) > 0.001) {
-            let t_sh = z_tint / 100.0;
-            let g_m = max(1.0 - t_sh * 0.5, 0.1);
-            let r_m = max(1.0 + t_sh * 0.25, 0.1) * exp2(z_temp * 0.01);
-            let b_m = max(1.0 + t_sh * 0.25, 0.1) * exp2(-z_temp * 0.01);
-            c = c * vec3<f32>(r_m, g_m, b_m);
-        }
-
-        // Zone contrast: parametric tonal curve modulation per zone (no spatial blur)
-        if (p.zone_shadows_contrast != 0.0 || p.zone_midtones_contrast != 0.0 || p.zone_highlights_contrast != 0.0) {
-            let lum_linear = max(luma_of(c), 0.0);
-            let t = min(sqrt(lum_linear), 1.0);
-            let cs = p.zone_shadows_contrast * 0.01;
-            let cm = p.zone_midtones_contrast * 0.01;
-            let ch = p.zone_highlights_contrast * 0.01;
-            let dt = (t - 0.18) * cs * w.x * 0.5
-                + (t - 0.50) * cm * w.y * 0.5
-                + (t - 0.75) * ch * w.z * 0.5;
-            let t_new = clamp(t + dt, 0.0, 2.0);
-            let lum_new = t_new * t_new;
-            if (lum_linear > 0.0001) {
-                c = c * (lum_new / lum_linear);
-            }
-        }
-
-        // Zone clarity
-        let z_clarity = p.zone_shadows_wb.z * w.x + p.zone_midtones_wb.z * w.y + p.zone_highlights_wb.z * w.z;
-        if (has_blur && abs(z_clarity) > 0.001) {
-            let t_blurred = blurred_luma(x, y);
-            c = local_contrast(c, t_blurred, z_clarity);
-        }
-
-        let blended_sat = p.zone_shadows_saturation * w.x
-            + p.zone_midtones_saturation * w.y
-            + p.zone_highlights_saturation * w.z;
-        if (blended_sat != 0.0) {
-            let luma = luma_of(c);
-            let sat_factor = max(1.0 + blended_sat / 100.0, 0.0);
-            c = vec3<f32>(luma) + (c - vec3<f32>(luma)) * sat_factor;
-        }
-    }
-
-    // 7. Saturation, vibrance & HSL matrix
-    if (abs(p.saturation_adj) > 1e-4 || p.vibrance != 0.0 || p.has_hsl == 1u) {
-        let n = apply_vibrance(c, p.saturation_adj, p.vibrance);
-        if (p.has_hsl == 1u) {
+/// Stage 7 of rapid.rs `Adjust::colour`: saturation, vibrance and the HSL band
+/// matrix. `layer` picks which HSL offsets in `aux` to read.
+fn colour(c_in: vec3<f32>, a: Adj, layer: u32) -> vec3<f32> {
+    var c = c_in;
+    if (abs(a.saturation_adj) > 1e-4 || a.vibrance != 0.0 || a.has_hsl == 1u) {
+        let n = apply_vibrance(c, a.saturation_adj, a.vibrance);
+        if (a.has_hsl == 1u) {
             let hsl = rgb_to_hsl(max(n, vec3<f32>(0.0)));
             var hue_adj = 0.0;
             var sat_adj = 0.0;
             var lum_adj = 0.0;
+            let base = layer * AUX_LAYER;
             for (var i = 0u; i < 8u; i = i + 1u) {
                 // rapid.rs::HUE_CENTERS — must stay in step with it; the
                 // GPU/CPU equivalence test sets all three HSL vectors, so a
@@ -651,9 +609,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
                 let dist = hue_distance(hsl.x, center);
                 if (dist < 45.0) {
                     let weight = max(1.0 - dist / 45.0, 0.0);
-                    hue_adj = hue_adj + aux[HSL_HUE + i] * weight;
-                    sat_adj = sat_adj + aux[HSL_SAT + i] * weight;
-                    lum_adj = lum_adj + aux[HSL_LUM + i] * weight;
+                    hue_adj = hue_adj + aux[base + HSL_HUE + i] * weight;
+                    sat_adj = sat_adj + aux[base + HSL_SAT + i] * weight;
+                    lum_adj = lum_adj + aux[base + HSL_LUM + i] * weight;
                 }
             }
             let new_h = rem_euclid(hsl.x + hue_adj, 360.0);
@@ -662,6 +620,62 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             c = hsl_to_rgb(new_h, new_s, new_l);
         } else {
             c = n;
+        }
+    }
+    return c;
+}
+
+/// rapid.rs `Layer::apply_curves`: the layer's tone curves on display-referred
+/// 0..1 values.
+fn apply_curves(v_in: vec3<f32>, a: Adj, layer: u32) -> vec3<f32> {
+    var v = clamp(v_in, vec3<f32>(0.0), vec3<f32>(1.0));
+    if ((a.curve_mask & 1u) != 0u) {
+        v = vec3<f32>(
+            curve_sample(layer, 0u, v.r),
+            curve_sample(layer, 0u, v.g),
+            curve_sample(layer, 0u, v.b),
+        );
+    }
+    if ((a.curve_mask & 2u) != 0u) { v.r = curve_sample(layer, 1u, v.r); }
+    if ((a.curve_mask & 4u) != 0u) { v.g = curve_sample(layer, 2u, v.g); }
+    if ((a.curve_mask & 8u) != 0u) { v.b = curve_sample(layer, 3u, v.b); }
+    return v;
+}
+
+@compute @workgroup_size(8, 8, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let x = gid.x;
+    let y = gid.y;
+    if (x >= p.width || y >= p.height) { return; }
+    let idx = (y * p.width + x) * 3u;
+
+    // 1–5. Global layer: white point, exposure, white balance, local contrast,
+    // brightness, contrast, shadows/blacks, highlights.
+    var c = tone(vec3<f32>(in_data[idx], in_data[idx + 1u], in_data[idx + 2u]), p.adj[0], x, y, p.range.xy);
+
+    // 6. 3-way colour wheels
+    if (p.has_color_wheels == 1u) {
+        let w = zone_weights(c);
+        c = c
+            + p.shadows_tint.rgb * w.x * 0.2
+            + p.midtones_tint.rgb * w.y * 0.2
+            + p.highlights_tint.rgb * w.z * 0.2;
+    }
+
+    // 7. Saturation, vibrance & HSL matrix (global layer)
+    c = colour(c, p.adj[0], 0u);
+
+    // 7a. Tonal zones: luminosity masks carrying the same adjustments as the
+    // global layer, run on top of the global result and blended in by how much
+    // the pixel belongs to each zone. Only the zones that were modified run.
+    var zw = vec3<f32>(0.0);
+    if (p.zone_mask != 0u) {
+        zw = zone_weights(c);
+        for (var i = 0u; i < 3u; i = i + 1u) {
+            if (((p.zone_mask >> i) & 1u) == 0u || zw[i] <= 0.0) { continue; }
+            let a = p.adj[i + 1u];
+            let adjusted = colour(tone(c, a, x, y, p.range.zw), a, i + 1u);
+            c = c + (adjusted - c) * zw[i];
         }
     }
 
@@ -720,19 +734,15 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             agx = agx * (1.0 - desat_w) + vec3<f32>(avg_c) * desat_w;
         }
 
-        // Tone curves last, on display-referred 0..1 (see rapid.rs).
-        if (p.curve_luma == 1u || p.curve_r == 1u || p.curve_g == 1u || p.curve_b == 1u) {
-            agx = clamp(agx, vec3<f32>(0.0), vec3<f32>(1.0));
-            if (p.curve_luma == 1u) {
-                agx = vec3<f32>(
-                    curve_sample(0u, agx.r),
-                    curve_sample(0u, agx.g),
-                    curve_sample(0u, agx.b),
-                );
+        // Tone curves last, on display-referred 0..1 (see rapid.rs): the global
+        // layer's, then each zone's, blended in by the zone weight.
+        if (p.adj[0].curve_mask != 0u) { agx = apply_curves(agx, p.adj[0], 0u); }
+        for (var i = 0u; i < 3u; i = i + 1u) {
+            let a = p.adj[i + 1u];
+            if (((p.zone_mask >> i) & 1u) != 0u && zw[i] > 0.0 && a.curve_mask != 0u) {
+                let curved = apply_curves(agx, a, i + 1u);
+                agx = agx + (curved - agx) * zw[i];
             }
-            if (p.curve_r == 1u) { agx.r = curve_sample(1u, agx.r); }
-            if (p.curve_g == 1u) { agx.g = curve_sample(2u, agx.g); }
-            if (p.curve_b == 1u) { agx.b = curve_sample(3u, agx.b); }
         }
 
         outc = clamp(agx, vec3<f32>(0.0), vec3<f32>(1.0));

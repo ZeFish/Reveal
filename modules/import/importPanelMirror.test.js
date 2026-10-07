@@ -23,7 +23,7 @@ describe("modules/import/importPanelMirror", () => {
     expect(props.cards).toEqual([]);
     expect(props.importingCard).toBeNull();
     expect(props.headerIcon).toBe("download-simple");
-    expect(props.headerText).toBe("Importation");
+    expect(props.headerText).toBe("Importing");
     expect(typeof props.onStartDrag).toBe("function");
     expect(typeof props.onCancelImport).toBe("function");
     expect(typeof props.onEjectCard).toBe("function");

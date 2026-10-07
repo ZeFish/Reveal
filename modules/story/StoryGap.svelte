@@ -42,7 +42,7 @@
 >
   {#if !isEnd}
     <button class="gap-add small" data-reveal onclick={() => onAddProseAt(rowIndex)} title="Insert a paragraph here">
-      <Icon name="plus" size="10px" /><span>Paragraph</span>
+      <Icon name="plus" size="var(--icon-sm)" /><span>Paragraph</span>
     </button>
   {/if}
 </div>

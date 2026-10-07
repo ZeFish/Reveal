@@ -1,5 +1,6 @@
 <script>
   import Alert from "@stnd/ui/Alert.svelte";
+  import { explainTransferError } from "./transferError.js";
 
   /**
    * @typedef {Object} Props
@@ -26,7 +27,7 @@
 {:else if transfer?.phase === "error"}
   <div class="photos-transfer" role="alert">
     <Alert class="error" title="Apple Photos">
-      <span>{transfer.error}</span>
+      <span title={transfer.error}>{explainTransferError(transfer.error)}</span>
       <button class="btn ghost" onclick={onDismiss}>Dismiss</button>
     </Alert>
   </div>

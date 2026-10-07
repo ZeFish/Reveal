@@ -105,7 +105,7 @@
     aria-expanded={open}
     title={open ? "Collapse catalogue" : "Expand catalogue"}
   >
-    <span class="disc" class:open><Icon name="caret-right" size="9px" /></span>
+    <span class="disc" class:open><Icon name="caret-right" size="var(--icon-sm)" /></span>
   </button>
   <button
     class="section-main ghost"
@@ -130,7 +130,7 @@
     aria-label="Refresh Apple Photos"
     aria-busy={applePhotos?.busy}
   >
-    <Icon name="arrows-clockwise" size="9px" class={applePhotos?.busy ? "spin" : ""} />
+    <Icon name="arrows-clockwise" size="var(--icon-sm)" class={applePhotos?.busy ? "spin" : ""} />
   </button>
 </div>
 

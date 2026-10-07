@@ -1,11 +1,16 @@
 <script>
+  import { untrack } from "svelte";
   import DevelopView from "./DevelopView.svelte";
   import DevelopPanel from "./DevelopPanel.svelte";
+  import PhotoMarks from "./PhotoMarks.svelte";
+  import { showsDockedPanel } from "./dockedPanel.js";
+  // Module singletons, imported rather than passed down: `bind:` into a prop the
+  // parent did not declare bindable trips Svelte's ownership checks.
+  import { developState } from "./developState.svelte.js";
+  import { exportState } from "../export/exportState.svelte.js";
 
   /**
    * @typedef {Object} Props
-   * @property {any} developState
-   * @property {any} exportState
    * @property {any} layouts
    * @property {() => void} saveLayouts
    * @property {any} session
@@ -15,6 +20,10 @@
    * @property {string | null} imgUrl
    * @property {string} status
    * @property {number} currentRating
+   * @property {boolean} [spaceLook] Space quick look: the photo developed, no panel around it
+   * @property {boolean} [inStory]
+   * @property {(n: number) => void} [onRate]
+   * @property {() => void} [onToggleStory]
    * @property {boolean} sourceOffline
    * @property {any[]} installedEditors
    * @property {string} zoomMode
@@ -32,8 +41,6 @@
 
   /** @type {Props} */
   let {
-    developState,
-    exportState,
     layouts,
     saveLayouts,
     session,
@@ -43,6 +50,10 @@
     imgUrl,
     status,
     currentRating,
+    spaceLook = false,
+    inStory = false,
+    onRate = () => {},
+    onToggleStory = () => {},
     sourceOffline,
     installedEditors,
     zoomMode,
@@ -58,10 +69,33 @@
     openInEditor,
   } = $props();
 
+  // The Crop tab renders the WHOLE frame (the overlay is drawn on it); every other tab
+  // renders the cropped one. Nothing re-rendered when the tab changed, so leaving the
+  // Crop tab kept showing the uncropped picture: the crop looked as if it had not
+  // stuck. Draw again whenever the tab crosses that line.
+  /** @type {boolean | null} */
+  let wasInCropTab = null;
+  $effect(() => {
+    const inCrop = developState.dockedActiveTab === "crop";
+    untrack(() => {
+      if (wasInCropTab !== null && wasInCropTab !== inCrop) devController.rerender?.();
+      wasInCropTab = inCrop;
+    });
+  });
+  // Leaving Develop for the grid ends the crop tool. Coming back with the Crop tab still
+  // active showed the uncropped frame with the overlay on it instead of the result.
+  $effect(() => () => {
+    if (developState.dockedActiveTab === "crop") developState.dockedActiveTab = "dev";
+  });
+
   const showDockedPanel = $derived(
-    Boolean(developState.recipe) &&
-    Boolean(layouts.dev.devPanel) &&
-    (!isTauri || !layouts.dev.detached)
+    showsDockedPanel({
+      hasRecipe: Boolean(developState.recipe),
+      devPanel: Boolean(layouts.dev.devPanel),
+      detached: Boolean(layouts.dev.detached),
+      isTauri,
+      spaceLook,
+    }),
   );
 </script>
 
@@ -101,6 +135,19 @@
     showCropOverlay={showDockedPanel && developState.dockedActiveTab === "crop"}
     {onCropChange}
   />
+  {#if photoPath && !developState.dockedActiveTab?.startsWith("crop")}
+    <!-- Centred under the photo, not under the whole window: the docked panel takes the
+         right-hand 22rem. -->
+    <div class="marks-slot" style="right: {showDockedPanel ? '22rem' : '0'};">
+      <PhotoMarks
+        rating={currentRating}
+        {inStory}
+        readOnly={photoPath.startsWith("apple-photos://")}
+        {onRate}
+        {onToggleStory}
+      />
+    </div>
+  {/if}
   {#if showDockedPanel}
     <div class="docked-panel-frame pane">
       <DevelopPanel
@@ -173,6 +220,16 @@
     position: relative;
     z-index: 1;
     background: var(--canvas);
+  }
+
+  .marks-slot {
+    position: absolute;
+    left: 0;
+    bottom: 12px;
+    z-index: 8;
+    display: flex;
+    justify-content: center;
+    pointer-events: none;
   }
 
   .docked-panel-frame {

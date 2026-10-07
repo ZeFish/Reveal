@@ -37,7 +37,10 @@ pub struct ImportStats {
     pub skipped: usize,
     pub failed: usize,
     pub bytes: u64,
-    /// Dated folders touched, sorted (last = most recent day).
+    /// Dated folders holding this card's photos — freshly copied or already
+    /// there — sorted (last = most recent day). The app opens the last one when
+    /// the import ends, so a card that was already fully imported still lands
+    /// you where its photos are.
     pub folders: Vec<String>,
     pub ms: u128,
     /// The user hit stop — counts above cover what completed before that.
@@ -248,6 +251,10 @@ pub fn import(
         };
         if skipped {
             stats.skipped += 1;
+            let folder = dest_dir.to_string_lossy().into_owned();
+            if !stats.folders.contains(&folder) {
+                stats.folders.push(folder);
+            }
             continue;
         }
 
@@ -258,8 +265,15 @@ pub fn import(
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| format!(".{name}.part"));
             let tmp = dest_dir.join(format!(".{tmp_name}.part"));
-            std::fs::copy(src, &tmp)?;
-            std::fs::rename(&tmp, &dest)?;
+            // A NAS timeout mid-copy is retried from the start (the temp file is
+            // truncated by the new copy) instead of counting the photo as failed.
+            reveal_io::retry(|| {
+                std::fs::copy(src, &tmp)?;
+                std::fs::rename(&tmp, &dest)
+            })
+            .inspect_err(|_| {
+                let _ = std::fs::remove_file(&tmp);
+            })?;
             // Hash the source now, while the card is still mounted and its
             // pages are warm from the copy we just did, and remember it
             // against the destination. That is what makes the NEXT import of
@@ -675,6 +689,7 @@ mod tests {
         })
         .unwrap();
 
+        assert_eq!(stats.folders, vec![dest_dir.to_string_lossy().into_owned()], "the folder holding the card's photos is reported");
         assert_eq!(stats.copied, 1, "only the brand-new file should copy");
         assert_eq!(stats.skipped, 1, "the byte-identical file should be recognized as already there");
         assert_eq!(
@@ -683,6 +698,25 @@ mod tests {
             "the new file must be the one that actually copies, despite sorting last alphabetically"
         );
         assert!(dest_dir.join("z_brand_new.raf").exists());
+    }
+
+    #[test]
+    fn a_card_that_is_already_fully_imported_still_reports_its_folder() {
+        let card = TempDir::new("card3");
+        let archive = TempDir::new("archive3");
+        let src = write_source(card.path(), "already_there.raf", b"same bytes");
+        let today = chrono::Local::now();
+        let dest_dir = archive
+            .path()
+            .join(today.format("%Y").to_string())
+            .join(today.format("%Y-%m-%d").to_string());
+        std::fs::create_dir_all(&dest_dir).unwrap();
+        std::fs::write(dest_dir.join("already_there.raf"), b"same bytes").unwrap();
+
+        let cancel = AtomicBool::new(false);
+        let stats = import(&[src], archive.path(), DEFAULT_DATE_FORMAT, &NoHashCache, &cancel, &mut |_, _, _, _, _, _| {}).unwrap();
+        assert_eq!((stats.copied, stats.skipped), (0, 1));
+        assert_eq!(stats.folders, vec![dest_dir.to_string_lossy().into_owned()]);
     }
 
     #[test]

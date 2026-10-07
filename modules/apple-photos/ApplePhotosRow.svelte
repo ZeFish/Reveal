@@ -63,7 +63,7 @@
       aria-label={`${expanded ? "Collapse" : "Expand"} ${collection.title}`}
       aria-expanded={expanded}
     >
-      <Icon name="caret-right" size="9px" />
+      <Icon name="caret-right" size="var(--icon-sm)" />
     </button>
   {:else}
     <span class="disc"></span>
@@ -125,7 +125,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    flex: 1;
+    /* The name takes the room it needs and gives way (ellipsis) only when the row is full. As
+       `flex: 1` it split the free space 50/50 with the spacer, so a name was cut at half the row
+       with empty space beside it. */
+    flex: 0 1 auto;
     min-width: 0;
   }
   .dir-spacer {

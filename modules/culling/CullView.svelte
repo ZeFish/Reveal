@@ -25,6 +25,7 @@
     currentScrollTop = $bindable(0),
     curDir = null,
     minRating = 0,
+    filtered = false,
     isTauri = true,
     debug = "",
     selectGridItem = () => {},
@@ -86,7 +87,7 @@
         </button>
       {:else}
         <p>
-          {curDir && minRating
+          {filtered || (curDir && minRating)
             ? "no photos match this filter"
             : "index your library or open a folder"}
         </p>

@@ -1,4 +1,8 @@
 <script>
+  import { untrack } from "svelte";
+  import { cropView, viewTransform as transformOf, dragPicture } from "./cropView.js";
+  import { fitInsideTurned } from "./cropFit.js";
+
   /**
    * @typedef {Object} Props
    * @property {HTMLElement | null} [photoEl]
@@ -6,6 +10,8 @@
    * @property {number | null} [renderAspect]
    * @property {string} [transformStr]
    * @property {((live: boolean) => void) | Function} [onCropChange]
+   * @property {string} [viewTransform] out: the zoom/pan that centres the crop frame — the photo wears it too
+   * @property {string} [viewTransition] out: how the photo should animate into that view
    */
 
   /** @type {Props} */
@@ -15,6 +21,8 @@
     renderAspect = null,
     transformStr = "",
     onCropChange = () => {},
+    viewTransform = $bindable(""),
+    viewTransition = $bindable(""),
   } = $props();
 
   /** @type {string | null} */
@@ -24,6 +32,12 @@
   let cropBox = $state({ x: 0, y: 0, w: 1, h: 1 });
   /** @type {{ x: number, y: number, w: number, h: number } | null} */
   let photoBox = $state(null);
+  // The stage the photo sits centred in; the frame is fitted to it.
+  let stage = $state({ w: 0, h: 0 });
+  // The view held while a handle is being dragged (the frame resizes over a still picture)
+  // or whose zoom is held while the picture is dragged (it pans, the frame stays).
+  /** @type {import("./cropView.js").View | null} */
+  let frozen = $state(null);
 
   // Measure the photo element's layout box (unaffected by rotate/flip) so the overlay
   // aligns with pixel precision even when the photo is constrained.
@@ -35,6 +49,8 @@
     }
     const measure = () => {
       photoBox = { x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight };
+      const parent = el.parentElement;
+      if (parent) stage = { w: parent.clientWidth, h: parent.clientHeight };
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -72,6 +88,65 @@
         }
       }
     }
+  });
+
+  /** Write a crop frame to the recipe, rounded the way the pointer path does. */
+  function commitBox(/** @type {{ x: number, y: number, w: number, h: number }} */ box) {
+    cropBox = box;
+    if (!recipe) return;
+    recipe.crop_x = Number(box.x.toFixed(4));
+    recipe.crop_y = Number(box.y.toFixed(4));
+    recipe.crop_w = Number(box.w.toFixed(4));
+    recipe.crop_h = Number(box.h.toFixed(4));
+  }
+
+  // The picture turns under an upright frame, so the frame must stay inside the turned
+  // picture (see cropFit.js). Turning the slider, or changing the proportions, slides it back
+  // in and shrinks it only if it can no longer fit.
+  $effect(() => {
+    const angle = recipe?.crop_angle || 0;
+    void recipe?.crop_aspect;
+    const aspect = renderAspect;
+    if (!angle || !aspect || activeHandle) return;
+    untrack(() => {
+      const fitted = fitInsideTurned(cropBox, angle, aspect);
+      const moved =
+        Math.abs(fitted.x - cropBox.x) > 1e-4 ||
+        Math.abs(fitted.y - cropBox.y) > 1e-4 ||
+        Math.abs(fitted.w - cropBox.w) > 1e-4 ||
+        Math.abs(fitted.h - cropBox.h) > 1e-4;
+      if (!moved) return;
+      commitBox(fitted);
+      onCropChange(true);
+    });
+  });
+
+  /** @param {number | null} [scale] */
+  function viewFor(scale = null) {
+    if (!photoBox) return null;
+    return cropView({
+      stage,
+      photo: photoBox,
+      crop: cropBox,
+      flipH: recipe?.flip_h ? -1 : 1,
+      flipV: recipe?.flip_v ? -1 : 1,
+      scale,
+    });
+  }
+
+  // Lightroom's crop tool: the frame stays centred and as big as the stage allows; the PICTURE
+  // moves behind it. Dragging the picture follows the pointer with the zoom held (the frame
+  // never leaves the middle); dragging a handle changes the frame over a still picture, and
+  // the view re-fits, animated, when it is let go.
+  const view = $derived.by(() => {
+    if (activeHandle === "move" && frozen) return viewFor(frozen.s);
+    if (activeHandle && frozen) return frozen;
+    return viewFor();
+  });
+
+  $effect(() => {
+    viewTransform = view ? transformOf(view) : "";
+    viewTransition = activeHandle ? "none" : "transform 260ms cubic-bezier(0.22, 0.8, 0.2, 1)";
   });
 
   // Fractional w/h ratio in display space corresponding to the chosen aspect
@@ -125,6 +200,7 @@
   function startCropResize(handle, e) {
     e.preventDefault();
     e.stopPropagation();
+    frozen = viewFor();
     activeHandle = handle;
     dragStartPos = { x: e.clientX, y: e.clientY };
     startCropBox = { ...cropBox };
@@ -136,6 +212,7 @@
     if (e.target !== e.currentTarget) return;
     e.preventDefault();
     e.stopPropagation();
+    frozen = viewFor();
     activeHandle = "move";
     dragStartPos = { x: e.clientX, y: e.clientY };
     startCropBox = { ...cropBox };
@@ -158,8 +235,8 @@
     const isCorner = activeHandle.length === 2;
 
     if (activeHandle === "move") {
-      x = Math.max(0, Math.min(1 - w, startCropBox.x + dx));
-      y = Math.max(0, Math.min(1 - h, startCropBox.y + dy));
+      // Dragging the picture: the crop moves the other way.
+      ({ x, y } = dragPicture(startCropBox, dx, dy));
     } else if (fr && isCorner) {
       ({ x, y, w, h } = resizeCornerLocked(activeHandle, dx, dy, fr));
     } else if (fr) {
@@ -191,19 +268,17 @@
       h = newH;
     }
 
-    cropBox = { x, y, w, h };
-    if (recipe) {
-      recipe.crop_x = Number(x.toFixed(4));
-      recipe.crop_y = Number(y.toFixed(4));
-      recipe.crop_w = Number(w.toFixed(4));
-      recipe.crop_h = Number(h.toFixed(4));
-    }
+    let next = { x, y, w, h };
+    const angle = recipe?.crop_angle || 0;
+    if (angle && renderAspect) next = fitInsideTurned(next, angle, renderAspect);
+    commitBox(next);
     onCropChange(true);
   }
 
   function onCropPointerUp() {
     if (activeHandle) {
       activeHandle = null;
+      frozen = null;
       onCropChange(false);
     }
   }
@@ -212,12 +287,27 @@
 {#if photoBox}
   <div
     class="crop-overlay-container"
-    style="left: {photoBox.x}px; top: {photoBox.y}px; width: {photoBox.w}px; height: {photoBox.h}px; transform: {transformStr};"
+    style="left: {photoBox.x}px; top: {photoBox.y}px; width: {photoBox.w}px; height: {photoBox.h}px; --s: {view?.s ?? 1}; transform: {viewTransform} {transformStr}; transition: {viewTransition || 'none'};"
     onpointermove={onCropPointerMove}
     onpointerup={onCropPointerUp}
     onpointercancel={onCropPointerUp}
     role="presentation"
   >
+    <!-- The dimming of everything outside the crop. It is the 9999px shadow of a
+         hole the size of the crop, so it has to be clipped to the photo — and that
+         clip used to be the container's, which also cut the handles that stick
+         out of a crop touching the photo's edge. The clip lives on this layer only. -->
+    <div class="crop-mask" aria-hidden="true">
+      <div
+        class="crop-hole"
+        style="
+          left: {cropBox.x * 100}%;
+          top: {cropBox.y * 100}%;
+          width: {cropBox.w * 100}%;
+          height: {cropBox.h * 100}%;
+        "
+      ></div>
+    </div>
     <div
       class="crop-rect"
       style="
@@ -254,17 +344,31 @@
 
 <style>
   .crop-overlay-container {
+    /* One screen pixel, whatever zoom the view is at: the frame's lines and handles are
+       drawn in the zoomed layer, so they are sized against it. */
+    --u: calc(1px / var(--s, 1));
     position: absolute;
     z-index: 10;
     pointer-events: auto;
-    overflow: hidden;
+    /* No overflow clip here: the handles straddle the crop's edge, and at the
+       photo's edge half of each would be cut. */
     touch-action: none;
+  }
+  .crop-mask {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .crop-hole {
+    position: absolute;
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
   }
   .crop-rect {
     position: absolute;
     box-sizing: border-box;
-    border: var(--stroke-width) solid rgba(255, 255, 255, 0.9);
-    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55), 0 0 8px rgba(0, 0, 0, 0.5);
+    border: calc(var(--stroke-width) / var(--s, 1)) solid rgba(255, 255, 255, 0.9);
+    box-shadow: 0 0 8px rgba(0, 0, 0, 0.5);
     cursor: move;
   }
   .crop-grid-line {
@@ -275,14 +379,14 @@
   .crop-grid-line.horizontal {
     left: 0;
     right: 0;
-    height: var(--stroke-width);
+    height: calc(var(--stroke-width) / var(--s, 1));
   }
   .crop-grid-line.horizontal.at-third { top: 33.333%; }
   .crop-grid-line.horizontal.at-two-thirds { top: 66.666%; }
   .crop-grid-line.vertical {
     top: 0;
     bottom: 0;
-    width: var(--stroke-width);
+    width: calc(var(--stroke-width) / var(--s, 1));
   }
   .crop-grid-line.vertical.at-third { left: 33.333%; }
   .crop-grid-line.vertical.at-two-thirds { left: 66.666%; }
@@ -291,90 +395,90 @@
     position: absolute;
     box-sizing: border-box;
     background: #ffffff;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 calc(1 * var(--u)) calc(4 * var(--u)) rgba(0, 0, 0, 0.6);
     z-index: 2;
-    filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 1px rgba(0, 0, 0, 0.9));
+    filter: drop-shadow(0 0 calc(1 * var(--u)) rgba(0, 0, 0, 0.9)) drop-shadow(0 0 calc(1 * var(--u)) rgba(0, 0, 0, 0.9));
   }
   .crop-handle::after {
     content: "";
     position: absolute;
-    inset: -8px;
+    inset: calc(-8 * var(--u));
     cursor: inherit;
   }
   .crop-handle.handle-nw {
-    top: -3px;
-    left: -3px;
-    width: 16px;
-    height: 16px;
+    top: calc(-3 * var(--u));
+    left: calc(-3 * var(--u));
+    width: calc(16 * var(--u));
+    height: calc(16 * var(--u));
     background: transparent;
-    border-top: 3px solid #ffffff;
-    border-left: 3px solid #ffffff;
+    border-top: calc(3 * var(--u)) solid #ffffff;
+    border-left: calc(3 * var(--u)) solid #ffffff;
     cursor: nwse-resize;
   }
   .crop-handle.handle-ne {
-    top: -3px;
-    right: -3px;
-    width: 16px;
-    height: 16px;
+    top: calc(-3 * var(--u));
+    right: calc(-3 * var(--u));
+    width: calc(16 * var(--u));
+    height: calc(16 * var(--u));
     background: transparent;
-    border-top: 3px solid #ffffff;
-    border-right: 3px solid #ffffff;
+    border-top: calc(3 * var(--u)) solid #ffffff;
+    border-right: calc(3 * var(--u)) solid #ffffff;
     cursor: nesw-resize;
   }
   .crop-handle.handle-sw {
-    bottom: -3px;
-    left: -3px;
-    width: 16px;
-    height: 16px;
+    bottom: calc(-3 * var(--u));
+    left: calc(-3 * var(--u));
+    width: calc(16 * var(--u));
+    height: calc(16 * var(--u));
     background: transparent;
-    border-bottom: 3px solid #ffffff;
-    border-left: 3px solid #ffffff;
+    border-bottom: calc(3 * var(--u)) solid #ffffff;
+    border-left: calc(3 * var(--u)) solid #ffffff;
     cursor: nesw-resize;
   }
   .crop-handle.handle-se {
-    bottom: -3px;
-    right: -3px;
-    width: 16px;
-    height: 16px;
+    bottom: calc(-3 * var(--u));
+    right: calc(-3 * var(--u));
+    width: calc(16 * var(--u));
+    height: calc(16 * var(--u));
     background: transparent;
-    border-bottom: 3px solid #ffffff;
-    border-right: 3px solid #ffffff;
+    border-bottom: calc(3 * var(--u)) solid #ffffff;
+    border-right: calc(3 * var(--u)) solid #ffffff;
     cursor: nwse-resize;
   }
 
   .crop-handle.handle-n {
-    top: -3px;
+    top: calc(-3 * var(--u));
     left: 50%;
     transform: translateX(-50%);
-    width: 24px;
-    height: 4px;
+    width: calc(24 * var(--u));
+    height: calc(4 * var(--u));
     border-radius: var(--radius);
     cursor: ns-resize;
   }
   .crop-handle.handle-s {
-    bottom: -3px;
+    bottom: calc(-3 * var(--u));
     left: 50%;
     transform: translateX(-50%);
-    width: 24px;
-    height: 4px;
+    width: calc(24 * var(--u));
+    height: calc(4 * var(--u));
     border-radius: var(--radius);
     cursor: ns-resize;
   }
   .crop-handle.handle-w {
-    left: -3px;
+    left: calc(-3 * var(--u));
     top: 50%;
     transform: translateY(-50%);
-    width: 4px;
-    height: 24px;
+    width: calc(4 * var(--u));
+    height: calc(24 * var(--u));
     border-radius: var(--radius);
     cursor: ew-resize;
   }
   .crop-handle.handle-e {
-    right: -3px;
+    right: calc(-3 * var(--u));
     top: 50%;
     transform: translateY(-50%);
-    width: 4px;
-    height: 24px;
+    width: calc(4 * var(--u));
+    height: calc(24 * var(--u));
     border-radius: var(--radius);
     cursor: ew-resize;
   }

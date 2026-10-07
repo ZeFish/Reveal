@@ -35,6 +35,11 @@ mod daily_note;
 mod photo_cache;
 mod preset;
 mod story;
+mod fd_limit;
+mod photo; // a photo: its identity, where it lives, what can be done to it
+mod photo_writes; // what is owed to a photo's files, and when (debounced, flushed on exit) // how many files the app may hold open
+mod thumb; // the `reveal://thumb` handler: request, cache, ladder of sources
+mod thumb_queue; // who decodes a grid thumbnail next
 mod xmp_preset;
 
 #[cfg(target_os = "macos")]
@@ -1496,7 +1501,8 @@ async fn import_xmp_presets(app: tauri::AppHandle) -> Result<Vec<xmp_preset::Imp
 /// Read the photo's sidecar (rating, tags, saved recipe). Null when none.
 #[tauri::command]
 async fn load_sidecar(path: String) -> Result<Option<reveal_meta::Sidecar>, String> {
-    blocking(move || reveal_meta::read(&apple_photos::metadata_path(&path)?).map_err(|e| e.to_string())).await
+    // `Photo::sidecar` pays what the photo is still owed before it reads.
+    blocking(move || photo::Photo::new(path).sidecar()).await
 }
 
 /// Persist the recipe into the photo's sidecar, preserving the standard
@@ -1504,11 +1510,7 @@ async fn load_sidecar(path: String) -> Result<Option<reveal_meta::Sidecar>, Stri
 /// default-import-preset path in `import_card` — same write, same
 /// "preserve whatever's already in the sidecar" behavior.
 fn write_recipe_to_sidecar(path: &std::path::Path, recipe: &reveal_engine::Recipe) -> Result<(), String> {
-    apple_photos::update_metadata(&path.to_string_lossy(), |sidecar| {
-        sidecar.engine = Some(recipe.engine.clone());
-        sidecar.engine_settings = Some(serde_json::to_value(recipe).map_err(|e| e.to_string())?);
-        Ok(())
-    })
+    photo::Photo::new(path.to_string_lossy()).save_recipe(recipe)
 }
 
 #[tauri::command]
@@ -1518,27 +1520,34 @@ async fn save_recipe(path: String, recipe: reveal_engine::Recipe) -> Result<(), 
 
 #[tauri::command]
 async fn clear_recipe(path: String) -> Result<(), String> {
-    blocking(move || {
-        let metadata = apple_photos::metadata_path(&path)?;
-        let p = metadata.as_path();
-        apple_photos::update_metadata(&path, |sidecar| {
-            sidecar.engine = None;
-            sidecar.engine_settings = None;
-            Ok(())
-        })?;
-        // Reverting to "no engine" removes our own developed sidecar so the grid
-        // and loupe fall back to the as-shot look. The Swift-era `.reveal.jpg` is
-        // left untouched (manual cleanup later) — it stays a read-only fallback.
-        if let Some(candidate) = preview_sidecar_path(p) {
-            match std::fs::remove_file(&candidate) {
-                Ok(()) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(e) => return Err(e.to_string()),
-            }
-        }
-        Ok(())
-    })
-    .await
+    // A render settled a moment ago may still be waiting to publish its `.preview.jpg`; that would
+    // bring back the file this call is about to remove. Claim the photo so it gives up.
+    let _ = next_publish_generation(&path);
+    blocking(move || photo::Photo::new(path).clear_development_now()).await
+}
+
+/// Owe the photo a clearing of its develop settings (the switch to "None"): written once it has
+/// been left alone, or never if an engine is chosen again — see `photo_writes`.
+#[tauri::command]
+fn queue_clear_development(state: tauri::State<'_, photo_writes::PhotoWritesState>, path: String) {
+    state.0.queue_clear(&path);
+}
+
+/// Owe the photo this recipe: every edit calls it, the last one is written once the photo has
+/// been left alone (and on the way out, if the app closes first) — see `photo_writes`.
+#[tauri::command]
+fn queue_save_recipe(
+    state: tauri::State<'_, photo_writes::PhotoWritesState>,
+    path: String,
+    recipe: reveal_engine::Recipe,
+) {
+    state.0.queue_save_recipe(&path, recipe);
+}
+
+/// Withdraw what was owed to the photo. `true` if something was waiting.
+#[tauri::command]
+fn cancel_photo_writes(state: tauri::State<'_, photo_writes::PhotoWritesState>, path: String) -> bool {
+    state.0.cancel(&path)
 }
 
 /// Per-frame develop-sidecar mtimes (ms since epoch, 0 = as-shot), parallel to
@@ -1612,6 +1621,10 @@ fn is_volume_mounted(path: &std::path::Path) -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Before anything opens a file: a Finder-launched app starts with 256 (see fd_limit.rs).
+    if let Some(limit) = fd_limit::raise_open_file_limit() {
+        eprintln!("open files allowed: {limit}");
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
@@ -1702,7 +1715,13 @@ pub fn run() {
             app.manage(ExportState::default());
             app.manage(CullState::default());
             app.manage(CullCancelState::default());
-            app.manage(ThumbConcurrencyState(std::sync::Arc::new(ThumbSemaphore::new(6))));
+            let photo_writes = photo_writes::PhotoWrites::start(
+                photo_writes::AppDisk { app: app.handle().clone() },
+                photo_writes::QUIET,
+            );
+            photo_writes::install(photo_writes.clone());
+            app.manage(photo_writes::PhotoWritesState(photo_writes));
+            app.manage(thumb_queue::ThumbQueueState(std::sync::Arc::new(thumb_queue::ThumbQueue::new(6))));
             #[cfg(target_os = "macos")]
             macos::volume_watcher::start(app.handle().clone());
 
@@ -1768,317 +1787,8 @@ pub fn run() {
                     responder.respond(response);
                 }
 
-                // reveal://thumb?p=<percent-encoded path> — the camera's
-                // embedded JPEG, extracted on demand (~10-30 ms). The grid's
-                // lazy-loading paces the requests.
-                "thumb" => {
-                    let app = _ctx.app_handle().clone();
-                    let size = request.uri().query()
-                        .and_then(|query| query.split('&').find_map(|pair| pair.strip_prefix("size=")))
-                        .and_then(|value| value.parse::<u32>().ok())
-                        .unwrap_or(GRID_PREVIEW_EDGE).clamp(256, 2560);
-                    // The version the frontend believes this photo's preview
-                    // is at. Part of the cache key, so an edit to
-                    // `.preview.jpg` outside Reveal moves the key and the
-                    // stale entry is simply not found.
-                    let version = request.uri().query()
-                        .and_then(|q| q.split('&').find_map(|kv| kv.strip_prefix("v=")))
-                        .and_then(|value| value.parse::<u64>().ok())
-                        .unwrap_or(0);
-                    // The photo actually on screen must not queue behind the
-                    // grid. Restoring a session fires ~120 cell requests and
-                    // then opens one photo; on a loaded NAS a cell took 4-6s
-                    // here, so the one image the photographer is waiting for
-                    // sat behind all of them (Francis: "I have the photo, but
-                    // it took very long"). There is at most one of these at
-                    // a time, so it skips the queue entirely.
-                    let priority = request.uri().query()
-                        .is_some_and(|q| q.split('&').any(|kv| kv == "priority=1"));
-                    let path = request
-                        .uri()
-                        .query()
-                        .and_then(|q| q.split('&').find_map(|kv| kv.strip_prefix("p=")))
-                        .map(percent_decode)
-                        .unwrap_or_default();
-                    if path.is_empty() {
-                        let response = HttpResponse::builder().status(404).body(Vec::new()).unwrap();
-                        responder.respond(response);
-                        return;
-                    }
-                    // The local cache before the mount guard, deliberately.
-                    // These bytes are on this disk; whether the NAS is awake
-                    // is beside the point. Guarding first meant that on a
-                    // cold start — NFS automount not yet materialised — the
-                    // photo you were editing came back "Preview unavailable"
-                    // while its pixels sat in the cache, and only a trip
-                    // through the grid (which woke the mount) fixed it
-                    // (Francis, 2026-09-22).
-                    if let Ok(local) = developed_preview_cache_path(
-                        &app,
-                        std::path::Path::new(&path),
-                        size,
-                        version,
-                    ) {
-                        // An entry that is there but empty is not a hit. Serving
-                        // it leaves the cell blank for good; dropping it lets
-                        // this request fall through and the next one re-cache
-                        // properly, so the nine that already exist heal
-                        // themselves the first time they are asked for.
-                        if let Ok(bytes) = std::fs::read(&local).and_then(|b| {
-                            if b.is_empty() {
-                                let _ = std::fs::remove_file(&local);
-                                Err(std::io::Error::new(
-                                    std::io::ErrorKind::InvalidData,
-                                    "empty cache entry",
-                                ))
-                            } else {
-                                Ok(b)
-                            }
-                        }) {
-                            eprintln!(
-                                "thumb: {} (local cache, {} ko)",
-                                path.rsplit('/').next().unwrap_or(&path),
-                                bytes.len() / 1024
-                            );
-                            responder.respond(
-                                HttpResponse::builder()
-                                    .header("Content-Type", "image/jpeg")
-                                    .header("Cache-Control", "max-age=3600")
-                                    .body(bytes)
-                                    .unwrap(),
-                            );
-                            return;
-                        }
-                    }
-                    if !is_volume_mounted(std::path::Path::new(&path)) {
-                        // Offline. The exact key above needed a version the
-                        // NAS alone can tell us, so fall back to the newest
-                        // render this disk holds for the photo — there is no
-                        // fresher truth available to compare it against.
-                        // Tell the UI the source is unreachable. Whether a
-                        // cached copy answers below or not, the photographer
-                        // should know they are looking at what this machine
-                        // remembers rather than at the archive.
-                        let _ = app.emit("source-offline", serde_json::json!({ "path": path }));
-                        let local = newest_cached_render(
-                            &app,
-                            std::path::Path::new(&path),
-                            size,
-                        )
-                        .and_then(|p| std::fs::read(p).ok());
-                        let response = match local {
-                            Some(bytes) => {
-                                eprintln!(
-                                    "thumb: {} (offline — newest local copy, {} ko)",
-                                    path.rsplit('/').next().unwrap_or(&path),
-                                    bytes.len() / 1024
-                                );
-                                HttpResponse::builder()
-                                    .header("Content-Type", "image/jpeg")
-                                    .header("Cache-Control", "max-age=3600")
-                                    .body(bytes)
-                                    .unwrap()
-                            }
-                            None => HttpResponse::builder().status(404).body(Vec::new()).unwrap(),
-                        };
-                        responder.respond(response);
-                        return;
-                    }
-                    let sem = app.state::<ThumbConcurrencyState>().0.clone();
-                    tauri::async_runtime::spawn_blocking(move || {
-                        // Bounds how many of these run at once — see
-                        // `ThumbSemaphore`'s doc comment for why this exists.
-                        // A priority request holds no permit: it is the photo
-                        // on screen, and there is only ever one.
-                        let _permit = (!priority).then(|| ThumbPermit::acquire(&sem));
-                        if apple_photos::is_asset(&path) {
-                            let response = match apple_photos::thumbnail(&path, size) {
-                                Ok(bytes) => HttpResponse::builder()
-                                    .header("Content-Type", "image/jpeg")
-                                    .header("Cache-Control", "no-cache")
-                                    .body(if size <= 768 { downscale_grid_thumb(bytes, size, 1) } else { bytes }).unwrap(),
-                                Err(error) => {
-                                    eprintln!("Apple Photos thumbnail: {error}");
-                                    HttpResponse::builder().status(503).body(error.into_bytes()).unwrap()
-                                }
-                            };
-                            responder.respond(response);
-                            return;
-                        } else if immich::is_asset(&path) {
-                            let response = match immich::thumbnail(&app, &path, size) {
-                                Ok(bytes) => HttpResponse::builder()
-                                    .header("Content-Type", "image/jpeg")
-                                    .header("Cache-Control", "max-age=3600")
-                                    .body(if size <= 768 { downscale_grid_thumb(bytes, size, 1) } else { bytes }).unwrap(),
-                                Err(error) => {
-                                    eprintln!("Immich thumbnail: {error}");
-                                    HttpResponse::builder().status(503).body(error.into_bytes()).unwrap()
-                                }
-                            };
-                            responder.respond(response);
-                            return;
-                        }
-                        let t = std::time::Instant::now();
-                        let source = std::path::Path::new(&path);
-
-                        // File over app: the developed `.preview.jpg` sibling of
-                        // the RAW is the truth. It exists iff the photo was developed.
-                        let sidecar = preview_sidecar_path(source)
-                            .filter(|candidate| candidate.is_file());
-                        let response = if let Some(preview_path) = sidecar {
-                            match std::fs::read(&preview_path) {
-                                Ok(bytes) => {
-                                    eprintln!(
-                                        "thumb: {} (developed sidecar, {} ko, {} ms)",
-                                        source.file_name().unwrap_or_default().to_string_lossy(),
-                                        bytes.len() / 1024,
-                                        t.elapsed().as_millis()
-                                    );
-                                    // Resize once, then both serve and keep
-                                    // it. Keeps the NAS round trip to once
-                                    // per photo per size, and the decode and
-                                    // re-encode to once rather than once per
-                                    // request.
-                                    let sized = downscale_grid_thumb(bytes, size, 1);
-                                    cache_developed_preview_locally(&app, source, &sized, size, version);
-                                    HttpResponse::builder()
-                                        .header("Content-Type", "image/jpeg")
-                                        .header("Cache-Control", "max-age=3600")
-                                        .body(sized)
-                                        .unwrap()
-                                }
-                                Err(e) => {
-                                    eprintln!("thumb {} legacy preview: {e}", preview_path.display());
-                                    HttpResponse::builder().status(404).body(Vec::new()).unwrap()
-                                }
-                            }
-                        } else {
-                            // The camera's embedded preview is cheapest and
-                            // tried FIRST — a grid cell only needs
-                            // `GRID_THUMB_MAX_EDGE` px, so decoding a
-                            // full-resolution companion JPEG here (14-26 MB
-                            // compressed, 60-100+ MB once decoded) was pure
-                            // waste for the common case, and with no
-                            // concurrency limit on this handler it could spike
-                            // memory into the tens of GB opening one RAW+JPEG
-                            // folder (confirmed 2026-08-02, see reveal.md). The
-                            // companion JPEG — and full develop — now only run
-                            // when there's no embedded thumb to serve.
-                            match reveal_decode::extract_thumb_preview(source) {
-                            Ok(preview) => {
-                                eprintln!(
-                                    "thumb: {} ({}, {} ko, {} ms)",
-                                    path.rsplit('/').next().unwrap_or(&path),
-                                    preview.mime,
-                                    preview.bytes.len() / 1024,
-                                    t.elapsed().as_millis()
-                                );
-                                let small = downscale_grid_thumb(preview.bytes, size, preview.orientation);
-                                persist_thumb_cache(source, &small, size);
-                                HttpResponse::builder()
-                                    .header("Content-Type", "image/jpeg")
-                                    .header("Cache-Control", "max-age=3600")
-                                    .body(small)
-                                    .unwrap()
-                            }
-                            Err(thumb_err) => if let Some(companion) = companion_jpeg_path(source) {
-                                // RAW+JPEG shooting, but this RAW had no
-                                // embedded thumb to fall back on cheaply: the
-                                // camera wrote its own full JPEG right next to
-                                // the RAW — the most faithful "as shot" source,
-                                // correct even for a monochrome film
-                                // simulation the sensor data alone can't
-                                // reproduce (RAW is always color).
-                                eprintln!("thumb {path}: no embedded preview ({thumb_err}) - trying companion jpg");
-                                match std::fs::read(&companion) {
-                                    Ok(bytes) => {
-                                        eprintln!(
-                                            "thumb: {} (companion jpg, {} ko, {} ms)",
-                                            source.file_name().unwrap_or_default().to_string_lossy(),
-                                            bytes.len() / 1024,
-                                            t.elapsed().as_millis()
-                                        );
-                                        let small = downscale_grid_thumb(bytes, size, 1);
-                                        persist_thumb_cache(source, &small, size);
-                                        HttpResponse::builder()
-                                            .header("Content-Type", "image/jpeg")
-                                            .header("Cache-Control", "max-age=3600")
-                                            .body(small)
-                                            .unwrap()
-                                    }
-                                    Err(e) => {
-                                        eprintln!("thumb {} companion jpg read: {e}", companion.display());
-                                        HttpResponse::builder().status(404).body(Vec::new()).unwrap()
-                                    }
-                                }
-                            } else {
-                                // No camera-embedded JPEG (some RAWs lack one, or
-                                // extraction failed) and no engine picked yet
-                                // (engine=None, or we wouldn't be in this "no
-                                // sidecar" branch). Render a NEUTRAL fallback —
-                                // Rapid at its defaults (contrast/saturation/
-                                // temperature/tint all 0, the corrected AgX
-                                // curve) — and PERSIST it as `.preview.jpg`, so
-                                // this is a one-time cost, not a per-thumb-request
-                                // render. This only touches the durable JPEG
-                                // file, never the recipe sidecar metadata: the
-                                // photo still reads as "None" if reopened in dev.
-                                eprintln!("thumb {path}: {thumb_err} - generating neutral fallback preview");
-                                let engine = app.state::<EngineState>().0.clone();
-                                let neutral = reveal_engine::Recipe {
-                                    engine: "rapid".to_string(),
-                                    ..reveal_engine::Recipe::default()
-                                };
-                                match engine.develop_jpeg(std::path::Path::new(&path), &neutral, 2048) {
-                                    Ok(out) => {
-                                        eprintln!(
-                                            "thumb-fallback: {} ({} ko, {} ms)",
-                                            path.rsplit('/').next().unwrap_or(&path),
-                                            out.jpeg.len() / 1024,
-                                            t.elapsed().as_millis()
-                                        );
-                                        persist_thumb_cache(source, &out.jpeg, DURABLE_PREVIEW_EDGE);
-                                        HttpResponse::builder()
-                                            .header("Content-Type", "image/jpeg")
-                                            .header("Cache-Control", "max-age=3600")
-                                            .body(downscale_grid_thumb(out.jpeg, size, 1))
-                                            .unwrap()
-                                    }
-                                    Err(dev_e) => {
-                                        // Last resort: the file may not be a
-                                        // RAW at all. A Google Takeout export
-                                        // hands back JPEGs still named `.DNG`
-                                        // — 113 of them in one folder here,
-                                        // 4032x3024, that libraw cannot touch
-                                        // and every branch above therefore
-                                        // refuses. Read the bytes as an
-                                        // ordinary image before giving up.
-                                        match plain_image_bytes(std::path::Path::new(&path)) {
-                                            Some(bytes) => {
-                                                eprintln!(
-                                                    "thumb: {} (not a raw — plain image, {} ko)",
-                                                    path.rsplit('/').next().unwrap_or(&path),
-                                                    bytes.len() / 1024
-                                                );
-                                                HttpResponse::builder()
-                                                    .header("Content-Type", "image/jpeg")
-                                                    .header("Cache-Control", "max-age=3600")
-                                                    .body(downscale_grid_thumb(bytes, size, 1))
-                                                    .unwrap()
-                                            }
-                                            None => {
-                                                eprintln!("thumb fallback {path}: {dev_e:#}");
-                                                HttpResponse::builder().status(404).body(Vec::new()).unwrap()
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        };
-                        responder.respond(response);
-                    });
-                }
+                // reveal://thumb?p=<percent-encoded path> — a photo's picture; see `thumb`.
+                "thumb" => thumb::serve(_ctx.app_handle().clone(), &request, responder),
                 _ => {
                     let response = HttpResponse::builder().status(404).body(Vec::new()).unwrap();
                     responder.respond(response);
@@ -2115,6 +1825,7 @@ pub fn run() {
             catalog::list_dir,
             catalog::set_rating,
             catalog::tidy_plan,
+            catalog::tidy_apply,
             catalog::scan_root,
             catalog::scan_folder,
             catalog::add_catalog_root,
@@ -2187,6 +1898,9 @@ pub fn run() {
             load_sidecar,
             save_recipe,
             clear_recipe,
+            queue_clear_development,
+            queue_save_recipe,
+            cancel_photo_writes,
             preview_versions,
             autoload_path,
             take_open_file,
@@ -2270,11 +1984,28 @@ pub fn run() {
                     macos::focus_backdrop::hide();
                 }
                 let _ = window.hide();
+                // Walking away mid-import: the HUD was asked for when the import
+                // started, while the app was still in front, and declined. Ask
+                // again now that the window is gone.
+                if matches!(window.label(), "main") {
+                    let importing = window
+                        .app_handle()
+                        .try_state::<ImportState>()
+                        .map(|state| !state.0.lock().unwrap().is_empty())
+                        .unwrap_or(false);
+                    if importing {
+                        show_import_panel(window.app_handle());
+                    }
+                }
             }
         })
         .build(tauri::generate_context!())
         .expect("error while building Reveal")
         .run(|app, event| {
+            // What is still owed to photos' files is paid on the way out, not lost.
+            if let tauri::RunEvent::Exit = event {
+                app.state::<photo_writes::PhotoWritesState>().0.flush_all();
+            }
             if let tauri::RunEvent::Opened { ref urls } = event {
                 if let Some(path) = urls.into_iter().find_map(|url| {
                     let path = url.to_file_path().ok()?;

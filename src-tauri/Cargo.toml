@@ -38,6 +38,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# setrlimit: a Finder-launched macOS app starts with 256 open files (see fd_limit.rs).
+libc = "0.2"
 rawler.workspace = true
 # Grid-thumbnail downscaling in the reveal://thumb handler (decode/resize/encode).
 image.workspace = true
@@ -60,6 +62,7 @@ rayon.workspace = true
 reveal-decode = { path = "crates/reveal-decode" }
 reveal-engine = { path = "crates/reveal-engine" }
 reveal-index = { path = "crates/reveal-index" }
+reveal-io = { path = "crates/reveal-io" }
 reveal-meta = { path = "crates/reveal-meta" }
 reveal-publish = { path = "crates/reveal-publish" }
 reveal-import = { path = "crates/reveal-import" }

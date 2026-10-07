@@ -125,7 +125,7 @@
 
 <div class="section-group">
   <div class="section-heading">
-    <Icon name="hard-drive" size="12px" />
+    <Icon name="hard-drive" size="var(--icon-md)" />
     <span>DEVELOPED PREVIEWS</span>
   </div>
   <div class="card flush list divided">
@@ -154,7 +154,7 @@
 {#if cacheAvailable}
   <div class="section-group">
     <div class="section-heading">
-      <Icon name="image" size="12px" />
+      <Icon name="image" size="var(--icon-md)" />
       <span>APPLE PHOTOS CACHE</span>
     </div>
     <div class="card flush list divided">

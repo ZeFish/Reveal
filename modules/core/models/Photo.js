@@ -94,6 +94,7 @@ export class Photo {
    * @param {number} [options.version]
    * @param {number | null} [options.attempt]
    * @param {boolean} [options.priority]
+   * @param {boolean} [options.asShot] the photo as the camera shot it, ignoring its develop settings
    * @returns {string}
    */
   static thumb(photoOrPath, options = {}) {
@@ -111,6 +112,9 @@ export class Photo {
     }
     if (options.priority) {
       url += `&priority=1`;
+    }
+    if (options.asShot) {
+      url += `&asshot=1`;
     }
     return url;
   }

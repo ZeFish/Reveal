@@ -195,7 +195,8 @@ export function createAppController() {
     getPhotoPath: () => photoPath,
     getDevelopState: () => developState,
     openPhoto: (p) => openPhoto(p),
-    scheduleRender: (px) => scheduleRender(px),
+    scheduleRender: (/** @type {number} */ px, /** @type {boolean} */ live = false) =>
+      scheduleRender(px, live),
     previewPx: PREVIEW_PX,
   });
 
@@ -898,6 +899,7 @@ export function createAppController() {
     actions: {
       switchMode,
       setSpaceLook: (v) => { modeCtrl.spaceLook = v; },
+      setDevPanel: (v) => { layouts.dev.devPanel = v; },
       saveLayouts,
       toggleSidebar,
       exitFullscreen,
@@ -950,8 +952,11 @@ export function createAppController() {
   });
   const { onKey } = keyboardCtrl;
 
+  // Boot once. startAppLifecycle reads reactive state synchronously (currentMode,
+  // preferences…); tracked, every mode switch re-ran the boot, which reset the
+  // mode to cull and re-opened the folder — so D bounced straight back to the grid.
   $effect(() => {
-    return startAppLifecycle({
+    return untrack(() => startAppLifecycle({
       isTauri,
       listen,
       invoke,
@@ -1002,7 +1007,7 @@ export function createAppController() {
       togglePresetPanel,
       toggleLutPanel,
       log: (msg) => /** @type {import('../core/types.js').RevealWindow} */ (window).__log?.(msg),
-    });
+    }));
   });
 
   return {
@@ -1087,8 +1092,6 @@ export function createAppController() {
 
     get developProps() {
       return {
-        developState,
-        exportState,
         layouts,
         saveLayouts,
         session,
@@ -1098,6 +1101,10 @@ export function createAppController() {
         imgUrl,
         status,
         currentRating,
+        spaceLook,
+        inStory: photoPath ? storyState.storySet.has(stem(photoPath.split("/").pop() || "")) : false,
+        onRate: (/** @type {number} */ n) => rate(n),
+        onToggleStory: () => toggleStory(),
         sourceOffline,
         installedEditors,
         zoomMode: modeCtrl.zoomMode,

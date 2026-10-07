@@ -8,12 +8,14 @@
   import { Icon } from "@modules/core";
   import {
     getActiveTarget,
+    peekActiveTarget,
     getNeutral,
     formatVal,
   } from "../engineContext.js";
 
   /**
    * @typedef {Object} Props
+   * @property {any} [engine] The engine's declaration from `list_engines`; owns the curve's channels.
    * @property {any} recipe
    * @property {string} [activeZone]
    * @property {string[]} [luts]
@@ -30,6 +32,7 @@
 
   /** @type {Props} */
   let {
+    engine = null,
     recipe = $bindable(),
     activeZone = $bindable("global"),
     luts = [],
@@ -98,16 +101,13 @@
       Math.abs(z.clarity || 0) > 0.001 ||
       Math.abs(z.structure || 0) > 0.001 ||
       Math.abs(z.dehaze || 0) > 0.001 ||
-      Math.abs(z.grain_amount || 0) > 0.001 ||
       z.hsl_hue?.some((/** @type {number} */ v) => Math.abs(v) > 0.001) ||
       z.hsl_sat?.some((/** @type {number} */ v) => Math.abs(v) > 0.001) ||
       z.hsl_lum?.some((/** @type {number} */ v) => Math.abs(v) > 0.001) ||
       isCurveActive(z.curve_luma) ||
       isCurveActive(z.curve_r) ||
       isCurveActive(z.curve_g) ||
-      isCurveActive(z.curve_b) ||
-      (z.pre_luts?.length > 0) ||
-      (z.post_luts?.length > 0)
+      isCurveActive(z.curve_b)
     );
   }
 
@@ -133,16 +133,13 @@
       clarity: 0,
       structure: 0,
       dehaze: 0,
-      grain_amount: 0,
-      hsl_hue: [],
-      hsl_sat: [],
-      hsl_lum: [],
+      hsl_hue: Array(8).fill(0),
+      hsl_sat: Array(8).fill(0),
+      hsl_lum: Array(8).fill(0),
       curve_luma: [[0, 0], [1, 1]],
       curve_r: [[0, 0], [1, 1]],
       curve_g: [[0, 0], [1, 1]],
       curve_b: [[0, 0], [1, 1]],
-      pre_luts: [],
-      post_luts: [],
     };
     edited();
   }
@@ -151,9 +148,14 @@
     return getActiveTarget(recipe, activeZone);
   }
 
+  // Display-only reads: never create a missing zone while rendering.
+  function peek() {
+    return peekActiveTarget(recipe, activeZone);
+  }
+
   /** @param {string} id @returns {number} */
   function getVal(id) {
-    return Number(target()?.[id] ?? 0);
+    return Number(peek()?.[id] ?? 0);
   }
 
   /** @param {string} id @param {number} val */
@@ -172,65 +174,30 @@
     resetControl(id, index);
   }
 
+  // LUT stacks are image-level, so they are global-only (see the Input and Output groups).
   /** @param {string} stage */
   function lutListFor(stage) {
-    if (isZoneActiveMode) {
-      const key = stage === "pre" ? "pre_luts" : "post_luts";
-      return Array.isArray(target()[key]) ? target()[key] : [];
-    }
     if (stage === "pre") return recipe.rapid_pre_luts?.length ? recipe.rapid_pre_luts : (recipe.pre_luts || []);
     return recipe.rapid_post_luts?.length ? recipe.rapid_post_luts : (recipe.post_luts || []);
   }
 
   /** @param {string} stage */
   function onAddLut(stage) {
-    if (isZoneActiveMode) {
-      const key = stage === "pre" ? "pre_luts" : "post_luts";
-      if (!Array.isArray(target()[key])) target()[key] = [];
-      const first = luts[0] || "";
-      target()[key].push({ name: first, opacity: 1.0 });
-      edited();
-      return;
-    }
     addLutLayer(stage);
   }
 
   /** @param {string} stage @param {number} idx */
   function onRemoveLut(stage, idx) {
-    if (isZoneActiveMode) {
-      const key = stage === "pre" ? "pre_luts" : "post_luts";
-      if (Array.isArray(target()[key])) {
-        target()[key].splice(idx, 1);
-        edited();
-      }
-      return;
-    }
     removeLutLayer(stage, idx);
   }
 
   /** @param {string} stage @param {number} idx @param {number} opacity */
   function onUpdateLutOpacity(stage, idx, opacity) {
-    if (isZoneActiveMode) {
-      const key = stage === "pre" ? "pre_luts" : "post_luts";
-      if (target()[key]?.[idx]) {
-        target()[key][idx].opacity = opacity;
-        edited(true);
-      }
-      return;
-    }
     updateLutOpacity(stage, idx, opacity);
   }
 
   /** @param {string} stage @param {number} idx @param {string} file */
   function onSetLutFile(stage, idx, file) {
-    if (isZoneActiveMode) {
-      const key = stage === "pre" ? "pre_luts" : "post_luts";
-      if (target()[key]?.[idx]) {
-        target()[key][idx].name = file;
-        edited();
-      }
-      return;
-    }
     setLutFile(stage, idx, file);
   }
 
@@ -262,81 +229,93 @@
 
   /** @param {{ id: string, index?: number }} field @returns {number} */
   function readBandField(field) {
-    const t = target();
+    const t = peek();
     return Number(t?.[field.id]?.[field.index ?? 0] ?? 0);
   }
 
   /** @param {{ id: string, index?: number }} field @param {number} val */
   function writeBandField(field, val) {
     const t = target();
-    if (!Array.isArray(t[field.id])) t[field.id] = [];
+    // Always eight bands: a sparse array would serialise as nulls, which Rust rejects.
+    if (!Array.isArray(t[field.id]) || t[field.id].length < 8) t[field.id] = Array.from({ length: 8 }, (_, i) => Number(t[field.id]?.[i] ?? 0));
     t[field.id][field.index ?? 0] = val;
   }
 
-  const CURVE_CONTROL = {
-    id: "curve",
-    label: "Tone Curve",
-    kind: "curve",
-  };
+  // The curve's channels (luma/R/G/B) are declared by the Rust engine, not here.
+  const CURVE_CONTROL = $derived(
+    engine?.control_groups
+      ?.flatMap((/** @type {any} */ g) => g.controls)
+      .find((/** @type {any} */ c) => c.kind === "curve"),
+  );
 </script>
 
 <div class="rapid-engine" data-zone={activeZone}>
   <!-- Rapid-native Zone Grading Tabs -->
   <div class="zone-tabs-bar">
-    <div class="btn-group zone-tabs-group" role="group" aria-label="Zone de travail">
+    <div class="btn-group zone-tabs-group" role="group" aria-label="Working zone">
       <button
         type="button"
-        class="zone-btn"
+        class="zone-btn small"
+        title="Global — the whole picture"
+        aria-label="Global"
         class:active={activeZone === "global"}
         aria-pressed={activeZone === "global"}
         onclick={() => { activeZone = "global"; onSetZoneMask(null); }}
         onmouseenter={() => handleZoneMouseEnter("global")}
         onmouseleave={handleZoneMouseLeave}
       >
-        <span>Global</span>
+        <Icon name="image" size="var(--icon-lg)" />
       </button>
       <button
         type="button"
-        class="zone-btn zone-shadows"
+        class="zone-btn zone-shadows small"
+        title="Shadows"
+        aria-label="Shadows"
         class:active={activeZone === "shadows"}
         aria-pressed={activeZone === "shadows"}
         onclick={() => { activeZone = "shadows"; onSetZoneMask(null); }}
         onmouseenter={() => handleZoneMouseEnter("shadows")}
         onmouseleave={handleZoneMouseLeave}
       >
-        <span>Ombres</span>
+        <Icon name="moon" size="var(--icon-lg)" />
         {#if isZoneActive(recipe, "shadows")}<span class="zone-dot dot-shadows"></span>{/if}
       </button>
       <button
         type="button"
-        class="zone-btn zone-midtones"
+        class="zone-btn zone-midtones small"
+        title="Midtones"
+        aria-label="Midtones"
         class:active={activeZone === "midtones"}
         aria-pressed={activeZone === "midtones"}
         onclick={() => { activeZone = "midtones"; onSetZoneMask(null); }}
         onmouseenter={() => handleZoneMouseEnter("midtones")}
         onmouseleave={handleZoneMouseLeave}
       >
-        <span>Moyens</span>
+        <Icon name="circle-half" size="var(--icon-lg)" />
         {#if isZoneActive(recipe, "midtones")}<span class="zone-dot dot-midtones"></span>{/if}
       </button>
       <button
         type="button"
-        class="zone-btn zone-highlights"
+        class="zone-btn zone-highlights small"
+        title="Highlights"
+        aria-label="Highlights"
         class:active={activeZone === "highlights"}
         aria-pressed={activeZone === "highlights"}
         onclick={() => { activeZone = "highlights"; onSetZoneMask(null); }}
         onmouseenter={() => handleZoneMouseEnter("highlights")}
         onmouseleave={handleZoneMouseLeave}
       >
-        <span>Lumières</span>
+        <Icon name="sun" size="var(--icon-lg)" />
         {#if isZoneActive(recipe, "highlights")}<span class="zone-dot dot-highlights"></span>{/if}
       </button>
     </div>
   </div>
 
+  <!-- Image-level: input encoding, LUT stacks and the AgX look stay global. A zone
+       carries the same adjustments as the global layer, not these. -->
+  {#if !isZoneActiveMode}
   <!-- Input (LUT & Encoding) -->
   <CollapsibleGroup label="Input (LUT & Encoding)">
-    {#if !isZoneActiveMode}
       <ToggleRow
         label="LogC (cinematic)"
         checked={Boolean(recipe?.use_logc)}
@@ -345,7 +324,6 @@
           edited();
         }}
       />
-    {/if}
 
     <!-- Pre-LUT stack -->
     <div class="lut-stack-section">
@@ -373,7 +351,7 @@
               onclick={() => onRemoveLut("pre", idx)}
               title="Remove this LUT layer"
             >
-              <Icon name="x" size="9px" />
+              <Icon name="x" size="var(--icon-sm)" />
             </button>
           </div>
           {#if layer.name}
@@ -396,7 +374,6 @@
       {/each}
     </div>
 
-    {#if !isZoneActiveMode}
       <SelectRow
         label="Look AgX"
         value={recipe?.agx_look ?? "base"}
@@ -406,8 +383,8 @@
           edited();
         }}
       />
-    {/if}
   </CollapsibleGroup>
+  {/if}
 
   <!-- Exposure & Contrast -->
   <CollapsibleGroup label="Exposure & Contrast">
@@ -577,6 +554,7 @@
 
   <!-- Tone Curves -->
   <CollapsibleGroup label="Tone Curves">
+    {#if CURVE_CONTROL}
     {#if activeZone === "shadows"}
       <CurveEditor
         control={CURVE_CONTROL}
@@ -601,6 +579,7 @@
         bind:recipe
         {edited}
       />
+    {/if}
     {/if}
   </CollapsibleGroup>
 
@@ -657,6 +636,65 @@
     />
   </CollapsibleGroup>
 
+  <!-- Detail -->
+  <CollapsibleGroup label="Detail">
+    <SliderRow
+      label="Clarity"
+      value={getVal("clarity")}
+      min={-40}
+      max={60}
+      step={0.5}
+      neutral={getNeutral(defaults, activeZone, "clarity")}
+      formatter={(v) => formatVal("clarity", v)}
+      onInput={(v) => {
+        setVal("clarity", v);
+        edited(true);
+      }}
+      onChange={(v) => {
+        setVal("clarity", v);
+        edited(false);
+      }}
+      onReset={() => handleReset("clarity")}
+    />
+      <SliderRow
+        label="Structure"
+        value={getVal("structure")}
+        min={-30}
+        max={50}
+        step={0.5}
+        neutral={getNeutral(defaults, activeZone, "structure")}
+        formatter={(v) => formatVal("structure", v)}
+        onInput={(v) => {
+          setVal("structure", v);
+          edited(true);
+        }}
+        onChange={(v) => {
+          setVal("structure", v);
+          edited(false);
+        }}
+        onReset={() => handleReset("structure")}
+      />
+      <SliderRow
+        label="Dehaze"
+        value={getVal("dehaze")}
+        min={-30}
+        max={50}
+        step={0.5}
+        neutral={getNeutral(defaults, activeZone, "dehaze")}
+        formatter={(v) => formatVal("dehaze", v)}
+        onInput={(v) => {
+          setVal("dehaze", v);
+          edited(true);
+        }}
+        onChange={(v) => {
+          setVal("dehaze", v);
+          edited(false);
+        }}
+        onReset={() => handleReset("dehaze")}
+      />
+  </CollapsibleGroup>
+
+  {#if !isZoneActiveMode}
   <!-- Output (Post-LUT) -->
   <CollapsibleGroup label="Output (Post-LUT)">
     <div class="lut-stack-section">
@@ -684,7 +722,7 @@
               onclick={() => onRemoveLut("post", idx)}
               title="Remove this LUT layer"
             >
-              <Icon name="x" size="9px" />
+              <Icon name="x" size="var(--icon-sm)" />
             </button>
           </div>
           {#if layer.name}
@@ -707,6 +745,7 @@
       {/each}
     </div>
   </CollapsibleGroup>
+  {/if}
 
   <!-- Digital Effects (Global only) -->
   {#if !isZoneActiveMode}
@@ -850,7 +889,7 @@
   {#if isZoneActiveMode}
     <div class="zone-reset-row">
       <button type="button" class="outline panel-btn half" onclick={resetCurrentZone}>
-        Reset {activeZone === "shadows" ? "Ombres" : activeZone === "midtones" ? "Moyens" : "Lumières"}
+        Reset {activeZone === "shadows" ? "Shadows" : activeZone === "midtones" ? "Midtones" : "Highlights"}
       </button>
     </div>
   {/if}
@@ -863,10 +902,15 @@
     gap: var(--space-d4);
   }
 
+  /* Sticks to the top of the scrolling controls (the panel's scroller is its
+     nearest scrolling ancestor), over the panel's own surface so what scrolls
+     beneath does not show through. */
   .zone-tabs-bar {
-    padding: var(--space-d4) 0;
-    margin-bottom: var(--space-d3);
-    border-bottom: var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: var(--color-surface-light-1);
+    padding-top: var(--space-d3);
   }
 
   .zone-tabs-group {
@@ -881,10 +925,12 @@
     align-items: center;
     justify-content: center;
     gap: 4px;
-    padding: var(--space-d3) 2px;
+    min-height: var(--control-h);
+    padding: 0 2px;
     font-size: 11px;
     font-weight: 500;
     cursor: pointer;
+    border:0;
   }
 
   .zone-btn.active {
@@ -893,20 +939,21 @@
 
   .zone-btn.zone-shadows.active {
     color: var(--color-blue, #3b82f6);
-    border-bottom: 2px solid var(--color-blue, #3b82f6);
   }
 
   .zone-btn.zone-midtones.active {
     color: var(--color-green, #10b981);
-    border-bottom: 2px solid var(--color-green, #10b981);
   }
 
   .zone-btn.zone-highlights.active {
     color: var(--color-red, #ef4444);
-    border-bottom: 2px solid var(--color-red, #ef4444);
   }
 
   .zone-dot {
+    /* A zone that has been edited: a dot in the corner of its icon. */
+    position: absolute;
+    top: 4px;
+    right: calc(50% - 14px);
     width: 5px;
     height: 5px;
     border-radius: 50%;

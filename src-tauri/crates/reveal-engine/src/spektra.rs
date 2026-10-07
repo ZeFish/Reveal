@@ -114,6 +114,18 @@ impl RenderEngine for SpektraEngine {
                     },
                 ],
             },
+            // Before the film: rearrange the picture's local contrast for it (film_prep.rs).
+            ControlGroup {
+                label: "Before the film".to_string(),
+                controls: vec![EngineControl::Slider {
+                    id: "film_prep".to_string(),
+                    label: "Local contrast".to_string(),
+                    min: 0.0,
+                    max: 1.0,
+                    step: 0.05,
+                    preset: false,
+                }],
+            },
             // Spektra: Film + Paper ARE the pre-grade (no separate pre-LUTs needed).
             // Post-grading is for finishing passes after print, not engine-level.
             // LUTs are Rapid-only (see RapidEngine::control_groups).
@@ -358,6 +370,15 @@ impl RenderEngine for SpektraEngine {
         // grade that conflicted with the spectral simulation (see the note on
         // the removed "Tirages" sliders above).
         let pipeline = self.pipeline_for(recipe)?;
+        // Optional: the picture's local contrast arranged for the film before the film sees it
+        // (film_prep.rs). Off by default; it works on the input only, outside the spectral model.
+        let prepared;
+        let input = if recipe.film_prep > 0.0 {
+            prepared = crate::film_prep::prepare(input, recipe.film_prep);
+            &prepared
+        } else {
+            input
+        };
         let result = pipeline
             .process_resident_borrowed(input, self.backend.as_ref())
             .unwrap_or_else(|| pipeline.process(input.clone(), self.backend.as_ref()));

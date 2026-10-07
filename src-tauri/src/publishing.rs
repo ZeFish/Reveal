@@ -81,9 +81,18 @@ pub(crate) async fn story_stems(dir: String) -> Vec<String> {
 /// red "this day has a story" dots (Swift: `folderHasStory`).
 #[tauri::command]
 pub(crate) async fn story_dirs(dirs: Vec<String>) -> Vec<String> {
-    dirs.into_iter()
-        .filter(|d| !story::stems(std::path::Path::new(d)).is_empty())
-        .collect()
+    // One note read per folder, on a NAS: sequential reads made a library of a few hundred
+    // folders take tens of seconds, and they ran on the async runtime itself, starving the
+    // other commands meanwhile. Off the runtime, and the reads in parallel.
+    crate::blocking(move || {
+        use rayon::prelude::*;
+        Ok(dirs
+            .into_par_iter()
+            .filter(|d| !story::stems(std::path::Path::new(d)).is_empty())
+            .collect::<Vec<String>>())
+    })
+    .await
+    .unwrap_or_default()
 }
 
 /// Toggle a photo in the folder's story. Returns the new stems.
@@ -242,7 +251,8 @@ pub(crate) async fn export_local_story(
                 )
                 .find(|p| p.exists())
                 .ok_or_else(|| format!("RAW not found for {stem}"))?;
-            let recipe = reveal_meta::read(&raw)
+            let recipe = crate::photo::Photo::new(raw.to_string_lossy())
+                .sidecar()
                 .ok()
                 .flatten()
                 .and_then(|s| s.engine_settings)
@@ -252,7 +262,7 @@ pub(crate) async fn export_local_story(
                 .export_jpeg(&raw, &recipe, long_edge, border_frac)
                 .map_err(|e| format!("develop {stem}: {e:#}"))?;
             let jpg_path = images_dir.join(format!("{stem}.jpg"));
-            std::fs::write(&jpg_path, &jpeg).map_err(|e| e.to_string())?;
+            reveal_io::write_durable(&jpg_path, &jpeg).map_err(|e| e.to_string())?;
             urls.push((stem.clone(), format!("images/{stem}.jpg")));
         }
         let raw_md = std::fs::read_to_string(story::note_path(dirp)).map_err(|e| e.to_string())?;
@@ -366,7 +376,7 @@ pub(crate) async fn export_local_story(
   </main>
 </body>
 </html>"#, title = title, body_html = body_html);
-        std::fs::write(destp.join("index.html"), html_content).map_err(|e| e.to_string())?;
+        reveal_io::write_durable(&destp.join("index.html"), html_content.as_bytes()).map_err(|e| e.to_string())?;
         emit(total, "", "note");
         Ok(())
     })
@@ -503,7 +513,8 @@ pub(crate) async fn publish_story(
                 .find(|p| p.exists());
 
             let recipe = raw_opt.as_ref().and_then(|raw| {
-                reveal_meta::read(raw)
+                crate::photo::Photo::new(raw.to_string_lossy())
+                    .sidecar()
                     .ok()
                     .flatten()
                     .and_then(|s| s.engine_settings)
@@ -538,7 +549,7 @@ pub(crate) async fn publish_story(
                 Err(_) => true,
             };
             if should_write {
-                let _ = std::fs::write(&jpg_path, &jpeg);
+                let _ = reveal_io::write_durable(&jpg_path, &jpeg);
             }
 
             // 2. upload (dedup) — dry run stops at the existence check
@@ -609,7 +620,7 @@ pub(crate) async fn publish_photo(
         };
 
         emit("developing");
-        let sidecar = reveal_meta::read(&apple_photos::metadata_path(&path)?).map_err(|e| e.to_string())?;
+        let sidecar = crate::photo::Photo::new(&path).sidecar()?;
         let recipe = sidecar
             .as_ref()
             .and_then(|s| s.engine_settings.clone())

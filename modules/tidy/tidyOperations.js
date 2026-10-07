@@ -57,3 +57,14 @@ export async function fetchTidyPlan(dir, { invoke }) {
   if (!dir) return null;
   return await invoke("tidy_plan", { dir });
 }
+
+/**
+ * Applies the tidy plan for the given directory.
+ * @param {string} dir
+ * @param {{ invoke: (cmd: string, args?: any) => Promise<any> }} options
+ * @returns {Promise<{ moved: number, errors: string[] }>}
+ */
+export async function applyTidyPlan(dir, { invoke }) {
+  if (!dir) return { moved: 0, errors: [] };
+  return await invoke("tidy_apply", { dir });
+}

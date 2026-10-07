@@ -41,14 +41,23 @@ export function toggleLayout({ totalFrames = 0, session } = {}) {
 export async function rate(view, n) {
   const targets = selectedFrames(view);
   if (!targets.length) return;
-  try {
-    for (const frame of targets) {
+  // Optimistic: the stars change on screen now; the sidecar write (a NAS round trip per
+  // photo) follows. A failure puts the old rating back and says so.
+  const before = targets.map((frame) => frame.rating);
+  for (const frame of targets) frame.rating = n;
+  refreshFrames();
+  /** @type {any[]} */
+  const unsaved = [];
+  for (const [i, frame] of targets.entries()) {
+    try {
       await invoke("set_rating", { path: frame.path, rating: n });
-      frame.rating = n;
+    } catch (error) {
+      frame.rating = before[i];
+      unsaved.push(error);
     }
-  } catch (error) {
-    hold(`Could not save photo rating: ${error}`);
-  } finally {
+  }
+  if (unsaved.length) {
+    hold(`Could not save photo rating: ${unsaved[0]}`);
     refreshFrames();
   }
 }

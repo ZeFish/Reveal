@@ -56,30 +56,30 @@
       {#if signedIn}
         <button class="publish-hero-btn" onclick={() => onPublishStory()} disabled={publishing}>
           {#if publishing}
-            <Icon name="arrows-clockwise" size="11px" class="spin" />
+            <Icon name="arrows-clockwise" size="var(--icon-md)" class="spin" />
             <span>{storyPublished ? "Updating…" : "Publishing…"}</span>
           {:else}
-            <Icon name="arrow-square-out" size="11px" />
+            <Icon name="arrow-square-out" size="var(--icon-md)" />
             <span>{storyPublished ? "Update on Garden" : "Publish to Garden"}</span>
           {/if}
         </button>
       {/if}
       <div class="secondary-actions">
         <button class="action-btn accent" onclick={() => onDevelopStory()} title="Develop every photo in the story">
-          <Icon name="sliders-horizontal" size="10px" />
+          <Icon name="sliders-horizontal" size="var(--icon-sm)" />
           <span>Develop</span>
         </button>
         <button class="action-btn accent" onclick={() => onExportLocalStory()} disabled={publishing} title="Export the photos locally">
-          <Icon name="export" size="10px" />
+          <Icon name="export" size="var(--icon-sm)" />
           <span>Export</span>
         </button>
       </div>
     </div>
     {#if signedIn && gardenUrl}
       <button class="open-page-banner" onclick={() => onOpenUrl(gardenUrl)}>
-        <Icon name="check-circle" size="12px" class="banner-check" />
+        <Icon name="check-circle" size="var(--icon-md)" class="banner-check" />
         <span class="banner-text">Live on Garden</span>
-        <Icon name="arrow-square-out" size="10px" class="banner-arrow" />
+        <Icon name="arrow-square-out" size="var(--icon-sm)" class="banner-arrow" />
       </button>
     {/if}
     {#if signedIn && publishStatus}

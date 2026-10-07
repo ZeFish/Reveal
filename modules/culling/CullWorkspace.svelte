@@ -326,6 +326,13 @@
         bind:currentScrollTop
         curDir={library.curDir}
         minRating={cullingState.minRating}
+        filtered={Boolean(
+          cullingState.minRating > 0 ||
+            cullingState.activeVirtualCollectionId ||
+            cullingState.pickFilter !== "all" ||
+            cullingState.textFilter?.trim() ||
+            storyState.filterStory,
+        )}
         {isTauri}
         {debug}
         selectGridItem={(/** @type {number} */ i, /** @type {MouseEvent | undefined} */ e) =>

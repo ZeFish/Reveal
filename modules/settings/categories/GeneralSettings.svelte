@@ -37,7 +37,7 @@
 
 <div class="section-group">
   <div class="section-heading">
-    <Icon name="gear" size="12px" />
+    <Icon name="gear" size="var(--icon-md)" />
     <span>REVEAL</span>
   </div>
   <div class="card flush list divided">
@@ -86,7 +86,7 @@
 
 <div class="section-group">
   <div class="section-heading">
-    <Icon name="palette" size="12px" />
+    <Icon name="palette" size="var(--icon-md)" />
     <span>APPEARANCE</span>
   </div>
   <div class="card flush list divided date-card">
@@ -99,7 +99,7 @@
         <Dropdown label="Theme" triggerClass="outline small action-pill-btn" align="end">
           {#snippet trigger()}
             <span>{themes.find((t) => t.id === preferences.app_theme)?.label ?? "Reveal"}</span>
-            <Icon name="caret-down" size="10px" />
+            <Icon name="caret-down" size="var(--icon-sm)" />
           {/snippet}
           {#each themes as theme}
             <DropdownItem onclick={() => onSelectTheme(theme.id)}>{theme.label}</DropdownItem>
@@ -116,7 +116,7 @@
         <Dropdown label="Text size" triggerClass="outline small action-pill-btn" align="end">
           {#snippet trigger()}
             <span>{TEXT_SIZES.find((t) => t.px === (preferences.ui_text_size ?? DEFAULT_TEXT_SIZE))?.label ?? "Default"}</span>
-            <Icon name="caret-down" size="10px" />
+            <Icon name="caret-down" size="var(--icon-sm)" />
           {/snippet}
           {#each TEXT_SIZES as size}
             <DropdownItem onclick={() => onSelectTextSize(size.px)}>{size.label} · {size.px}px</DropdownItem>
@@ -129,7 +129,7 @@
 
 <div class="section-group">
   <div class="section-heading">
-    <Icon name="heart" size="12px" />
+    <Icon name="heart" size="var(--icon-md)" />
     <span>OPEN SOURCE &amp; CREDITS</span>
   </div>
   <div class="card flush list divided">
@@ -140,7 +140,7 @@
       </div>
       <div class="row-control">
         <button type="button" class="outline small action-pill-btn" onclick={() => openExternal("https://github.com/turbasvin/spektrafilm-rs")}>
-          <Icon name="arrow-square-out" size="10px" />
+          <Icon name="arrow-square-out" size="var(--icon-sm)" />
           <span>GitHub</span>
         </button>
       </div>
@@ -152,7 +152,7 @@
       </div>
       <div class="row-control">
         <button type="button" class="outline small action-pill-btn" onclick={() => openExternal("https://github.com/CyberTimon/RapidRAW")}>
-          <Icon name="arrow-square-out" size="10px" />
+          <Icon name="arrow-square-out" size="var(--icon-sm)" />
           <span>GitHub</span>
         </button>
       </div>

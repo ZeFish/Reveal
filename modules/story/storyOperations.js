@@ -70,9 +70,23 @@ export async function toggleStoryWithPath(path, dir, onRefreshed) {
     return;
   }
   if (!path || !dir) return;
-  const updated = /** @type {string[]} */ (await invoke("story_toggle", { dir, path }));
-  storyState.storySet = new Set(updated);
-  await loadStory(dir);
+  // Optimistic: flip the mark on screen now, then ask the disk. `story_toggle` answers with
+  // the real set, which replaces the guess; a failure restores what was there.
+  const previous = storyState.storySet;
+  const stem = stemOf(path.split("/").pop() || "");
+  const guess = new Set(previous);
+  if (guess.has(stem)) guess.delete(stem);
+  else guess.add(stem);
+  storyState.storySet = guess;
+  try {
+    const updated = /** @type {string[]} */ (await invoke("story_toggle", { dir, path }));
+    storyState.storySet = new Set(updated);
+  } catch (e) {
+    storyState.storySet = previous;
+    hold(`Could not update the quick collection: ${e}`);
+    return;
+  }
+  loadStory(dir).catch(() => {});
   await onRefreshed?.();
 }
 

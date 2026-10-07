@@ -90,7 +90,6 @@ pub(crate) async fn export_to_daily_note(
             return Err("Obsidian integration is disabled in Settings.".to_string());
         }
 
-        let metadata = apple_photos::metadata_path(&path)?;
         let source = apple_photos::source(&path)?;
         let src = std::path::Path::new(&path);
         let stem = src.file_stem().unwrap_or_default().to_string_lossy();
@@ -101,8 +100,8 @@ pub(crate) async fn export_to_daily_note(
 
         let final_recipe = match recipe {
             Some(r) => r,
-            None => reveal_meta::read(&metadata)
-                .map_err(|e| e.to_string())?
+            None => crate::photo::Photo::new(&path)
+                .sidecar()?
                 .and_then(|s| s.engine_settings)
                 .and_then(|v| serde_json::from_value(v).ok())
                 .unwrap_or_default(),
@@ -128,8 +127,8 @@ pub(crate) async fn export_to_daily_note(
             chrono::Local::now()
         };
 
-        let caption = reveal_meta::read(&metadata)
-            .map_err(|e| e.to_string())?
+        let caption = crate::photo::Photo::new(&path)
+            .sidecar()?
             .and_then(|s| s.description);
 
         let vault = vault_path(&app_handle);
@@ -174,15 +173,14 @@ pub(crate) async fn export_batch_to_daily_note(
         let mut last_note = String::new();
 
         for path in &paths {
-            let metadata = apple_photos::metadata_path(path)?;
             let source = apple_photos::source(path)?;
             let src = std::path::Path::new(path);
             let stem = src.file_stem().unwrap_or_default().to_string_lossy();
             let attachment_filename = format!("{stem}.jpg");
             let out = std::path::Path::new(&dest_dir).join(&attachment_filename);
 
-            let recipe = reveal_meta::read(&metadata)
-                .map_err(|e| e.to_string())?
+            let recipe = crate::photo::Photo::new(path)
+                .sidecar()?
                 .and_then(|s| s.engine_settings)
                 .and_then(|v| serde_json::from_value(v).ok())
                 .unwrap_or_default();
@@ -207,8 +205,8 @@ pub(crate) async fn export_batch_to_daily_note(
                 chrono::Local::now()
             };
 
-            let caption = reveal_meta::read(&metadata)
-                .map_err(|e| e.to_string())?
+            let caption = crate::photo::Photo::new(path)
+                .sidecar()?
                 .and_then(|s| s.description);
 
             let np = daily.append_photos(&[attachment_filename], caption.as_deref(), capture_dt)?;
@@ -245,7 +243,7 @@ pub(crate) fn write_photo_export(
     let parent = requested.parent().ok_or("Export destination has no parent")?;
     std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     if !apple_photos::is_asset(path) {
-        std::fs::write(requested, jpeg).map_err(|e| e.to_string())?;
+        reveal_io::write_durable(requested, jpeg).map_err(|e| e.to_string())?;
         return Ok(requested.to_path_buf());
     }
     let stem = requested.file_stem().ok_or("Export filename is missing")?.to_string_lossy();
@@ -341,8 +339,8 @@ pub(crate) fn export_batch(
             event_name,
             serde_json::json!({ "done": i, "total": total, "current": name }),
         );
-        let recipe = reveal_meta::read(&apple_photos::metadata_path(path)?)
-            .map_err(|e| e.to_string())?
+        let recipe = crate::photo::Photo::new(path)
+            .sidecar()?
             .and_then(|s| s.engine_settings)
             .and_then(|v| serde_json::from_value(v).ok())
             .unwrap_or_default();

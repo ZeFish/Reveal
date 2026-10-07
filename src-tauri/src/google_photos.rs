@@ -466,10 +466,9 @@ pub(crate) async fn upload_photo_to_google_photos(
             return Err("Google Photos is not configured in Settings".to_string());
         }
 
-        let metadata = crate::apple_photos::metadata_path(&path)?;
         let source = crate::apple_photos::source(&path)?;
-        let recipe = reveal_meta::read(&metadata)
-            .map_err(|e| e.to_string())?
+        let recipe = crate::photo::Photo::new(&path)
+            .sidecar()?
             .and_then(|s| s.engine_settings)
             .and_then(|v| serde_json::from_value(v).ok())
             .unwrap_or_default();

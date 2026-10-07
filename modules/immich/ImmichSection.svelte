@@ -61,7 +61,7 @@
     aria-expanded={open}
     title={open ? "Collapse catalogue" : "Expand catalogue"}
   >
-    <span class="disc" class:open><Icon name="caret-right" size="9px" /></span>
+    <span class="disc" class:open><Icon name="caret-right" size="var(--icon-sm)" /></span>
   </button>
   <button
     class="section-main ghost"
@@ -86,7 +86,7 @@
     aria-label="Refresh Immich"
     aria-busy={immich?.busy}
   >
-    <Icon name="arrows-clockwise" size="9px" class={immich?.busy ? "spin" : ""} />
+    <Icon name="arrows-clockwise" size="var(--icon-sm)" class={immich?.busy ? "spin" : ""} />
   </button>
 </div>
 
@@ -230,7 +230,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    flex: 1;
+    /* The name takes the room it needs and gives way (ellipsis) only when the row is full. As
+       `flex: 1` it split the free space 50/50 with the spacer, so a name was cut at half the row
+       with empty space beside it. */
+    flex: 0 1 auto;
     min-width: 0;
   }
 </style>

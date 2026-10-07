@@ -17,6 +17,8 @@ import { registerMenuBridge } from "./menuBridge.js";
  * @property {(error: any) => void} [onAppError]
  * @property {(payload: any) => void} [onImportProgress]
  * @property {(payload: any) => void} [onImportPreviewReady]
+ * @property {(payload: any) => void} [onPreviewPublished]
+ * @property {(payload: any) => void} [onPreviewCleared]
  * @property {(payload: any) => void} [onImportStarted]
  * @property {(stats: any) => void} [onImportFinished]
  * @property {(err: any) => void} [onImportFailed]
@@ -57,6 +59,8 @@ export function registerAppEventListeners(on, handlers) {
   // Import lifecycle
   on("import-progress", (e) => handlers.onImportProgress?.(e.payload));
   on("import-preview-ready", (e) => handlers.onImportPreviewReady?.(e.payload));
+  on("preview-published", (e) => handlers.onPreviewPublished?.(e.payload));
+  on("preview-cleared", (e) => handlers.onPreviewCleared?.(e.payload));
   on("import-started", (e) => handlers.onImportStarted?.(e.payload));
   on("import-finished", (e) => handlers.onImportFinished?.(e.payload));
   on("import-failed", (e) => handlers.onImportFailed?.(e.payload));

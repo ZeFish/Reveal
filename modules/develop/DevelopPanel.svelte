@@ -102,6 +102,8 @@
     // what actually makes it stick: a no-op when docked (this panel shares
     // memory with the window that owns the photo), a relay emit when
     // detached (see routes/dev-panel/+page.svelte).
+    // The panel no longer has a photo-size slider: the size is the keyboard's (⌘ +, ⌘ −,
+    // ⌘ 0). The props stay because the hosts still carry the value to the view.
     photoScale = $bindable(DEFAULT_PHOTO_SIZE),
     onPhotoScaleChanged = () => {},
     activeZone = $bindable("global"),
@@ -147,25 +149,25 @@
   );
 
   let checkLayerTitle = $derived(
-    effectiveCheckLayer === "clipping" ? "Écrêtage" :
+    effectiveCheckLayer === "clipping" ? "Clipping" :
     effectiveCheckLayer === "false_color" ? "False Color" :
     effectiveCheckLayer === "saturation" ? "Saturation" :
-    effectiveCheckLayer === "hue" ? "Teintes (Hue)" :
-    effectiveCheckLayer === "solar" ? "Solarisation" : "Désactivé"
+    effectiveCheckLayer === "hue" ? "Hue" :
+    effectiveCheckLayer === "solar" ? "Solarize" : "Off"
   );
 </script>
 
-<div class="panel">
+<div class="panel" data-zone={activeZone}>
   <!-- STICKY TOP ZONE -->
   <div class="sticky-top">
     <header data-tauri-drag-region>
-      <span class="din title">{picked ?? "—"}</span>
+      <span class="font-monospace text-sm muted title">{picked ?? "—"}</span>
       <button
         class="header-util-btn ghost"
         onclick={() => onToggleDetached()}
         title={detached ? "Re-dock the panel" : "Detach into its own window"}
       >
-        <Icon name={detached ? "arrows-in-simple" : "arrow-square-out"} size="12px" />
+        <Icon name={detached ? "arrows-in-simple" : "arrow-square-out"} size="var(--icon-md)" />
       </button>
       <div class="check-menu-wrapper">
         <button
@@ -174,21 +176,21 @@
           aria-pressed={effectiveCheckLayer !== "none"}
           onclick={() => toggleClipping()}
           oncontextmenu={(e) => { e.preventDefault(); showCheckMenu = !showCheckMenu; }}
-          title={`Check Layer (${checkLayerTitle}) — Clic pour activer, clic-droit pour choisir`}
+          title={`Check Layer (${checkLayerTitle}) — click to toggle, right-click to choose`}
         >
-          <Icon name="circle-half" size="12px" />
+          <Icon name="circle-half" size="var(--icon-md)" />
           {#if effectiveCheckLayer !== "none"}
             <span class="clip-indicator {effectiveCheckLayer}"></span>
           {/if}
         </button>
         {#if showCheckMenu}
           <div class="check-menu-popover card" role="menu">
-            <button class="check-menu-item" class:selected={effectiveCheckLayer === "none"} onclick={() => { onSelectCheckLayer("none"); showCheckMenu = false; }}>Désactivé</button>
-            <button class="check-menu-item" class:selected={effectiveCheckLayer === "clipping"} onclick={() => { onSelectCheckLayer("clipping"); showCheckMenu = false; }}>Écrêtage (Hautes/Basses)</button>
-            <button class="check-menu-item" class:selected={effectiveCheckLayer === "false_color"} onclick={() => { onSelectCheckLayer("false_color"); showCheckMenu = false; }}>False Color (IRE Vidéo)</button>
-            <button class="check-menu-item" class:selected={effectiveCheckLayer === "saturation"} onclick={() => { onSelectCheckLayer("saturation"); showCheckMenu = false; }}>Masque de Saturation</button>
-            <button class="check-menu-item" class:selected={effectiveCheckLayer === "hue"} onclick={() => { onSelectCheckLayer("hue"); showCheckMenu = false; }}>Masque des Teintes (Hue)</button>
-            <button class="check-menu-item" class:selected={effectiveCheckLayer === "solar"} onclick={() => { onSelectCheckLayer("solar"); showCheckMenu = false; }}>Solarisation (Micro-contraste)</button>
+            <button class="check-menu-item" class:selected={effectiveCheckLayer === "none"} onclick={() => { onSelectCheckLayer("none"); showCheckMenu = false; }}>Off</button>
+            <button class="check-menu-item" class:selected={effectiveCheckLayer === "clipping"} onclick={() => { onSelectCheckLayer("clipping"); showCheckMenu = false; }}>Clipping (Highlights/Shadows)</button>
+            <button class="check-menu-item" class:selected={effectiveCheckLayer === "false_color"} onclick={() => { onSelectCheckLayer("false_color"); showCheckMenu = false; }}>False Color (Video IRE)</button>
+            <button class="check-menu-item" class:selected={effectiveCheckLayer === "saturation"} onclick={() => { onSelectCheckLayer("saturation"); showCheckMenu = false; }}>Saturation mask</button>
+            <button class="check-menu-item" class:selected={effectiveCheckLayer === "hue"} onclick={() => { onSelectCheckLayer("hue"); showCheckMenu = false; }}>Hue mask</button>
+            <button class="check-menu-item" class:selected={effectiveCheckLayer === "solar"} onclick={() => { onSelectCheckLayer("solar"); showCheckMenu = false; }}>Solarization (micro-contrast)</button>
           </div>
         {/if}
       </div>
@@ -198,36 +200,36 @@
         onclick={() => toggleCaptionOverlay()}
         title="Show caption at bottom of photo"
       >
-        <Icon name="subtitles" size="12px" />
+        <Icon name="subtitles" size="var(--icon-md)" />
       </button>
       <button
         class="header-util-btn ghost"
         onclick={() => openManual(activeTab === "dev" && !developEngine ? "develop/engines/" : TAB_PAGES[activeTab])}
         title="Manual — about this tab"
       >
-        <Icon name="question" size="12px" />
+        <Icon name="question" size="var(--icon-md)" />
       </button>
       <button class="close header-util-btn ghost" onclick={() => hidePanel()} title="Close panel (⇧D)">
-        <Icon name="x" size="11px" />
+        <Icon name="x" size="var(--icon-md)" />
       </button>
     </header>
 
     <!-- TAB BAR -->
     <div class="tab-bar btn-group" role="tablist" aria-label="Develop panel">
-      <button  role="tab" aria-selected={activeTab === 'dev'} onclick={() => activeTab = 'dev'} title="Dev" aria-label="Dev">
-        <Icon name="sliders-horizontal" size="14px" />
+      <button class="small" role="tab" aria-selected={activeTab === 'dev'} onclick={() => activeTab = 'dev'} title="Dev" aria-label="Dev">
+        <Icon name="sliders-horizontal" size="var(--icon-lg)" />
       </button>
-      <button  role="tab" aria-selected={activeTab === 'crop'} onclick={() => activeTab = 'crop'} title="Crop" aria-label="Crop">
-        <Icon name="crop" size="14px" />
+      <button class="small" role="tab" aria-selected={activeTab === 'crop'} onclick={() => activeTab = 'crop'} title="Crop" aria-label="Crop">
+        <Icon name="crop" size="var(--icon-lg)" />
       </button>
-      <button  role="tab" aria-selected={activeTab === 'preset'} onclick={() => activeTab = 'preset'} title="Presets" aria-label="Presets">
-        <Icon name="stack-simple" size="14px" />
+      <button class="small" role="tab" aria-selected={activeTab === 'preset'} onclick={() => activeTab = 'preset'} title="Presets" aria-label="Presets">
+        <Icon name="stack-simple" size="var(--icon-lg)" />
       </button>
-      <button  role="tab" aria-selected={activeTab === 'info'} onclick={() => activeTab = 'info'} title="Editorial" aria-label="Editorial">
-        <Icon name="newspaper" size="14px" />
+      <button class="small" role="tab" aria-selected={activeTab === 'info'} onclick={() => activeTab = 'info'} title="Editorial" aria-label="Editorial">
+        <Icon name="newspaper" size="var(--icon-lg)" />
       </button>
-      <button  role="tab" aria-selected={activeTab === 'export'} onclick={() => activeTab = 'export'} title="Export" aria-label="Export">
-        <Icon name="download-simple" size="14px" />
+      <button class="small" role="tab" aria-selected={activeTab === 'export'} onclick={() => activeTab = 'export'} title="Export" aria-label="Export">
+        <Icon name="download-simple" size="var(--icon-lg)" />
       </button>
     </div>
     <div class="hairline"></div>
@@ -258,8 +260,6 @@
         {photoPath}
         {histogram}
         {scopes}
-        bind:photoScale
-        {onPhotoScaleChanged}
       />
     {:else if activeTab === 'crop'}
       <CropTab bind:recipe {edited} />
@@ -300,9 +300,24 @@
 
 <style>
   .panel {
+    /* Every segmented bar in the panel (tabs, engine switch, zones) is `--control-h` tall: see app.scss. */
     height: 100%;
     display: flex;
     flex-direction: column;
+  }
+
+  /* The accent follows the zone being worked on — the same colours that name the zones in
+     the tabs and on the zone mask (blue shadows, green midtones, red highlights) — so sliders,
+     toggles and the pressed buttons all say which layer they are editing. Global keeps the
+     theme's own accent. */
+  .panel[data-zone="shadows"] {
+    --color-accent: var(--color-blue, #3b82f6);
+  }
+  .panel[data-zone="midtones"] {
+    --color-accent: var(--color-green, #10b981);
+  }
+  .panel[data-zone="highlights"] {
+    --color-accent: var(--color-red, #ef4444);
   }
 
   .sticky-top {
@@ -310,15 +325,14 @@
     display: flex;
     flex-direction: column;
     z-index: 10;
-    margin-block-end: var(--space-d2);
   }
 
   header {
     flex-shrink: 0;
     display: flex;
-    align-items: center;
-    gap: var(--space-d4);
-    padding-block-end: var(--space-d2);
+    align-items: end;
+    gap: var(--space-d2);
+    padding: 0 var(--space-d4) var(--space-d2) var(--space-d4);
   }
   .close {
     cursor: pointer;
@@ -339,8 +353,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
+    width: 1lh;
+    height:1lh;
   }
   .check-menu-wrapper {
     position: relative;
@@ -398,6 +412,7 @@
   }
 
   .hairline {
+      display:none;
     height: 1px;
     background: var(--color-border);
     margin: 0 calc(var(--space-d4) * 3);
@@ -407,12 +422,22 @@
   /* The tab bar is the framework's .btn-group — the same control as the
      engine switch and Frames / Editorial. This only places it. */
   .tab-bar {
-    margin-block-end: var(--space-d2);
+    margin-block-end: 0;
+  }
+  /* `small` already trims the radius and the type; the icons need less air too. */
+  .tab-bar > button {
+    min-height: var(--control-h);
+    padding-block: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .pane-scroll {
     flex: 1;
     overflow-y: auto;
+    /* No scrollbar: it sat on top of the values. The trackpad and the wheel scroll as before. */
+    scrollbar-width: none;
     display: flex;
     flex-direction: column;
     /* padding is handled within the individual tab components */

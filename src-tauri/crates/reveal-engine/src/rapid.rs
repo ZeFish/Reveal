@@ -221,10 +221,6 @@ impl RenderEngine for RapidEngine {
                 ],
             },
             ControlGroup {
-                label: "Local Tone".to_string(),
-                controls: zone_tone_controls(),
-            },
-            ControlGroup {
                 label: "Digital Effects".to_string(),
                 controls: vec![
                     EngineControl::Slider {
@@ -380,43 +376,6 @@ fn hsl_band_controls() -> Vec<EngineControl> {
     }]
 }
 
-/// Zone tone shaping (Exposure/Contrast/Saturation × Shadows/Midtones/
-/// Highlights) as the same band mixer as the colour bands above: pick a zone,
-/// adjust its three channels. Nine sliders in a 3×3 grid of cramped tracks
-/// was no more aimable than the flat column it replaced; one interaction for
-/// both sections is also one thing to learn. The zone names match the
-/// unrelated tone-recovery group's labels on purpose — same vocabulary — and
-/// the group title ("Local Tone") is what tells them apart.
-fn zone_tone_controls() -> Vec<EngineControl> {
-    const ZONES: [(&str, &str); 3] = [
-        ("zone_shadows", "Shadows"),
-        ("zone_midtones", "Midtones"),
-        ("zone_highlights", "Highlights"),
-    ];
-    let bands = ZONES
-        .iter()
-        .map(|(id_prefix, label)| MixerBand {
-            label: (*label).to_string(),
-            swatch: None,
-            fields: vec![
-                MixerField { id: format!("{id_prefix}_exposure"), index: None },
-                MixerField { id: format!("{id_prefix}_contrast"), index: None },
-                MixerField { id: format!("{id_prefix}_saturation"), index: None },
-            ],
-        })
-        .collect();
-
-    vec![EngineControl::BandMixer {
-        label: "Zone".to_string(),
-        bands,
-        channels: vec![
-            MixerChannel { label: "Exposure".to_string(), min: -2.0, max: 2.0, step: 0.05 },
-            MixerChannel { label: "Contrast".to_string(), min: -50.0, max: 50.0, step: 0.5 },
-            MixerChannel { label: "Saturation".to_string(), min: -100.0, max: 100.0, step: 1.0 },
-        ],
-    }]
-}
-
 /// Kelvin the temperature slider means at each end. The UI already labels the
 /// slider in Kelvin with exactly this mapping (EngineRunner's `formatVal`),
 /// so this makes the number on screen the number the maths uses.
@@ -548,6 +507,117 @@ fn luma_709(r: f32, g: f32, b: f32) -> f32 {
 fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
     let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
+}
+
+/// Where a photo's own black and white sit on the engine's scale, in stops
+/// relative to 1.0 (the sensor's white). Blacks and Shadows are defined by the
+/// distance above the photo's black, Highlights and Whites by the distance
+/// below its white — the way Lightroom's sliders follow the photo instead of
+/// an absolute scale it may never reach. Measured once on the whole frame and
+/// read by the global layer and by every zone, so a slider means the same
+/// thing wherever it sits.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct PhotoRange {
+    pub black: f32,
+    pub white: f32,
+}
+
+/// The black and white the slider profiles were calibrated against: a photo
+/// sitting exactly here is the old absolute behaviour.
+pub(crate) const RANGE_BLACK_REF: f32 = -9.0;
+pub(crate) const RANGE_WHITE_REF: f32 = 0.0;
+/// Percentiles that define "the photo's black and white", so one hot or dead
+/// pixel never decides where the sliders act.
+const RANGE_BLACK_PERCENTILE: f64 = 0.001;
+const RANGE_WHITE_PERCENTILE: f64 = 0.999;
+/// What a measured range may be: a frame that is black all over or blown
+/// all over must not drag the profiles somewhere absurd.
+const RANGE_BLACK_LIMITS: (f32, f32) = (-12.0, -6.0);
+const RANGE_WHITE_LIMITS: (f32, f32) = (-4.0, 1.0);
+const RANGE_MIN_SPAN: f32 = 3.0;
+const RANGE_HIST_MIN: f32 = -20.0;
+const RANGE_HIST_MAX: f32 = 4.0;
+const RANGE_HIST_BINS: usize = 2048;
+
+impl PhotoRange {
+    /// A photo that sits exactly on the calibration: every profile unmoved.
+    pub(crate) const REFERENCE: Self = Self { black: RANGE_BLACK_REF, white: RANGE_WHITE_REF };
+
+    /// Measure the frame's luminance (scene-linear ProPhoto, RGB triplets).
+    pub(crate) fn measure(data: &[f32]) -> Self {
+        use rayon::prelude::*;
+        let step = (RANGE_HIST_MAX - RANGE_HIST_MIN) / RANGE_HIST_BINS as f32;
+        let hist = data
+            .par_chunks_exact(3 * 4096)
+            .map(|block| {
+                let mut h = vec![0u32; RANGE_HIST_BINS];
+                for px in block.chunks_exact(3) {
+                    let l = luma(px[0], px[1], px[2]);
+                    let stop = if l > 0.0 { l.log2() } else { RANGE_HIST_MIN };
+                    let bin = (((stop - RANGE_HIST_MIN) / step) as isize).clamp(0, RANGE_HIST_BINS as isize - 1);
+                    h[bin as usize] += 1;
+                }
+                h
+            })
+            .reduce(
+                || vec![0u32; RANGE_HIST_BINS],
+                |mut a, b| {
+                    for (x, y) in a.iter_mut().zip(b) {
+                        *x += y;
+                    }
+                    a
+                },
+            );
+        // The trailing pixels that don't fill a block still count.
+        let mut hist = hist;
+        for px in data.chunks_exact(3 * 4096).remainder().chunks_exact(3) {
+            let l = luma(px[0], px[1], px[2]);
+            let stop = if l > 0.0 { l.log2() } else { RANGE_HIST_MIN };
+            let bin = (((stop - RANGE_HIST_MIN) / step) as isize).clamp(0, RANGE_HIST_BINS as isize - 1);
+            hist[bin as usize] += 1;
+        }
+        let total: u64 = hist.iter().map(|&n| n as u64).sum();
+        if total == 0 {
+            return Self::REFERENCE;
+        }
+        let at = |q: f64| -> f32 {
+            let target = (total as f64 * q) as u64;
+            let mut acc = 0u64;
+            for (i, &n) in hist.iter().enumerate() {
+                acc += n as u64;
+                if acc > target {
+                    return RANGE_HIST_MIN + (i as f32 + 0.5) * step;
+                }
+            }
+            RANGE_HIST_MAX
+        };
+        let (black, white) = (at(RANGE_BLACK_PERCENTILE), at(RANGE_WHITE_PERCENTILE));
+        // Judged before the limits: a frame that is flat, or black all over,
+        // has no range to follow whatever the clamps would make of it.
+        if white - black < RANGE_MIN_SPAN {
+            return Self::REFERENCE;
+        }
+        Self {
+            black: black.clamp(RANGE_BLACK_LIMITS.0, RANGE_BLACK_LIMITS.1),
+            white: white.clamp(RANGE_WHITE_LIMITS.0, RANGE_WHITE_LIMITS.1),
+        }
+    }
+
+    /// The same range after the picture has been multiplied by `gain`.
+    pub(crate) fn scaled(self, gain: f32) -> Self {
+        let stops = gain.max(1e-6).log2();
+        Self { black: self.black + stops, white: self.white + stops }
+    }
+
+    /// Factor that moves this photo's black onto the calibration black.
+    pub(crate) fn black_scale(self) -> f32 {
+        2.0f32.powf(RANGE_BLACK_REF - self.black)
+    }
+
+    /// Factor that moves this photo's white onto the calibration white.
+    pub(crate) fn white_scale(self) -> f32 {
+        2.0f32.powf(RANGE_WHITE_REF - self.white)
+    }
 }
 
 /// Shadow/midtone/highlight membership as a per-pixel luminance-weighted
@@ -715,7 +785,10 @@ fn apply_local_contrast_masked(
 
     let center_luma = (luma(r, g, b)).max(0.0);
     let safe_center_luma = center_luma.max(0.0001);
-    let safe_blurred_luma = t_blurred.max(0.0001);
+    // The guidance map holds gamma-encoded luminance; bring it back to linear
+    // before comparing, or a flat patch reads as "detail" proportional to
+    // how dark it is.
+    let safe_blurred_luma = t_blurred.max(0.0001).powf(2.2);
     let log_ratio = (safe_center_luma / safe_blurred_luma).log2();
 
     // When amount > 0, boost local micro-contrast (clarity/structure).
@@ -803,6 +876,660 @@ fn apply_dehaze(r: f32, g: f32, b: f32, t_blurred: f32, amount: f32) -> (f32, f3
     }
 }
 
+// ---------------------------------------------------------------- adjustments
+
+/// The ÷8 guidance map, as the stages that read it see it.
+pub(crate) struct Guidance<'a> {
+    pub blurred: &'a [f32],
+    pub down_w: usize,
+    pub down_h: usize,
+}
+
+impl Guidance<'_> {
+    fn at(&self, x: usize, y: usize) -> f32 {
+        get_blurred_luma(x, y, self.blurred, self.down_w, self.down_h)
+    }
+}
+
+/// The sliders of one adjustment layer, as the recipe stores them. The global
+/// layer reads them from the `Recipe` itself and each tonal zone from its
+/// `ZoneAdjustments`; the names and the units are the same, which is the
+/// point — a slider means the same thing in every layer.
+pub(crate) struct AdjustValues<'a> {
+    pub exposure_ev: f32,
+    pub contrast: f32,
+    pub saturation: f32,
+    pub temperature: f32,
+    pub tint: f32,
+    pub whites: f32,
+    pub highlights: f32,
+    pub midtones: f32,
+    pub shadows: f32,
+    pub brightness: f32,
+    pub blacks: f32,
+    pub vibrance: f32,
+    pub clarity: f32,
+    pub structure: f32,
+    pub dehaze: f32,
+    pub hsl_hue: &'a [f32],
+    pub hsl_sat: &'a [f32],
+    pub hsl_lum: &'a [f32],
+}
+
+/// One complete set of adjustments, resolved into the units the pixel loop
+/// works in (develop_rapid used to scale these into locals; doing it here, once
+/// per layer, is what lets the same code serve the global layer and each zone).
+/// `rapid_gpu` packs this field for field into the shader's `Adj`.
+#[derive(Clone, Debug)]
+pub(crate) struct Adjust {
+    pub w_mult: f32,
+    pub exposure_factor: f32,
+    pub r_temp: f32,
+    pub r_tint: f32,
+    pub g_tint: f32,
+    pub b_temp: f32,
+    pub b_tint: f32,
+    pub brightness_adj: f32,
+    pub clarity: f32,
+    pub structure: f32,
+    pub dehaze: f32,
+    pub contrast: f32,
+    pub shadows: f32,
+    pub blacks: f32,
+    pub highlights: f32,
+    pub saturation_adj: f32,
+    pub vibrance: f32,
+    /// Hue, saturation and luminance offsets for the eight colour bands.
+    pub hsl: [[f32; 8]; 3],
+    pub has_hsl: bool,
+}
+
+impl Adjust {
+    pub(crate) fn new(v: &AdjustValues) -> Self {
+        let exposure_factor = 2.0f32.powf(v.exposure_ev);
+        let saturation = (v.saturation + 1.0).max(0.0);
+        let (r_temp, b_temp) = temperature_gains(v.temperature);
+
+        // Tint (-100 to 100): the off-locus green/magenta axis. Unlike
+        // temperature this genuinely is a simple push — "tint" is by definition
+        // the deviation perpendicular to the Planckian curve.
+        let tint_shift = v.tint / 100.0;
+        let g_tint = (1.0 - tint_shift * 0.5).max(0.1);
+        let r_tint = (1.0 + tint_shift * 0.25).max(0.1);
+        let b_tint = (1.0 + tint_shift * 0.25).max(0.1);
+
+        // Global Whites multiplier (Whites processed first)
+        let whites = v.whites / 100.0;
+        let w_mult = if whites != 0.0 {
+            let white_level = 1.0 - whites * 0.25;
+            1.0 / white_level.max(0.01)
+        } else {
+            1.0
+        };
+
+        let mut hsl = [[0.0f32; 8]; 3];
+        for (row, src) in hsl.iter_mut().zip([v.hsl_hue, v.hsl_sat, v.hsl_lum]) {
+            for (i, slot) in row.iter_mut().enumerate() {
+                *slot = src.get(i).copied().unwrap_or(0.0);
+            }
+        }
+        // Any nonzero band means the user touched the HSL matrix — the recipe
+        // default ships a zeroed 8-length vec (so per-band sliders can bind
+        // to it), which would otherwise make `len() >= 8` true even when unused.
+        let has_hsl = hsl.iter().flatten().any(|v| *v != 0.0);
+
+        Self {
+            w_mult,
+            exposure_factor,
+            r_temp,
+            r_tint,
+            g_tint,
+            b_temp,
+            b_tint,
+            brightness_adj: v.midtones / 100.0 + v.brightness / 100.0,
+            // Percent, as `apply_local_contrast_masked` expects: it applies the
+            // 0.01 itself. Dividing here too made both sliders 100x too weak.
+            clarity: v.clarity,
+            structure: v.structure,
+            dehaze: v.dehaze / 100.0,
+            contrast: v.contrast,
+            shadows: v.shadows / 100.0,
+            blacks: v.blacks / 100.0,
+            highlights: v.highlights / 100.0,
+            saturation_adj: saturation - 1.0,
+            vibrance: v.vibrance / 100.0,
+            hsl,
+            has_hsl,
+        }
+    }
+
+    pub(crate) fn from_recipe(r: &Recipe) -> Self {
+        Self::new(&AdjustValues {
+            exposure_ev: r.exposure_ev,
+            contrast: r.contrast,
+            saturation: r.saturation,
+            temperature: r.temperature,
+            tint: r.tint,
+            whites: r.whites,
+            highlights: r.highlights,
+            midtones: r.midtones,
+            shadows: r.shadows,
+            brightness: r.brightness,
+            blacks: r.blacks,
+            vibrance: r.vibrance,
+            clarity: r.clarity,
+            structure: r.structure,
+            dehaze: r.dehaze,
+            hsl_hue: &r.hsl_hue,
+            hsl_sat: &r.hsl_sat,
+            hsl_lum: &r.hsl_lum,
+        })
+    }
+
+    pub(crate) fn from_zone(z: &crate::ZoneAdjustments) -> Self {
+        Self::new(&AdjustValues {
+            exposure_ev: z.exposure_ev,
+            contrast: z.contrast,
+            saturation: z.saturation,
+            temperature: z.temperature,
+            tint: z.tint,
+            whites: z.whites,
+            highlights: z.highlights,
+            midtones: z.midtones,
+            shadows: z.shadows,
+            brightness: z.brightness,
+            blacks: z.blacks,
+            vibrance: z.vibrance,
+            clarity: z.clarity,
+            structure: z.structure,
+            dehaze: z.dehaze,
+            hsl_hue: &z.hsl_hue,
+            hsl_sat: &z.hsl_sat,
+            hsl_lum: &z.hsl_lum,
+        })
+    }
+
+    /// Whether running this layer changes nothing at all — the test that lets an
+    /// untouched layer cost nothing. Uses the same thresholds as the stage
+    /// guards below, so "identity" and "every stage skips itself" agree.
+    pub(crate) fn is_identity(&self) -> bool {
+        self.w_mult == 1.0
+            && self.exposure_factor == 1.0
+            && self.r_temp == 1.0
+            && self.r_tint == 1.0
+            && self.g_tint == 1.0
+            && self.b_temp == 1.0
+            && self.b_tint == 1.0
+            && self.brightness_adj == 0.0
+            && self.clarity == 0.0
+            && self.structure == 0.0
+            && self.dehaze == 0.0
+            && self.contrast.abs() <= 1e-4
+            && self.shadows == 0.0
+            && self.blacks == 0.0
+            && self.highlights == 0.0
+            && self.saturation_adj.abs() <= 1e-4
+            && self.vibrance == 0.0
+            && !self.has_hsl
+    }
+
+    /// Whether a stage of this layer reads the guidance map.
+    pub(crate) fn needs_guidance(&self) -> bool {
+        self.shadows != 0.0
+            || self.blacks != 0.0
+            || self.clarity != 0.0
+            || self.structure != 0.0
+            || self.dehaze != 0.0
+    }
+
+    /// Whether a stage of this layer needs to know where the photo's black and
+    /// white sit (so the frame is measured only when one of them is touched).
+    pub(crate) fn needs_range(&self) -> bool {
+        self.shadows != 0.0 || self.blacks != 0.0 || self.highlights != 0.0 || self.w_mult != 1.0
+    }
+
+    /// The Whites gain a pixel of luminance `lum` receives, given where the
+    /// photo's white sits (`white`, stops re 1.0, after exposure). Full gain at
+    /// the photo's white, fading to none six stops below it: Whites opens or
+    /// closes the top of THIS photo and leaves its shadows alone, instead of
+    /// being a second exposure slider.
+    pub(crate) fn whites_gain(&self, lum: f32, white: f32) -> f32 {
+        if self.w_mult == 1.0 {
+            return 1.0;
+        }
+        let d = lum.max(1e-6).log2() - white;
+        1.0 + (self.w_mult - 1.0) * smoothstep(-6.0, 0.0, d)
+    }
+
+    /// Where the photo's range sits once this layer's exposure and Whites have
+    /// been applied — the range the later stages (and the zones) read.
+    pub(crate) fn range_after(&self, range: PhotoRange) -> PhotoRange {
+        let mut out = range.scaled(self.exposure_factor);
+        if self.w_mult != 1.0 {
+            out.white += self.w_mult.log2();
+        }
+        out
+    }
+
+    /// Stages 1–5: exposure and white balance, Whites, local contrast, filmic
+    /// brightness, contrast, shadows and blacks, highlights. `range` is the
+    /// photo's black and white as this layer receives it.
+    pub(crate) fn tone(
+        &self,
+        c: [f32; 3],
+        x: usize,
+        y: usize,
+        guide: &Guidance,
+        range: &PhotoRange,
+    ) -> [f32; 3] {
+        let [in_r, in_g, in_b] = c;
+        // 1. Exposure, Temp & Tint WB, then Whites (a gain weighted by how close
+        // the pixel is to the photo's own white)
+        let mut r = in_r * self.exposure_factor * self.r_temp * self.r_tint;
+        let mut g = in_g * self.exposure_factor * self.g_tint;
+        let mut b = in_b * self.exposure_factor * self.b_temp * self.b_tint;
+        if self.w_mult != 1.0 {
+            let gw = self.whites_gain(luma(r, g, b).max(0.0), range.scaled(self.exposure_factor).white);
+            r *= gw;
+            g *= gw;
+            b *= gw;
+        }
+        let range_now = self.range_after(*range);
+        let black_scale = range_now.black_scale();
+        let white_scale = range_now.white_scale();
+
+        let (clarity, structure, dehaze) = (self.clarity, self.structure, self.dehaze);
+        let (contrast, shadows, blacks, highlights) =
+            (self.contrast, self.shadows, self.blacks, self.highlights);
+
+        // Clarity, Structure, Dehaze (using guidance map)
+        if (clarity != 0.0 || structure != 0.0 || dehaze != 0.0) && !guide.blurred.is_empty() {
+            let t_blurred = guide.at(x, y);
+
+            if clarity != 0.0 {
+                let (cr, cg, cb) = apply_local_contrast(r, g, b, t_blurred, clarity);
+                r = cr;
+                g = cg;
+                b = cb;
+            }
+            if structure != 0.0 {
+                let (sr, sg, sb) = apply_local_contrast(r, g, b, t_blurred, structure);
+                r = sr;
+                g = sg;
+                b = sb;
+            }
+            if dehaze != 0.0 {
+                let (dr, dg, db) = apply_dehaze(r, g, b, t_blurred, dehaze);
+                r = dr;
+                g = dg;
+                b = db;
+            }
+        }
+
+        // 2. Filmic Exposure / Brightness (recipe.midtones + recipe.brightness)
+        if self.brightness_adj != 0.0 {
+            let color_bright = apply_filmic_exposure([r, g, b], self.brightness_adj);
+            r = color_bright[0];
+            g = color_bright[1];
+            b = color_bright[2];
+        }
+
+        // 3. Contrast: perceptual S-curve contrast around 0.5 in 1/2.2 space
+        if contrast.abs() > 1e-4 {
+            let g_power = 2.2f32;
+            let strength = 2.0f32.powf(contrast * 1.25);
+
+            let apply_contrast = |val: f32| -> f32 {
+                let safe_val = val.max(0.0);
+                let perceptual = safe_val.powf(1.0 / g_power).min(1.0);
+                let curved = if perceptual < 0.5 {
+                    0.5 * (2.0 * perceptual).powf(strength)
+                } else {
+                    1.0 - 0.5 * (2.0 * (1.0 - perceptual)).powf(strength)
+                };
+                let contrast_adjusted = curved.powf(g_power);
+                let mix_factor = smoothstep(1.0, 1.01, safe_val);
+                contrast_adjusted * (1.0 - mix_factor) + safe_val * mix_factor
+            };
+
+            r = apply_contrast(r);
+            g = apply_contrast(g);
+            b = apply_contrast(b);
+        }
+
+        // 4. Shadows & Blacks (per-pixel pivot-contrasted lift with detail recovery)
+        if shadows != 0.0 || blacks != 0.0 {
+            // The profiles below are calibrated for a black at RANGE_BLACK_REF;
+            // moving the pixel (and its neighbourhood) by the photo's own
+            // offset puts the photo's black where the curves expect it. The
+            // lift is a ratio, so it is the same ratio at the true luminance.
+            let luma_linear = (luma(r, g, b) * black_scale).max(0.0);
+            let safe_pixel_luma = luma_linear.max(0.0001);
+            let t_pixel = safe_pixel_luma.powf(0.4545);
+
+            // Lookup blurred guidance luma
+            let t_blurred = guide.at(x, y) * black_scale.powf(0.4545);
+
+            // Shadow lift profile: sh * t * (1-t)^4.5
+            let shadow_lift = shadows * t_pixel * (1.0 - t_pixel).max(0.0).powf(4.5);
+            // Black lift profile: bl * t * (1-t)^12.0
+            let black_lift = blacks * t_pixel * (1.0 - t_pixel).max(0.0).powf(12.0);
+            let lift_amount = (shadow_lift + black_lift).max(0.0);
+
+            let t_pixel_curved = (t_pixel + shadow_lift + black_lift).max(0.0);
+
+            // Stretch pivot contrast around 0.2
+            let shadow_pivot = 0.2f32;
+            let stretch_factor = 1.0 + (lift_amount * 1.3);
+            let contrasted_t = shadow_pivot + (t_pixel_curved - shadow_pivot) * stretch_factor;
+
+            let final_t = (t_pixel_curved * 0.15 + contrasted_t * 0.85).max(0.0);
+            let curved_luma = final_t.powf(2.2);
+
+            let luma_ratio = curved_luma / safe_pixel_luma;
+            r *= luma_ratio;
+            g *= luma_ratio;
+            b *= luma_ratio;
+
+            // Detail preservation / local tone mapping
+            let detail = t_pixel / t_blurred.max(0.0001);
+            let safe_detail = detail.clamp(0.8, 1.25);
+            let noise_protection = smoothstep(0.0, 0.1, t_blurred);
+            let detail_amp = 1.0 + lift_amount * 1.2 * noise_protection;
+            let enhanced_detail = safe_detail.powf(detail_amp);
+            let detail_correction = enhanced_detail / safe_detail;
+            let linear_correction = detail_correction.powf(2.2);
+
+            r *= linear_correction;
+            g *= linear_correction;
+            b *= linear_correction;
+
+            let final_luma_ratio = luma_ratio * linear_correction;
+            if final_luma_ratio > 1.0 {
+                let recovered_luma = luma(r, g, b);
+                let boost_amount = ((final_luma_ratio - 1.0) * 0.15).clamp(0.0, 0.4);
+                r = r * (1.0 - boost_amount) + recovered_luma * boost_amount;
+                g = g * (1.0 - boost_amount) + recovered_luma * boost_amount;
+                b = b * (1.0 - boost_amount) + recovered_luma * boost_amount;
+            }
+        }
+
+        // 5. Highlights (rational compression + white desaturation)
+        if highlights != 0.0 {
+            // Same idea as the blacks: the photo's white goes where the
+            // profile expects white.
+            let pixel_luma = (luma(r, g, b) * white_scale).max(0.0);
+            let safe_pixel_luma = pixel_luma.max(0.0001);
+
+            let pixel_mask_input = (safe_pixel_luma * 1.5).tanh();
+            let highlight_mask = smoothstep(0.3, 0.95, pixel_mask_input);
+
+            if highlight_mask > 0.001 {
+                let (final_adjusted_r, final_adjusted_g, final_adjusted_b) = if highlights < 0.0 {
+                    let new_luma = if pixel_luma <= 1.0 {
+                        pixel_luma.powf(1.0 - highlights * 1.75)
+                    } else {
+                        let luma_excess = pixel_luma - 1.0;
+                        let compression_strength = -highlights * 6.0;
+                        let compressed_excess =
+                            luma_excess / (1.0 + luma_excess * compression_strength);
+                        1.0 + compressed_excess
+                    };
+
+                    let luma_scale = new_luma / safe_pixel_luma;
+                    let new_luma = new_luma / white_scale; // back to the photo's own units
+                    let tonally_adjusted_r = r * luma_scale;
+                    let tonally_adjusted_g = g * luma_scale;
+                    let tonally_adjusted_b = b * luma_scale;
+
+                    let desaturation_amount = smoothstep(1.0, 10.0, pixel_luma);
+
+                    (
+                        tonally_adjusted_r * (1.0 - desaturation_amount)
+                            + new_luma * desaturation_amount,
+                        tonally_adjusted_g * (1.0 - desaturation_amount)
+                            + new_luma * desaturation_amount,
+                        tonally_adjusted_b * (1.0 - desaturation_amount)
+                            + new_luma * desaturation_amount,
+                    )
+                } else {
+                    let adjustment = highlights * 1.75;
+                    let factor = 2.0f32.powf(adjustment);
+                    (r * factor, g * factor, b * factor)
+                };
+
+                r = r * (1.0 - highlight_mask) + final_adjusted_r * highlight_mask;
+                g = g * (1.0 - highlight_mask) + final_adjusted_g * highlight_mask;
+                b = b * (1.0 - highlight_mask) + final_adjusted_b * highlight_mask;
+            }
+        }
+
+        [r, g, b]
+    }
+
+    /// Stage 7: saturation, vibrance and the HSL band matrix.
+    pub(crate) fn colour(&self, c: [f32; 3]) -> [f32; 3] {
+        let [mut r, mut g, mut b] = c;
+        if self.saturation_adj.abs() > 1e-4 || self.vibrance != 0.0 || self.has_hsl {
+            let (nr, ng, nb) = apply_vibrance(r, g, b, self.saturation_adj, self.vibrance);
+            if self.has_hsl {
+                let (h, mut s, mut l) = rgb_to_hsl(nr.max(0.0), ng.max(0.0), nb.max(0.0));
+                let mut hue_adj = 0.0f32;
+                let mut sat_adj = 0.0f32;
+                let mut lum_adj = 0.0f32;
+
+                for i in 0..8 {
+                    let center = HUE_CENTERS[i];
+                    let dist = hue_distance(h, center);
+                    if dist < 45.0 {
+                        let weight = (1.0 - dist / 45.0).max(0.0);
+                        hue_adj += self.hsl[0][i] * weight;
+                        sat_adj += self.hsl[1][i] * weight;
+                        lum_adj += self.hsl[2][i] * weight;
+                    }
+                }
+
+                let new_h = (h + hue_adj).rem_euclid(360.0);
+                s = (s * (1.0 + sat_adj / 100.0)).clamp(0.0, 1.0);
+                l = (l * (1.0 + lum_adj / 100.0)).max(0.0);
+
+                let (nnr, nng, nnb) = hsl_to_rgb(new_h, s, l);
+                r = nnr;
+                g = nng;
+                b = nnb;
+            } else {
+                r = nr;
+                g = ng;
+                b = nb;
+            }
+        }
+        [r, g, b]
+    }
+}
+
+/// An adjustment layer: its sliders and its four tone-curve LUTs (luma, R, G,
+/// B; `None` where the curve is identity).
+pub(crate) struct Layer {
+    pub adjust: Adjust,
+    pub curves: [Option<Vec<f32>>; 4],
+}
+
+impl Layer {
+    fn new(adjust: Adjust, curves: [&Vec<[f32; 2]>; 4]) -> Self {
+        // Tone-curve LUTs are built once per render, not per pixel — an
+        // identity curve (the default) builds nothing at all, so a recipe that
+        // never touched a curve pays a single Option check per pixel.
+        let build = |pts: &Vec<[f32; 2]>| {
+            // A zone's curves default to empty, which also means "no curve".
+            if pts.is_empty() || crate::curves::is_identity(pts) {
+                None
+            } else {
+                crate::curves::build_lut(pts)
+            }
+        };
+        Self { adjust, curves: curves.map(build) }
+    }
+
+    pub(crate) fn has_curves(&self) -> bool {
+        self.curves.iter().any(Option::is_some)
+    }
+
+    /// Whether this layer does anything. An untouched layer costs nothing: no
+    /// zone weights, no extra pass, no extra uniforms read.
+    pub(crate) fn is_active(&self) -> bool {
+        !self.adjust.is_identity() || self.has_curves()
+    }
+
+    /// The layer's curves on display-referred 0..1 values.
+    fn apply_curves(&self, rgb: [f32; 3]) -> [f32; 3] {
+        let [mut r, mut g, mut b] = rgb.map(|v| v.clamp(0.0, 1.0));
+        if let Some(lut) = &self.curves[0] {
+            r = crate::curves::sample(lut, r);
+            g = crate::curves::sample(lut, g);
+            b = crate::curves::sample(lut, b);
+        }
+        if let Some(lut) = &self.curves[1] {
+            r = crate::curves::sample(lut, r);
+        }
+        if let Some(lut) = &self.curves[2] {
+            g = crate::curves::sample(lut, g);
+        }
+        if let Some(lut) = &self.curves[3] {
+            b = crate::curves::sample(lut, b);
+        }
+        [r, g, b]
+    }
+}
+
+/// The global layer and the three tonal-zone layers (shadows, midtones,
+/// highlights). A zone is a luminosity mask carrying a full set of the same
+/// adjustments: it is applied on top of the global result, blended by how much
+/// each pixel belongs to the zone.
+pub(crate) struct Layers {
+    pub global: Layer,
+    pub zones: [Layer; 3],
+}
+
+impl Layers {
+    pub(crate) fn from_recipe(r: &Recipe) -> Self {
+        let zone = |z: &crate::ZoneAdjustments| {
+            Layer::new(
+                Adjust::from_zone(z),
+                [&z.curve_luma, &z.curve_r, &z.curve_g, &z.curve_b],
+            )
+        };
+        Self {
+            global: Layer::new(
+                Adjust::from_recipe(r),
+                [&r.curve_luma, &r.curve_r, &r.curve_g, &r.curve_b],
+            ),
+            zones: [zone(&r.zone_shadows), zone(&r.zone_midtones), zone(&r.zone_highlights)],
+        }
+    }
+
+    pub(crate) fn zone_active(&self) -> [bool; 3] {
+        [self.zones[0].is_active(), self.zones[1].is_active(), self.zones[2].is_active()]
+    }
+
+    /// Whether any layer reads the photo's black and white.
+    pub(crate) fn needs_range(&self) -> bool {
+        self.global.adjust.needs_range() || self.zones.iter().any(|z| z.adjust.needs_range())
+    }
+
+    /// Whether any layer reads the guidance map (so it is worth building).
+    fn needs_guidance(&self) -> bool {
+        self.global.adjust.needs_guidance()
+            || self.zones.iter().any(|z| z.adjust.needs_guidance())
+    }
+}
+
+/// The ÷8 gamma-encoded luminance map that clarity, structure, dehaze and the
+/// shadows/blacks detail recovery sample, built from the input as the global
+/// layer would expose it.
+fn build_guidance(
+    input: &ImageBuf,
+    width: usize,
+    height: usize,
+    a: &Adjust,
+    range: &PhotoRange,
+) -> (Vec<f32>, usize, usize) {
+    let down_w = (width / 8).max(1);
+    let down_h = (height / 8).max(1);
+    let mut downsampled = vec![0.0f32; down_w * down_h];
+
+    for dy in 0..down_h {
+        for dx in 0..down_w {
+            let start_y = dy * 8;
+            let end_y = ((dy + 1) * 8).min(height);
+            let start_x = dx * 8;
+            let end_x = ((dx + 1) * 8).min(width);
+            let count = ((end_y - start_y) * (end_x - start_x)) as f32;
+
+            let mut r_sum = 0.0f32;
+            let mut g_sum = 0.0f32;
+            let mut b_sum = 0.0f32;
+            for y in start_y..end_y {
+                for x in start_x..end_x {
+                    let idx = (y * width + x) * 3;
+                    r_sum += input.data[idx];
+                    g_sum += input.data[idx + 1];
+                    b_sum += input.data[idx + 2];
+                }
+            }
+            let mut r_avg = (r_sum / count) * a.exposure_factor * a.r_temp * a.r_tint;
+            let mut g_avg = (g_sum / count) * a.exposure_factor * a.g_tint;
+            let mut b_avg = (b_sum / count) * a.exposure_factor * a.b_temp * a.b_tint;
+            // Whites, weighted by the photo's own white, as `tone` does.
+            let gw = a.whites_gain(luma(r_avg, g_avg, b_avg).max(0.0), range.scaled(a.exposure_factor).white);
+            r_avg *= gw;
+            g_avg *= gw;
+            b_avg *= gw;
+
+            // Filmic Exposure (using recipe.midtones + recipe.brightness)
+            let [r_proc, g_proc, b_proc] = if a.brightness_adj != 0.0 {
+                apply_filmic_exposure([r_avg, g_avg, b_avg], a.brightness_adj)
+            } else {
+                [r_avg, g_avg, b_avg]
+            };
+
+            let luma_linear = (luma(r_proc, g_proc, b_proc)).max(0.0);
+            downsampled[dy * down_w + dx] = luma_linear.max(0.0001).powf(0.4545);
+        }
+    }
+
+    // Fast 2-pass box blur (radius 2, box size 5)
+    let r_blur = 2;
+    let mut temp = vec![0.0f32; down_w * down_h];
+    for y in 0..down_h {
+        for x in 0..down_w {
+            let mut sum = 0.0f32;
+            let mut count = 0.0f32;
+            for dx in -(r_blur as i32)..=(r_blur as i32) {
+                let nx = (x as i32 + dx).clamp(0, down_w as i32 - 1) as usize;
+                sum += downsampled[y * down_w + nx];
+                count += 1.0;
+            }
+            temp[y * down_w + x] = sum / count;
+        }
+    }
+
+    let mut blurred_buf = vec![0.0f32; down_w * down_h];
+    for x in 0..down_w {
+        for y in 0..down_h {
+            let mut sum = 0.0f32;
+            let mut count = 0.0f32;
+            for dy in -(r_blur as i32)..=(r_blur as i32) {
+                let ny = (y as i32 + dy).clamp(0, down_h as i32 - 1) as usize;
+                sum += temp[ny * down_w + x];
+                count += 1.0;
+            }
+            blurred_buf[y * down_w + x] = sum / count;
+        }
+    }
+
+    (blurred_buf, down_w, down_h)
+}
+
 /// Process an `ImageBuf` using the Rapid digital RAW engine pipeline.
 /// Pre-LUTs run on scene-linear input before exposure/tone controls; post-LUTs
 /// run after tone mapping and grain on display-encoded output.
@@ -830,59 +1557,12 @@ pub(crate) fn develop_rapid_with(
         crate::lut::apply_stack_linear(&mut work_input, &pre_luts);
     }
 
-    let exposure_factor = 2.0f32.powf(recipe.exposure_ev);
-    let contrast = recipe.contrast;
-    let saturation = (recipe.saturation + 1.0).max(0.0);
-
-    let (r_temp, b_temp) = temperature_gains(recipe.temperature);
-
-    // Tint (-100 to 100): the off-locus green/magenta axis. Unlike
-    // temperature this genuinely is a simple push — "tint" is by definition
-    // the deviation perpendicular to the Planckian curve.
-    let tint_shift = recipe.tint / 100.0;
-    let g_tint = (1.0 - tint_shift * 0.5).max(0.1);
-    let r_tint = (1.0 + tint_shift * 0.25).max(0.1);
-    let b_tint = (1.0 + tint_shift * 0.25).max(0.1);
-
-    // Tonal controls
-    let whites = recipe.whites / 100.0;
-    let highlights = recipe.highlights / 100.0;
-    let midtones = recipe.midtones / 100.0;
-    let shadows = recipe.shadows / 100.0;
-
-    let brightness = recipe.brightness / 100.0;
-    let blacks = recipe.blacks / 100.0;
-    let vibrance = recipe.vibrance / 100.0;
-    let clarity = recipe.clarity / 100.0;
-    let structure = recipe.structure / 100.0;
-    let dehaze = recipe.dehaze / 100.0;
-
-    let hsl_hues = &recipe.hsl_hue;
-    let hsl_sats = &recipe.hsl_sat;
-    let hsl_lums = &recipe.hsl_lum;
-    // Any nonzero band means the user touched the HSL matrix — the recipe
-    // default now ships a zeroed 8-length vec (so per-band sliders can bind
-    // to it), which would otherwise make `len() >= 8` true even when unused.
-    let has_hsl = hsl_hues.iter().any(|v| *v != 0.0)
-        || hsl_sats.iter().any(|v| *v != 0.0)
-        || hsl_lums.iter().any(|v| *v != 0.0);
-
-    // Tone-curve LUTs are built once per render, not per pixel — an
-    // identity curve (the default) builds nothing at all, so a recipe that
-    // never touched a curve pays a single Option check per pixel.
-    let build = |pts: &Vec<[f32; 2]>| {
-        if crate::curves::is_identity(pts) {
-            None
-        } else {
-            crate::curves::build_lut(pts)
-        }
-    };
-    let curve_luma = build(&recipe.curve_luma);
-    let curve_r = build(&recipe.curve_r);
-    let curve_g = build(&recipe.curve_g);
-    let curve_b = build(&recipe.curve_b);
-    let has_curves =
-        curve_luma.is_some() || curve_r.is_some() || curve_g.is_some() || curve_b.is_some();
+    // The global layer plus the three tonal zones. Only the layers that carry a
+    // modification are run: with nothing touched but the global sliders, the
+    // zone weights are never computed and the render costs what it always did.
+    let layers = Layers::from_recipe(recipe);
+    let zone_active = layers.zone_active();
+    let any_zone = zone_active.iter().any(|a| *a);
 
     let shadows_tint = recipe.shadows_tint;
     let midtones_tint = recipe.midtones_tint;
@@ -891,127 +1571,24 @@ pub(crate) fn develop_rapid_with(
         || midtones_tint != [0.0, 0.0, 0.0]
         || highlights_tint != [0.0, 0.0, 0.0];
 
-    let zs = &recipe.zone_shadows;
-    let zm = &recipe.zone_midtones;
-    let zh = &recipe.zone_highlights;
-
-    let zone_shadows_exposure = recipe.zone_shadows_exposure + zs.exposure_ev;
-    let zone_shadows_contrast = recipe.zone_shadows_contrast + zs.contrast;
-    let zone_shadows_saturation = recipe.zone_shadows_saturation + zs.saturation;
-    let zone_midtones_exposure = recipe.zone_midtones_exposure + zm.exposure_ev;
-    let zone_midtones_contrast = recipe.zone_midtones_contrast + zm.contrast;
-    let zone_midtones_saturation = recipe.zone_midtones_saturation + zm.saturation;
-    let zone_highlights_exposure = recipe.zone_highlights_exposure + zh.exposure_ev;
-    let zone_highlights_contrast = recipe.zone_highlights_contrast + zh.contrast;
-    let zone_highlights_saturation = recipe.zone_highlights_saturation + zh.saturation;
-
-    let has_zones = zone_shadows_exposure != 0.0
-        || zone_shadows_contrast != 0.0
-        || zone_shadows_saturation != 0.0
-        || zone_midtones_exposure != 0.0
-        || zone_midtones_contrast != 0.0
-        || zone_midtones_saturation != 0.0
-        || zone_highlights_exposure != 0.0
-        || zone_highlights_contrast != 0.0
-        || zone_highlights_saturation != 0.0
-        || zs.is_active()
-        || zm.is_active()
-        || zh.is_active();
-    // Global Whites multiplier (Whites processed first)
-    let w_mult = if whites != 0.0 {
-        let white_level = 1.0 - whites * 0.25;
-        1.0 / white_level.max(0.01)
+    // Build the blurred guidance map if any layer's shadows, blacks, clarity,
+    // structure or dehaze are active.
+    // Where this photo's own black and white sit. Measured once on the whole
+    // frame, before any slider: the global layer reads it directly, and the
+    // zones read the same range as the global layer leaves it.
+    let range = if layers.needs_range() {
+        PhotoRange::measure(&work_input.data)
     } else {
-        1.0
+        PhotoRange::REFERENCE
     };
+    let zone_range = layers.global.adjust.range_after(range);
 
-    // Build blurred guidance map if shadows, blacks, clarity, structure,
-    // or dehaze are active (Phase 2)
-    let (blurred, down_w, down_h) = if shadows != 0.0
-        || blacks != 0.0
-        || clarity != 0.0
-        || structure != 0.0
-        || dehaze != 0.0
-        || zs.clarity != 0.0
-        || zm.clarity != 0.0
-        || zh.clarity != 0.0
-        {
-            let down_w = (width / 8).max(1);
-            let down_h = (height / 8).max(1);
-            let mut downsampled = vec![0.0f32; down_w * down_h];
-
-            let brightness_adj = midtones + brightness;
-
-            for dy in 0..down_h {
-                for dx in 0..down_w {
-                    let start_y = dy * 8;
-                    let end_y = ((dy + 1) * 8).min(height);
-                    let start_x = dx * 8;
-                    let end_x = ((dx + 1) * 8).min(width);
-                    let count = ((end_y - start_y) * (end_x - start_x)) as f32;
-
-                    let mut r_sum = 0.0f32;
-                    let mut g_sum = 0.0f32;
-                    let mut b_sum = 0.0f32;
-                    for y in start_y..end_y {
-                        for x in start_x..end_x {
-                            let idx = (y * width + x) * 3;
-                            r_sum += work_input.data[idx];
-                            g_sum += work_input.data[idx + 1];
-                            b_sum += work_input.data[idx + 2];
-                        }
-                    }
-                    let r_avg = (r_sum / count) * w_mult * exposure_factor * r_temp * r_tint;
-                    let g_avg = (g_sum / count) * w_mult * exposure_factor * g_tint;
-                    let b_avg = (b_sum / count) * w_mult * exposure_factor * b_temp * b_tint;
-
-                    // Filmic Exposure (using recipe.midtones + recipe.brightness)
-                    let [r_proc, g_proc, b_proc] = if brightness_adj != 0.0 {
-                        apply_filmic_exposure([r_avg, g_avg, b_avg], brightness_adj)
-                    } else {
-                        [r_avg, g_avg, b_avg]
-                    };
-
-                    let luma_linear =
-                        (luma(r_proc, g_proc, b_proc)).max(0.0);
-                    downsampled[dy * down_w + dx] = luma_linear.max(0.0001).powf(0.4545);
-                }
-            }
-
-            // Fast 2-pass box blur (radius 2, box size 5)
-            let r_blur = 2;
-            let mut temp = vec![0.0f32; down_w * down_h];
-            for y in 0..down_h {
-                for x in 0..down_w {
-                    let mut sum = 0.0f32;
-                    let mut count = 0.0f32;
-                    for dx in -(r_blur as i32)..=(r_blur as i32) {
-                        let nx = (x as i32 + dx).clamp(0, down_w as i32 - 1) as usize;
-                        sum += downsampled[y * down_w + nx];
-                        count += 1.0;
-                    }
-                    temp[y * down_w + x] = sum / count;
-                }
-            }
-
-            let mut blurred_buf = vec![0.0f32; down_w * down_h];
-            for x in 0..down_w {
-                for y in 0..down_h {
-                    let mut sum = 0.0f32;
-                    let mut count = 0.0f32;
-                    for dy in -(r_blur as i32)..=(r_blur as i32) {
-                        let ny = (y as i32 + dy).clamp(0, down_h as i32 - 1) as usize;
-                        sum += temp[ny * down_w + x];
-                        count += 1.0;
-                    }
-                    blurred_buf[y * down_w + x] = sum / count;
-                }
-            }
-
-            (blurred_buf, down_w, down_h)
-        } else {
-            (Vec::new(), 0, 0)
-        };
+    let (blurred, down_w, down_h) = if layers.needs_guidance() {
+        build_guidance(&work_input, width, height, &layers.global.adjust, &range)
+    } else {
+        (Vec::new(), 0, 0)
+    };
+    let guide = Guidance { blurred: &blurred, down_w, down_h };
 
     // The per-pixel stage on the GPU when there is one. Everything above
     // (guidance map) and below (grain, post-LUTs) stays on the CPU. A `None`
@@ -1020,41 +1597,20 @@ pub(crate) fn develop_rapid_with(
     // fallback, so a photo always develops.
     let gpu_out = if use_gpu {
         crate::rapid_gpu::run(
-        &crate::rapid_gpu::Inputs {
-            width,
-            height,
-            data: &work_input.data,
-            blurred: &blurred,
-            down_w,
-            down_h,
-            w_mult,
-            exposure_factor,
-            r_temp,
-            r_tint,
-            g_tint,
-            b_temp,
-            b_tint,
-            brightness_adj: midtones + brightness,
-            saturation_adj: saturation - 1.0,
-            contrast,
-            shadows,
-            blacks,
-            highlights,
-            clarity,
-            structure,
-            dehaze,
-            vibrance,
-            has_hsl,
-            has_color_wheels,
-            has_zones,
-            curves: [
-                curve_luma.clone(),
-                curve_r.clone(),
-                curve_g.clone(),
-                curve_b.clone(),
-            ],
-        },
-        recipe,
+            &crate::rapid_gpu::Inputs {
+                width,
+                height,
+                data: &work_input.data,
+                blurred: &blurred,
+                down_w,
+                down_h,
+                layers: &layers,
+                zone_active,
+                has_color_wheels,
+                range,
+                zone_range,
+            },
+            recipe,
         )
     } else {
         None
@@ -1076,293 +1632,60 @@ pub(crate) fn develop_rapid_with(
             let x_coord = idx % width;
             let y_coord = idx / width;
 
-            // 1. Whites multiplier, Exposure, Temp & Tint WB
-            let mut r = work_input.data[in_idx] * w_mult * exposure_factor * r_temp * r_tint;
-            let mut g = work_input.data[in_idx + 1] * w_mult * exposure_factor * g_tint;
-            let mut b = work_input.data[in_idx + 2] * w_mult * exposure_factor * b_temp * b_tint;
-
-            // Clarity, Structure, Dehaze (using guidance map)
-            if (clarity != 0.0 || structure != 0.0 || dehaze != 0.0) && !blurred.is_empty() {
-                let t_blurred = get_blurred_luma(x_coord, y_coord, &blurred, down_w, down_h);
-
-                if clarity != 0.0 {
-                    let (cr, cg, cb) = apply_local_contrast(r, g, b, t_blurred, clarity);
-                    r = cr;
-                    g = cg;
-                    b = cb;
-                }
-                if structure != 0.0 {
-                    let (sr, sg, sb) = apply_local_contrast(r, g, b, t_blurred, structure);
-                    r = sr;
-                    g = sg;
-                    b = sb;
-                }
-                if dehaze != 0.0 {
-                    let (dr, dg, db) = apply_dehaze(r, g, b, t_blurred, dehaze);
-                    r = dr;
-                    g = dg;
-                    b = db;
-                }
-            }
-
-            // 2. Filmic Exposure / Brightness (using recipe.midtones + recipe.brightness)
-            let brightness_adj = midtones + brightness;
-            if brightness_adj != 0.0 {
-                let color_bright = apply_filmic_exposure([r, g, b], brightness_adj);
-                r = color_bright[0];
-                g = color_bright[1];
-                b = color_bright[2];
-            }
-
-            // 3. Contrast: perceptual S-curve contrast around 0.5 in 1/2.2 space
-            if contrast.abs() > 1e-4 {
-                let g_power = 2.2f32;
-                let strength = 2.0f32.powf(contrast * 1.25);
-
-                let apply_contrast = |val: f32| -> f32 {
-                    let safe_val = val.max(0.0);
-                    let perceptual = safe_val.powf(1.0 / g_power).min(1.0);
-                    let curved = if perceptual < 0.5 {
-                        0.5 * (2.0 * perceptual).powf(strength)
-                    } else {
-                        1.0 - 0.5 * (2.0 * (1.0 - perceptual)).powf(strength)
-                    };
-                    let contrast_adjusted = curved.powf(g_power);
-                    let mix_factor = smoothstep(1.0, 1.01, safe_val);
-                    contrast_adjusted * (1.0 - mix_factor) + safe_val * mix_factor
-                };
-
-                r = apply_contrast(r);
-                g = apply_contrast(g);
-                b = apply_contrast(b);
-            }
-
-            // 4. Shadows & Blacks (per-pixel pivot-contrasted lift with detail recovery)
-            if shadows != 0.0 || blacks != 0.0 {
-                let luma_linear = (luma(r, g, b)).max(0.0);
-                let safe_pixel_luma = luma_linear.max(0.0001);
-                let t_pixel = safe_pixel_luma.powf(0.4545);
-
-                // Lookup blurred guidance luma
-                let t_blurred = get_blurred_luma(x_coord, y_coord, &blurred, down_w, down_h);
-
-                // Shadow lift profile: sh * t * (1-t)^4.5
-                let shadow_lift = shadows * t_pixel * (1.0 - t_pixel).max(0.0).powf(4.5);
-                // Black lift profile: bl * t * (1-t)^12.0
-                let black_lift = blacks * t_pixel * (1.0 - t_pixel).max(0.0).powf(12.0);
-                let lift_amount = (shadow_lift + black_lift).max(0.0);
-
-                let t_pixel_curved = (t_pixel + shadow_lift + black_lift).max(0.0);
-
-                // Stretch pivot contrast around 0.2
-                let shadow_pivot = 0.2f32;
-                let stretch_factor = 1.0 + (lift_amount * 1.3);
-                let contrasted_t = shadow_pivot + (t_pixel_curved - shadow_pivot) * stretch_factor;
-
-                let final_t = (t_pixel_curved * 0.15 + contrasted_t * 0.85).max(0.0);
-                let curved_luma = final_t.powf(2.2);
-
-                let luma_ratio = curved_luma / safe_pixel_luma;
-                r *= luma_ratio;
-                g *= luma_ratio;
-                b *= luma_ratio;
-
-                // Detail preservation / local tone mapping
-                let detail = t_pixel / t_blurred.max(0.0001);
-                let safe_detail = detail.clamp(0.8, 1.25);
-                let noise_protection = smoothstep(0.0, 0.1, t_blurred);
-                let detail_amp = 1.0 + lift_amount * 1.2 * noise_protection;
-                let enhanced_detail = safe_detail.powf(detail_amp);
-                let detail_correction = enhanced_detail / safe_detail;
-                let linear_correction = detail_correction.powf(2.2);
-
-                r *= linear_correction;
-                g *= linear_correction;
-                b *= linear_correction;
-
-                let final_luma_ratio = luma_ratio * linear_correction;
-                if final_luma_ratio > 1.0 {
-                    let recovered_luma = luma(r, g, b);
-                    let boost_amount = ((final_luma_ratio - 1.0) * 0.15).clamp(0.0, 0.4);
-                    r = r * (1.0 - boost_amount) + recovered_luma * boost_amount;
-                    g = g * (1.0 - boost_amount) + recovered_luma * boost_amount;
-                    b = b * (1.0 - boost_amount) + recovered_luma * boost_amount;
-                }
-            }
-
-            // 5. Highlights (rational compression + white desaturation)
-            if highlights != 0.0 {
-                let pixel_luma = (luma(r, g, b)).max(0.0);
-                let safe_pixel_luma = pixel_luma.max(0.0001);
-
-                let pixel_mask_input = (safe_pixel_luma * 1.5).tanh();
-                let highlight_mask = smoothstep(0.3, 0.95, pixel_mask_input);
-
-                if highlight_mask > 0.001 {
-                    let (final_adjusted_r, final_adjusted_g, final_adjusted_b) = if highlights < 0.0
-                    {
-                        let new_luma = if pixel_luma <= 1.0 {
-                            pixel_luma.powf(1.0 - highlights * 1.75)
-                        } else {
-                            let luma_excess = pixel_luma - 1.0;
-                            let compression_strength = -highlights * 6.0;
-                            let compressed_excess =
-                                luma_excess / (1.0 + luma_excess * compression_strength);
-                            1.0 + compressed_excess
-                        };
-
-                        let luma_scale = new_luma / safe_pixel_luma;
-                        let tonally_adjusted_r = r * luma_scale;
-                        let tonally_adjusted_g = g * luma_scale;
-                        let tonally_adjusted_b = b * luma_scale;
-
-                        let desaturation_amount = smoothstep(1.0, 10.0, pixel_luma);
-
-                        (
-                            tonally_adjusted_r * (1.0 - desaturation_amount)
-                                + new_luma * desaturation_amount,
-                            tonally_adjusted_g * (1.0 - desaturation_amount)
-                                + new_luma * desaturation_amount,
-                            tonally_adjusted_b * (1.0 - desaturation_amount)
-                                + new_luma * desaturation_amount,
-                        )
-                    } else {
-                        let adjustment = highlights * 1.75;
-                        let factor = 2.0f32.powf(adjustment);
-                        (r * factor, g * factor, b * factor)
-                    };
-
-                    r = r * (1.0 - highlight_mask) + final_adjusted_r * highlight_mask;
-                    g = g * (1.0 - highlight_mask) + final_adjusted_g * highlight_mask;
-                    b = b * (1.0 - highlight_mask) + final_adjusted_b * highlight_mask;
-                }
-            }
+            // 1–5. Global layer: white point, exposure, white balance, local
+            // contrast, brightness, contrast, shadows/blacks, highlights.
+            let mut c = layers.global.adjust.tone(
+                [
+                    work_input.data[in_idx],
+                    work_input.data[in_idx + 1],
+                    work_input.data[in_idx + 2],
+                ],
+                x_coord,
+                y_coord,
+                &guide,
+                &range,
+            );
 
             // 6. 3-Way Color Wheels
             if has_color_wheels {
-                let (shadow_weight, midtone_weight, highlight_weight) = zone_weights(r, g, b);
+                let (shadow_weight, midtone_weight, highlight_weight) = zone_weights(c[0], c[1], c[2]);
 
-                r += shadows_tint[0] * shadow_weight * 0.2
+                c[0] += shadows_tint[0] * shadow_weight * 0.2
                     + midtones_tint[0] * midtone_weight * 0.2
                     + highlights_tint[0] * highlight_weight * 0.2;
-                g += shadows_tint[1] * shadow_weight * 0.2
+                c[1] += shadows_tint[1] * shadow_weight * 0.2
                     + midtones_tint[1] * midtone_weight * 0.2
                     + highlights_tint[1] * highlight_weight * 0.2;
-                b += shadows_tint[2] * shadow_weight * 0.2
+                c[2] += shadows_tint[2] * shadow_weight * 0.2
                     + midtones_tint[2] * midtone_weight * 0.2
                     + highlights_tint[2] * highlight_weight * 0.2;
             }
 
-            // 6a. Zone Tone Shaping — mask-free Shadows/Midtones/Highlights
-            // local exposure/contrast/saturation, approximating what
-            // Lightroom's luminosity-range local masks do via the same
-            // luminance-weighted soft zones as the color wheels above,
-            // reusing the same `blurred` guidance map clarity/structure use.
-            if has_zones {
-                let (shadow_weight, midtone_weight, highlight_weight) = zone_weights(r, g, b);
+            // 7. Saturation, Vibrance & HSL Matrix (global layer)
+            c = layers.global.adjust.colour(c);
 
-                let blended_ev = zone_shadows_exposure * shadow_weight
-                    + zone_midtones_exposure * midtone_weight
-                    + zone_highlights_exposure * highlight_weight;
-                if blended_ev != 0.0 {
-                    let factor = 2f32.powf(blended_ev);
-                    r *= factor;
-                    g *= factor;
-                    b *= factor;
-                }
-
-                // Zone WB (Temperature & Tint)
-                let z_temp = zs.temperature * shadow_weight + zm.temperature * midtone_weight + zh.temperature * highlight_weight;
-                let z_tint = zs.tint * shadow_weight + zm.tint * midtone_weight + zh.tint * highlight_weight;
-                if z_temp.abs() > 0.001 || z_tint.abs() > 0.001 {
-                    let t_sh = z_tint / 100.0;
-                    let g_m = (1.0 - t_sh * 0.5).max(0.1);
-                    let r_m = (1.0 + t_sh * 0.25).max(0.1) * 2.0f32.powf(z_temp * 0.01);
-                    let b_m = (1.0 + t_sh * 0.25).max(0.1) * 2.0f32.powf(-z_temp * 0.01);
-                    r *= r_m;
-                    g *= g_m;
-                    b *= b_m;
-                }
-
-                // Zone contrast: parametric tonal curve modulation per zone (no spatial blur)
-                if zone_shadows_contrast != 0.0
-                    || zone_midtones_contrast != 0.0
-                    || zone_highlights_contrast != 0.0
-                {
-                    let lum_linear = (luma(r, g, b)).max(0.0);
-                    let t = lum_linear.sqrt().min(1.0);
-                    let cs = zone_shadows_contrast * 0.01;
-                    let cm = zone_midtones_contrast * 0.01;
-                    let ch = zone_highlights_contrast * 0.01;
-                    let dt = (t - 0.18) * cs * shadow_weight * 0.5
-                        + (t - 0.50) * cm * midtone_weight * 0.5
-                        + (t - 0.75) * ch * highlight_weight * 0.5;
-                    let t_new = (t + dt).clamp(0.0, 2.0);
-                    let lum_new = t_new * t_new;
-                    if lum_linear > 0.0001 {
-                        let scale = lum_new / lum_linear;
-                        r *= scale;
-                        g *= scale;
-                        b *= scale;
+            // 7a. Tonal zones: shadows, midtones and highlights are luminosity
+            // masks, each carrying the same set of adjustments as the global
+            // layer (the Lightroom luminosity-range masks). Each runs on top of
+            // the global result and is blended in by how much the pixel belongs
+            // to the zone. The weights are fixed from the global result, so a
+            // zone's own change never moves the mask of the next one.
+            let mut zw = [0.0f32; 3];
+            if any_zone {
+                let (ws, wm, wh) = zone_weights(c[0], c[1], c[2]);
+                zw = [ws, wm, wh];
+                for i in 0..3 {
+                    if !zone_active[i] || zw[i] <= 0.0 {
+                        continue;
+                    }
+                    let a = &layers.zones[i].adjust;
+                    let adjusted = a.colour(a.tone(c, x_coord, y_coord, &guide, &zone_range));
+                    for k in 0..3 {
+                        c[k] += (adjusted[k] - c[k]) * zw[i];
                     }
                 }
-
-                // Zone clarity
-                let z_clarity = zs.clarity * shadow_weight + zm.clarity * midtone_weight + zh.clarity * highlight_weight;
-                if !blurred.is_empty() && z_clarity.abs() > 0.001 {
-                    let t_blurred = get_blurred_luma(x_coord, y_coord, &blurred, down_w, down_h);
-                    let (cr, cg, cb) = apply_local_contrast(r, g, b, t_blurred, z_clarity);
-                    r = cr;
-                    g = cg;
-                    b = cb;
-                }
-
-                let blended_sat = zone_shadows_saturation * shadow_weight
-                    + zone_midtones_saturation * midtone_weight
-                    + zone_highlights_saturation * highlight_weight;
-                if blended_sat != 0.0 {
-                    let luma = luma(r, g, b);
-                    let sat_factor = (1.0 + blended_sat / 100.0).max(0.0);
-                    r = luma + (r - luma) * sat_factor;
-                    g = luma + (g - luma) * sat_factor;
-                    b = luma + (b - luma) * sat_factor;
-                }
             }
-
-            // 7. Saturation, Vibrance & HSL Matrix
-            if (saturation - 1.0).abs() > 1e-4 || vibrance != 0.0 || has_hsl {
-                let (nr, ng, nb) = apply_vibrance(r, g, b, saturation - 1.0, vibrance);
-                if has_hsl {
-                    let (h, mut s, mut l) = rgb_to_hsl(nr.max(0.0), ng.max(0.0), nb.max(0.0));
-                    let mut hue_adj = 0.0f32;
-                    let mut sat_adj = 0.0f32;
-                    let mut lum_adj = 0.0f32;
-
-                    for i in 0..8 {
-                        let center = HUE_CENTERS[i];
-                        let dist = hue_distance(h, center);
-                        if dist < 45.0 {
-                            let weight = (1.0 - dist / 45.0).max(0.0);
-                            hue_adj += hsl_hues.get(i).copied().unwrap_or(0.0) * weight;
-                            sat_adj += hsl_sats.get(i).copied().unwrap_or(0.0) * weight;
-                            lum_adj += hsl_lums.get(i).copied().unwrap_or(0.0) * weight;
-                        }
-                    }
-
-                    let new_h = (h + hue_adj).rem_euclid(360.0);
-                    s = (s * (1.0 + sat_adj / 100.0)).clamp(0.0, 1.0);
-                    l = (l * (1.0 + lum_adj / 100.0)).max(0.0);
-
-                    let (nnr, nng, nnb) = hsl_to_rgb(new_h, s, l);
-                    r = nnr;
-                    g = nng;
-                    b = nnb;
-                } else {
-                    r = nr;
-                    g = ng;
-                    b = nb;
-                }
-            }
+            let [mut r, mut g, mut b] = c;
 
             // 8. Vignetting
             if recipe.vignette_amount != 0.0 {
@@ -1469,29 +1792,24 @@ pub(crate) fn develop_rapid_with(
                 // (the histogram under the editor is this same space).
                 // Applying them before the tone map would make the curve's
                 // own shape meaningless, since AgX would reshape it again.
-                if has_curves {
-                    agx_r = agx_r.clamp(0.0, 1.0);
-                    agx_g = agx_g.clamp(0.0, 1.0);
-                    agx_b = agx_b.clamp(0.0, 1.0);
-                    if let Some(lut) = &curve_luma {
-                        agx_r = crate::curves::sample(lut, agx_r);
-                        agx_g = crate::curves::sample(lut, agx_g);
-                        agx_b = crate::curves::sample(lut, agx_b);
-                    }
-                    if let Some(lut) = &curve_r {
-                        agx_r = crate::curves::sample(lut, agx_r);
-                    }
-                    if let Some(lut) = &curve_g {
-                        agx_g = crate::curves::sample(lut, agx_g);
-                    }
-                    if let Some(lut) = &curve_b {
-                        agx_b = crate::curves::sample(lut, agx_b);
+                let mut out = [agx_r, agx_g, agx_b];
+                if layers.global.has_curves() {
+                    out = layers.global.apply_curves(out);
+                }
+                // A zone's curves follow the global ones and are blended in by
+                // the same zone weight (taken before the tone map).
+                for i in 0..3 {
+                    if zone_active[i] && zw[i] > 0.0 && layers.zones[i].has_curves() {
+                        let curved = layers.zones[i].apply_curves(out);
+                        for k in 0..3 {
+                            out[k] += (curved[k] - out[k]) * zw[i];
+                        }
                     }
                 }
 
-                pixel[0] = agx_r.clamp(0.0, 1.0);
-                pixel[1] = agx_g.clamp(0.0, 1.0);
-                pixel[2] = agx_b.clamp(0.0, 1.0);
+                pixel[0] = out[0].clamp(0.0, 1.0);
+                pixel[1] = out[1].clamp(0.0, 1.0);
+                pixel[2] = out[2].clamp(0.0, 1.0);
             }
         });
     } // !used_gpu — the CPU loop is both the reference and the fallback
@@ -1904,6 +2222,7 @@ fn load_lut_stack(lut_layers: &[LutLayer], luts_dir: &Path) -> Vec<(Arc<Cube>, f
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ZoneAdjustments;
 
     /// Every field a band mixer names must actually exist on `Recipe`, and
     /// indexed ones must be in range. The frontend writes these ids into a
@@ -1948,8 +2267,8 @@ mod tests {
                 }
             }
         }
-        // 8 hue bands × 3 + 3 zones × 3.
-        assert_eq!(checked, 33, "both mixers should have been reached");
+        // 8 hue bands × 3 channels.
+        assert_eq!(checked, 24, "the colour mixer should have been reached");
     }
 
     /// The gains must land on the Planckian locus, not on a straight line.
@@ -2259,10 +2578,52 @@ mod tests {
         recipe.shadows_tint = [0.05, -0.02, 0.08];
         recipe.midtones_tint = [-0.03, 0.04, 0.0];
         recipe.highlights_tint = [0.02, 0.01, -0.05];
-        recipe.zone_shadows_exposure = 0.3;
-        recipe.zone_shadows_contrast = 12.0;
-        recipe.zone_midtones_saturation = 15.0;
-        recipe.zone_highlights_contrast = -8.0;
+        // Every adjustment in every zone, curves and colour bands included: the
+        // zones run the same code as the global layer, and this is what holds the
+        // shader's copy of it to the CPU's.
+        recipe.zone_shadows = ZoneAdjustments {
+            exposure_ev: 0.3,
+            contrast: 0.2,
+            brightness: 10.0,
+            temperature: 12.0,
+            tint: -6.0,
+            saturation: -0.2,
+            vibrance: 15.0,
+            whites: -5.0,
+            highlights: -10.0,
+            midtones: 6.0,
+            shadows: 20.0,
+            blacks: -8.0,
+            clarity: 12.0,
+            structure: 8.0,
+            dehaze: 5.0,
+            hsl_hue: vec![0.0, 6.0, 0.0, -4.0, 0.0, 0.0, 9.0, 0.0],
+            hsl_sat: vec![10.0, 0.0, 0.0, 0.0, -12.0, 0.0, 0.0, 0.0],
+            hsl_lum: vec![0.0, 0.0, 8.0, 0.0, 0.0, -6.0, 0.0, 0.0],
+            curve_luma: vec![[0.0, 0.02], [0.5, 0.52], [1.0, 1.0]],
+            ..ZoneAdjustments::default()
+        };
+        recipe.zone_midtones = ZoneAdjustments {
+            contrast: -0.15,
+            saturation: 0.25,
+            temperature: -10.0,
+            tint: 5.0,
+            clarity: -8.0,
+            hsl_sat: vec![0.0, 8.0, 0.0, 0.0, 0.0, 0.0, -9.0, 0.0],
+            curve_g: vec![[0.0, 0.0], [0.5, 0.55], [1.0, 1.0]],
+            ..ZoneAdjustments::default()
+        };
+        recipe.zone_highlights = ZoneAdjustments {
+            exposure_ev: -0.4,
+            highlights: -30.0,
+            whites: 10.0,
+            saturation: -0.3,
+            vibrance: -10.0,
+            dehaze: -6.0,
+            curve_r: vec![[0.0, 0.0], [0.6, 0.55], [1.0, 0.98]],
+            curve_b: vec![[0.0, 0.0], [0.5, 0.47], [1.0, 1.0]],
+            ..ZoneAdjustments::default()
+        };
         recipe.vignette_amount = -0.35;
         recipe.agx_look = "punchy".to_string();
         recipe.curve_luma = vec![[0.0, 0.03], [0.5, 0.55], [1.0, 0.97]];
@@ -2357,6 +2718,7 @@ mod tests {
         recipe.engine = "rapid".to_string();
         recipe.exposure_ev = 0.5;
 
+        let layers = Layers::from_recipe(&recipe);
         let out = crate::rapid_gpu::run(
             &crate::rapid_gpu::Inputs {
                 width: w,
@@ -2365,27 +2727,11 @@ mod tests {
                 blurred: &[],
                 down_w: 0,
                 down_h: 0,
-                w_mult: 1.0,
-                exposure_factor: 2.0f32.powf(recipe.exposure_ev),
-                r_temp: 1.0,
-                r_tint: 1.0,
-                g_tint: 1.0,
-                b_temp: 1.0,
-                b_tint: 1.0,
-                brightness_adj: 0.0,
-                saturation_adj: 0.0,
-                contrast: 0.0,
-                shadows: 0.0,
-                blacks: 0.0,
-                highlights: 0.0,
-                clarity: 0.0,
-                structure: 0.0,
-                dehaze: 0.0,
-                vibrance: 0.0,
-                has_hsl: false,
+                layers: &layers,
+                zone_active: layers.zone_active(),
                 has_color_wheels: false,
-                has_zones: false,
-                curves: [None, None, None, None],
+                range: PhotoRange::REFERENCE,
+                zone_range: PhotoRange::REFERENCE,
             },
             &recipe,
         );
@@ -2484,7 +2830,7 @@ mod tests {
 
         let mut zoned = Recipe::default();
         zoned.engine = "rapid".to_string();
-        zoned.zone_shadows_exposure = -1.0;
+        zoned.zone_shadows.exposure_ev = -1.0;
         let zoned_out = develop_rapid(&input, &zoned, Path::new(""));
 
         let shadow_delta = (base_out.data[0] - zoned_out.data[0]).abs();
@@ -2573,13 +2919,335 @@ mod tests {
 
         let mut zoned = Recipe::default();
         zoned.engine = "rapid".to_string();
-        zoned.zone_midtones_contrast = -30.0;
+        zoned.zone_midtones.contrast = -0.3;
         let out_zoned = develop_rapid(&input, &zoned, Path::new(""));
 
         assert_ne!(
             out_zoned.data, out_base.data,
             "a zone-contrast-only recipe must actually change the render output"
         );
+    }
+    // ------------------------------------------------------------ tonal zones
+
+    /// One pixel through the CPU reference path, as part of a photo whose own
+    /// black is the calibration black (a grey at -9 stops) and whose white is
+    /// a stop above the sensor's: the sliders measure the photo, and a lone
+    /// pixel would be both its black and its white, where Highlights has
+    /// nothing to bring down.
+    fn develop_px(recipe: &Recipe, px: [f32; 3]) -> [f32; 3] {
+        let dark = 2.0f32.powf(RANGE_BLACK_REF);
+        let white = 2.0f32.powf(RANGE_WHITE_REF + 1.0);
+        let mut data = px.to_vec();
+        data.extend([dark; 3]);
+        data.extend([white; 3]);
+        let input = ImageBuf::from_data(3, 1, data);
+        let out = develop_rapid_with(&input, recipe, Path::new(""), false);
+        [out.data[0], out.data[1], out.data[2]]
+    }
+
+    fn rapid_recipe() -> Recipe {
+        let mut r = Recipe::default();
+        r.engine = "rapid".to_string();
+        r
+    }
+
+    /// A zone nobody touched must cost nothing: it is not even considered
+    /// active, so no weights are computed and no pass is run for it.
+    #[test]
+    fn untouched_zones_are_not_run() {
+        let mut recipe = rapid_recipe();
+        assert_eq!(Layers::from_recipe(&recipe).zone_active(), [false; 3]);
+
+        recipe.zone_midtones.contrast = 0.1;
+        assert_eq!(Layers::from_recipe(&recipe).zone_active(), [false, true, false]);
+
+        // A curve alone makes a zone active; so does a colour band.
+        let mut recipe = rapid_recipe();
+        recipe.zone_highlights.curve_luma = vec![[0.0, 0.0], [0.5, 0.4], [1.0, 1.0]];
+        recipe.zone_shadows.hsl_sat = vec![0.0, 0.0, 12.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        assert_eq!(Layers::from_recipe(&recipe).zone_active(), [true, false, true]);
+
+        // …and a zone left at its identity values (explicit zeros, an identity
+        // curve) is as good as untouched.
+        let mut recipe = rapid_recipe();
+        recipe.zone_shadows.curve_luma = vec![[0.0, 0.0], [1.0, 1.0]];
+        recipe.zone_shadows.hsl_hue = vec![0.0; 8];
+        assert_eq!(Layers::from_recipe(&recipe).zone_active(), [false; 3]);
+    }
+
+    /// Every adjustment, set in one zone, leaves a pixel that has no weight in
+    /// that zone exactly as it was. This is the property that makes a zone a
+    /// mask rather than a second global.
+    #[test]
+    fn a_zone_never_touches_pixels_outside_it() {
+        type Set = fn(&mut ZoneAdjustments);
+        let fields: [(&str, Set); 15] = [
+            ("exposure_ev", |z| z.exposure_ev = 1.0),
+            ("contrast", |z| z.contrast = 0.6),
+            ("brightness", |z| z.brightness = 40.0),
+            ("temperature", |z| z.temperature = 40.0),
+            ("tint", |z| z.tint = 40.0),
+            ("saturation", |z| z.saturation = 0.6),
+            ("vibrance", |z| z.vibrance = 50.0),
+            ("whites", |z| z.whites = 50.0),
+            ("highlights", |z| z.highlights = -60.0),
+            ("midtones", |z| z.midtones = 40.0),
+            ("shadows", |z| z.shadows = 60.0),
+            ("blacks", |z| z.blacks = -60.0),
+            ("hsl", |z| z.hsl_sat = vec![30.0; 8]),
+            ("curve_luma", |z| z.curve_luma = vec![[0.0, 0.1], [0.5, 0.7], [1.0, 1.0]]),
+            ("curve_r", |z| z.curve_r = vec![[0.0, 0.0], [0.5, 0.7], [1.0, 1.0]]),
+        ];
+        // (zone, a pixel with no weight in it). Pure black is all shadow, pure white
+        // (and brighter) all highlight; a midtone has no weight at either.
+        let outside: [(usize, [f32; 3]); 3] = [
+            (0, [0.9, 0.7, 0.5]),  // shadows: a bright pixel
+            (1, [0.0, 0.0, 0.0]),  // midtones: black
+            (2, [0.01, 0.008, 0.006]), // highlights: a dark pixel
+        ];
+        for (zone, px) in outside {
+            let (ws, wm, wh) = zone_weights(px[0], px[1], px[2]);
+            assert_eq!([ws, wm, wh][zone], 0.0, "test pixel must be outside zone {zone}");
+            let base = develop_px(&rapid_recipe(), px);
+            for (name, set) in fields {
+                let mut recipe = rapid_recipe();
+                let z = match zone {
+                    0 => &mut recipe.zone_shadows,
+                    1 => &mut recipe.zone_midtones,
+                    _ => &mut recipe.zone_highlights,
+                };
+                set(z);
+                assert_eq!(develop_px(&recipe, px), base, "{name} in zone {zone} moved a pixel outside it");
+            }
+        }
+    }
+
+    /// And inside its zone, each adjustment does something. (Not every
+    /// adjustment acts in every zone: a Highlights slider in the shadows zone
+    /// has nothing to work on, as in any luminosity-range mask.)
+    #[test]
+    fn zone_adjustments_act_inside_their_zone() {
+        type Set = fn(&mut ZoneAdjustments);
+        // (zone, name, setter, a pixel the zone owns)
+        let dark = [0.012, 0.008, 0.004];
+        let mid = [0.16, 0.12, 0.08];
+        let bright = [1.8, 1.4, 1.1];
+        let cases: Vec<(usize, &str, Set, [f32; 3])> = vec![
+            (0, "exposure_ev", |z| z.exposure_ev = 1.0, dark),
+            (0, "contrast", |z| z.contrast = 0.8, dark),
+            (0, "brightness", |z| z.brightness = 50.0, dark),
+            (0, "temperature", |z| z.temperature = 50.0, dark),
+            (0, "tint", |z| z.tint = 50.0, dark),
+            (0, "saturation", |z| z.saturation = -0.8, dark),
+            (0, "vibrance", |z| z.vibrance = 80.0, [0.03, 0.012, 0.006]),
+            (0, "shadows", |z| z.shadows = 80.0, dark),
+            (0, "blacks", |z| z.blacks = 80.0, dark),
+            (0, "hsl", |z| z.hsl_sat = vec![-60.0; 8], [0.03, 0.012, 0.006]),
+            (0, "curve_luma", |z| z.curve_luma = vec![[0.0, 0.2], [1.0, 1.0]], dark),
+            (1, "exposure_ev", |z| z.exposure_ev = 1.0, mid),
+            (1, "contrast", |z| z.contrast = 0.8, mid),
+            (1, "brightness", |z| z.brightness = 50.0, mid),
+            (1, "temperature", |z| z.temperature = 50.0, mid),
+            (1, "saturation", |z| z.saturation = -0.8, mid),
+            (1, "curve_g", |z| z.curve_g = vec![[0.0, 0.0], [0.5, 0.8], [1.0, 1.0]], mid),
+            (2, "exposure_ev", |z| z.exposure_ev = -1.0, bright),
+            (2, "highlights", |z| z.highlights = -80.0, bright),
+            (2, "whites", |z| z.whites = 80.0, bright),
+            (2, "saturation", |z| z.saturation = -0.8, bright),
+            (2, "curve_b", |z| z.curve_b = vec![[0.0, 0.0], [0.5, 0.2], [1.0, 1.0]], bright),
+        ];
+        for (zone, name, set, px) in cases {
+            let (ws, wm, wh) = zone_weights(px[0], px[1], px[2]);
+            assert!([ws, wm, wh][zone] > 0.3, "test pixel should sit in zone {zone}, weights {ws:.2}/{wm:.2}/{wh:.2}");
+            let base = develop_px(&rapid_recipe(), px);
+            let mut recipe = rapid_recipe();
+            let z = match zone {
+                0 => &mut recipe.zone_shadows,
+                1 => &mut recipe.zone_midtones,
+                _ => &mut recipe.zone_highlights,
+            };
+            set(z);
+            let out = develop_px(&recipe, px);
+            let moved: f32 = out.iter().zip(base).map(|(a, b)| (a - b).abs()).sum();
+            assert!(moved > 1e-4, "{name} in zone {zone} did nothing to a pixel it owns");
+        }
+    }
+
+    /// The same slider means the same thing in a zone as globally: a zone that
+    /// owns nearly the whole pixel and a global move of the same amount land
+    /// almost in the same place (the zone is blended in by its weight, so it
+    /// can fall a little short, never beyond). The old zone code had its own
+    /// percent-scaled formulas and could not say this.
+    #[test]
+    fn a_zone_slider_has_the_global_slider_meaning() {
+        let px = [0.0005, 0.0004, 0.0003];
+        let (ws, ..) = zone_weights(px[0], px[1], px[2]);
+        assert!(ws > 0.95, "the pixel should be nearly all shadow, weight {ws}");
+
+        let base = develop_px(&rapid_recipe(), px);
+        for (name, set_global, set_zone) in [
+            ("exposure", (|r: &mut Recipe| r.exposure_ev = 5.0) as fn(&mut Recipe), (|z: &mut ZoneAdjustments| z.exposure_ev = 5.0) as fn(&mut ZoneAdjustments)),
+        ] {
+            let mut global = rapid_recipe();
+            set_global(&mut global);
+            let mut zoned = rapid_recipe();
+            set_zone(&mut zoned.zone_shadows);
+            let g = develop_px(&global, px);
+            let z = develop_px(&zoned, px);
+            for k in 0..3 {
+                let (dg, dz) = (g[k] - base[k], z[k] - base[k]);
+                assert!(dg.abs() > 1e-5, "{name}: the global move should be visible on channel {k}");
+                assert!(dg * dz >= 0.0, "{name}: channel {k} moved the other way in the zone");
+                assert!(dz.abs() <= dg.abs() * 1.001, "{name}: channel {k} went further in the zone ({dz}) than globally ({dg})");
+                assert!(dz.abs() >= dg.abs() * 0.8, "{name}: channel {k} fell short in the zone ({dz}) of the global move ({dg})");
+            }
+        }
+    }
+
+
+    // ------------------------------------------------ the photo's own range
+
+    fn adjust_with(f: impl Fn(&mut AdjustValues)) -> Adjust {
+        let z = [0.0f32; 8];
+        let mut v = AdjustValues {
+            exposure_ev: 0.0, contrast: 0.0, saturation: 0.0, temperature: 0.0, tint: 0.0, whites: 0.0,
+            highlights: 0.0, midtones: 0.0, shadows: 0.0, brightness: 0.0, blacks: 0.0, vibrance: 0.0,
+            clarity: 0.0, structure: 0.0, dehaze: 0.0, hsl_hue: &z, hsl_sat: &z, hsl_lum: &z,
+        };
+        f(&mut v);
+        Adjust::new(&v)
+    }
+
+    /// Stops a neutral grey of luminance `lum` moves through the tone stage
+    /// when it sits in a flat neighbourhood of the same luminance.
+    fn grey_shift(adj: &Adjust, range: &PhotoRange, lum: f32) -> f32 {
+        let img = ImageBuf::from_data(16, 16, [lum; 3].repeat(256));
+        let (b, dw, dh) = build_guidance(&img, 16, 16, adj, range);
+        let guide = Guidance { blurred: &b, down_w: dw, down_h: dh };
+        let o = adj.tone([lum; 3], 8, 8, &guide, range);
+        (luma(o[0], o[1], o[2]).max(1e-9) / lum).log2()
+    }
+
+    fn log_ramp(lo: f32, hi: f32, n: usize) -> Vec<f32> {
+        (0..n)
+            .flat_map(|i| {
+                let v = 2.0f32.powf(lo + (hi - lo) * i as f32 / (n - 1) as f32);
+                [v, v, v]
+            })
+            .collect()
+    }
+
+    /// The range is where the photo's own darkest and brightest tones are, and
+    /// it does not follow a stray pixel.
+    #[test]
+    fn the_photos_range_is_measured_from_the_frame() {
+        let r = PhotoRange::measure(&log_ramp(-9.0, -1.0, 10_000));
+        assert!((r.black + 9.0).abs() < 0.3, "black {}", r.black);
+        assert!((r.white + 1.0).abs() < 0.3, "white {}", r.white);
+
+        // One blown pixel in ten thousand does not move the white.
+        let mut hot = log_ramp(-9.0, -1.0, 10_000);
+        hot.extend([16.0; 3]);
+        let h = PhotoRange::measure(&hot);
+        assert!((h.white - r.white).abs() < 0.1, "a single hot pixel moved the white to {}", h.white);
+
+        // A frame with nothing to measure leaves the calibration alone.
+        assert_eq!(PhotoRange::measure(&vec![0.0; 3 * 5000]), PhotoRange::REFERENCE);
+        assert_eq!(PhotoRange::measure(&vec![0.18; 3 * 5000]), PhotoRange::REFERENCE);
+    }
+
+    /// Blacks and Shadows act at the same place RELATIVE TO THE PHOTO's black,
+    /// Highlights and Whites relative to its white: the same slider on a photo
+    /// whose range sits lower or higher must do the same thing at the same
+    /// distance from its own end.
+    #[test]
+    fn the_sliders_follow_the_photos_black_and_white() {
+        let reference = PhotoRange { black: -9.0, white: 0.0 };
+        let low_key = PhotoRange { black: -11.5, white: -3.0 };
+        for (name, adj, from_black) in [
+            ("blacks +50", adjust_with(|v| v.blacks = 50.0), true),
+            ("blacks -50", adjust_with(|v| v.blacks = -50.0), true),
+            ("shadows +50", adjust_with(|v| v.shadows = 50.0), true),
+            ("shadows -50", adjust_with(|v| v.shadows = -50.0), true),
+            ("highlights +50", adjust_with(|v| v.highlights = 50.0), false),
+            ("highlights -50", adjust_with(|v| v.highlights = -50.0), false),
+        ] {
+            for distance in [1.0f32, 2.5, 4.0] {
+                let stop = |r: &PhotoRange| if from_black { r.black + distance } else { r.white - distance.min(2.0) };
+                let a = grey_shift(&adj, &reference, 2.0f32.powf(stop(&reference)));
+                let b = grey_shift(&adj, &low_key, 2.0f32.powf(stop(&low_key)));
+                assert!((a - b).abs() < 0.02, "{name} {distance} stops from the photo's end: {a:.3} vs {b:.3}");
+            }
+        }
+        // And it is not nothing: Highlights +50 opens the top of a low-key photo.
+        let opened = grey_shift(&adjust_with(|v| v.highlights = 50.0), &low_key, 2.0f32.powf(low_key.white));
+        assert!(opened > 0.5, "Highlights +50 should open a low-key photo's own highlights, moved {opened}");
+    }
+
+    /// Whites opens or closes the top of the photo and leaves its shadows alone
+    /// — it is no longer a second exposure slider.
+    #[test]
+    fn whites_acts_at_the_photos_white_only() {
+        let range = PhotoRange { black: -9.0, white: -2.0 };
+        let adj = adjust_with(|v| v.whites = 50.0);
+        let full = adj.w_mult.log2();
+        let at_white = grey_shift(&adj, &range, 2.0f32.powf(range.white));
+        let deep = grey_shift(&adj, &range, 2.0f32.powf(range.white - 7.0));
+        assert!((at_white - full).abs() < 0.03, "at the photo's white: {at_white} vs the full gain {full}");
+        assert!(deep.abs() < 0.01, "seven stops below the white it should not move, moved {deep}");
+        // Between the two it fades, monotonically.
+        let mut last = deep - 1e-3;
+        for d in [-6.0f32, -4.0, -2.0, -1.0, 0.0] {
+            let v = grey_shift(&adj, &range, 2.0f32.powf(range.white + d));
+            assert!(v >= last - 1e-4, "Whites is not monotone towards the white at {d}");
+            last = v;
+        }
+    }
+
+    /// The zones read the range the global layer leaves — same measurement,
+    /// shifted by what the global layer did to the whole picture.
+    #[test]
+    fn the_zones_read_the_range_the_global_layer_leaves() {
+        let range = PhotoRange { black: -9.0, white: -1.0 };
+        let global = adjust_with(|v| v.exposure_ev = 1.0);
+        let after = global.range_after(range);
+        assert!((after.black + 8.0).abs() < 1e-4 && (after.white - 0.0).abs() < 1e-4);
+        let whites = adjust_with(|v| v.whites = 50.0);
+        assert!((whites.range_after(range).white - (range.white + whites.w_mult.log2())).abs() < 1e-5);
+    }
+
+    /// Clarity and Structure had a double /100: they did almost nothing, and the
+    /// guidance map (gamma) was compared with linear luminance. Together: a flat
+    /// patch must come out unchanged, and detail on it must be amplified by about
+    /// what the slider says.
+    #[test]
+    fn clarity_and_structure_amplify_detail_and_leave_flat_areas_alone() {
+        let range = PhotoRange::REFERENCE;
+        for (name, adj) in [
+            ("clarity +50", adjust_with(|v| v.clarity = 50.0)),
+            ("clarity -40", adjust_with(|v| v.clarity = -40.0)),
+            ("structure +50", adjust_with(|v| v.structure = 50.0)),
+        ] {
+            for lum in [0.05f32, 0.18, 0.5] {
+                let flat = grey_shift(&adj, &range, lum);
+                assert!(flat.abs() < 0.02, "{name} changed a flat patch of {lum} by {flat} stops");
+            }
+        }
+        // A pixel 0.3 stop above its neighbourhood, over a mid-grey base.
+        let adj = adjust_with(|v| v.clarity = 50.0);
+        let base = 0.18f32;
+        let img = ImageBuf::from_data(16, 16, [base; 3].repeat(256));
+        let (b, dw, dh) = build_guidance(&img, 16, 16, &adj, &range);
+        let guide = Guidance { blurred: &b, down_w: dw, down_h: dh };
+        let up = base * 2.0f32.powf(0.3);
+        let hi = luma_of_out(adj.tone([up; 3], 8, 8, &guide, &range));
+        let lo = luma_of_out(adj.tone([base; 3], 8, 8, &guide, &range));
+        let gain = (hi / lo).log2() / 0.3;
+        assert!((gain - 1.5).abs() < 0.1, "clarity +50 should amplify detail about 1.5x, got {gain}");
+    }
+
+    fn luma_of_out(c: [f32; 3]) -> f32 {
+        luma(c[0], c[1], c[2]).max(1e-9)
     }
 }
 

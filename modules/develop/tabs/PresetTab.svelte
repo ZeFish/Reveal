@@ -1,5 +1,5 @@
 <script>
-  import { onMount, onDestroy } from "svelte";
+  import { onMount, onDestroy, untrack } from "svelte";
   import { listen, emit } from "@tauri-apps/api/event";
   import { invoke } from "@tauri-apps/api/core";
   import { isTauri, Icon } from "@modules/core";
@@ -29,6 +29,8 @@
   const THUMB_PX = 160;
   /** @type {Map<string, string>} `${path}::${name}` -> blob url */
   let thumbCache = $state(new Map());
+  /** @type {Set<string>} thumbnails being rendered right now */
+  const inFlight = new Set();
   /** @param {string} path @param {string} name */
   const thumbKey = (path, name) => `${path}::${name}`;
 
@@ -37,7 +39,10 @@
     if (!path || !isTauri) return;
     for (const entry of list) {
       const key = thumbKey(path, entry.name);
-      if (thumbCache.has(key)) continue;
+      // The effect re-runs every time a thumbnail lands (it reads the cache), so a render
+      // already under way must not be started a second time.
+      if (untrack(() => thumbCache.has(key)) || inFlight.has(key)) continue;
+      inFlight.add(key);
       try {
         const bytes = await invoke("develop_preview", { path, recipe: entry.recipe, maxPx: THUMB_PX });
         // A newer photo or a deleted preset may have superseded this by
@@ -50,8 +55,11 @@
         // needs SvelteMap (svelte/reactivity) for that, or a fresh
         // reference each write, which is what this does.
         thumbCache = new Map(thumbCache).set(key, URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" })));
-      } catch (_) {
+      } catch (e) {
         // leave uncached — the card falls back to its skeleton placeholder
+        console.warn(`preset thumbnail "${entry.name}": ${e}`);
+      } finally {
+        inFlight.delete(key);
       }
     }
   }
@@ -223,13 +231,13 @@
         onkeydown={(e) => e.key === "Enter" && saveCurrent()}
       />
       <button class="accent save-btn" onclick={saveCurrent} disabled={!newName.trim() || !recipe || busy}>
-        <Icon name="plus" size="10px" />
+        <Icon name="plus" size="var(--icon-sm)" />
         <span>Save</span>
       </button>
     </div>
     <p class="hint">Click applies to the current photo · ⌥-click applies to the whole selection</p>
     <button class="outline import-btn" onclick={importXmp} disabled={busy}>
-      <Icon name="download-simple" size="10px" />
+      <Icon name="download-simple" size="var(--icon-sm)" />
       <span>{busy ? "Importing…" : "Import .xmp presets…"}</span>
     </button>
     {#if importNote}
@@ -288,7 +296,7 @@
                     toggleDefaultForImport(entry);
                   }}
                 >
-                  <Icon name="star" size="10px" />
+                  <Icon name="star" size="var(--icon-sm)" />
                 </button>
                 <button
                   class="ghost icon delete-btn"
@@ -298,7 +306,7 @@
                     deletePreset(entry);
                   }}
                 >
-                  <Icon name="x" size="9px" />
+                  <Icon name="x" size="var(--icon-sm)" />
                 </button>
               </div>
             </div>
@@ -324,10 +332,13 @@
 
   .pane-scroll {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
+    scrollbar-width: none;
     display: flex;
     flex-direction: column;
-    gap: var(--space);
+    gap: var(--space-d2);
+    padding-top: var(--space-d3);
   }
 
   section {
@@ -358,14 +369,19 @@
   .panel-input {
     flex: 1;
     min-width: 0;
-    padding: var(--space-d2) var(--space-d2);
+    box-sizing: border-box;
+    height: var(--control-h);
+    min-height: 0;
+    padding: 0 var(--space-d2);
   }
   .save-btn {
+    min-height: var(--control-h);
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
     gap: var(--space-d3);
-    padding: var(--space-d2) calc(var(--space-d4) * 3);
+    padding-block: 0;
+    padding-inline: calc(var(--space-d4) * 3);
   }
   .import-btn {
     width: 100%;
@@ -373,15 +389,15 @@
     align-items: center;
     justify-content: center;
     gap: var(--space-d3);
-    padding: var(--space-d3) calc(var(--space-d4) * 3);
-    margin-top: var(--space-d3);
-  }
-  .import-note {
-    margin-top: var(--space-d3);
+    padding-inline: calc(var(--space-d4) * 3);
+    min-height: var(--control-h);
+    padding-block: 0;
   }
 
   .hint {
     margin: 0;
+    color: var(--color-subtle);
+    line-height: 1.3;
   }
 
   .list {
@@ -407,11 +423,13 @@
      than living in their own row, since a card's job now IS the image. */
   .preset-grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--space-d2);
   }
   .preset-card {
     all: unset;
+    min-width: 0;
+    box-sizing: border-box;
     cursor: pointer;
     display: flex;
     flex-direction: column;
@@ -449,7 +467,7 @@
     background: linear-gradient(
       100deg,
       var(--color-surface) 30%,
-      var(--color-surface) 50%,
+      var(--color-surface-light-2) 50%,
       var(--color-surface) 70%
     );
     background-size: 200% 100%;
@@ -479,6 +497,7 @@
     padding: 0;
   }
   .card-meta {
+    min-width: 0;
     display: flex;
     align-items: center;
     justify-content: space-between;

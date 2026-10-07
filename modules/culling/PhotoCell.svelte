@@ -95,6 +95,16 @@
   let attempt = $state(0);
   /** @type {ReturnType<typeof setTimeout> | undefined} */
   let retryTimer;
+  // A click on a cell whose picture is not there (failed, or still stuck) asks again, on a
+  // fresh URL, with the automatic retries available again. Until now the only way to get a
+  // second try was to open the photo in Develop.
+  let manualRetries = $state(0);
+  function retryNow() {
+    clearTimeout(retryTimer);
+    failed = false;
+    attempt = 0;
+    manualRetries += 1;
+  }
   function handleError() {
     if (attempt < MAX_RETRIES) {
       clearTimeout(retryTimer);
@@ -112,6 +122,7 @@
     lastKey = key;
     clearTimeout(retryTimer);
     attempt = 0;
+    manualRetries = 0;
     failed = false;
     loaded = false;
   });
@@ -138,7 +149,10 @@
   data-reveal-host
   draggable={!path.startsWith("apple-photos://")}
   ondragstart={onDragStart}
-  onclick={onSelect}
+  onclick={(e) => {
+    if (!loaded) retryNow();
+    onSelect(e);
+  }}
   ondblclick={onDblClick}
   oncontextmenu={onContextMenu}
   onkeydown={(e) => {
@@ -177,7 +191,7 @@
     <img
       data-no-zoom
       bind:this={imgEl}
-      src={Photo.thumb(path, { version: previewVersion, attempt })}
+      src={Photo.thumb(path, { version: previewVersion, attempt: manualRetries * (MAX_RETRIES + 1) + attempt })}
       alt={name}
       loading="eager"
       decoding="async"
@@ -192,7 +206,7 @@
            heavy grey block (a screen of un-decoded cells reads as calm).
            A failed decode gets a distinct glyph so it doesn't read as
            "still loading" indefinitely. -->
-      <div class="placeholder" class:failed aria-hidden="true">
+      <div class="placeholder" class:failed aria-hidden="true" title={failed ? "Preview unavailable — click to try again" : undefined}>
         <Icon name={failed ? "image-broken" : "image"} size="26px" />
       </div>
     {/if}
@@ -229,7 +243,7 @@
     ></button>
 
     {#if isExporting || isRendering}
-      <span class="loader render-badge" title={isExporting ? "Export en cours…" : "Rendering…"}></span>
+      <span class="loader render-badge" title={isExporting ? "Exporting…" : "Rendering…"}></span>
     {/if}
 
     </div>

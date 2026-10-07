@@ -78,7 +78,7 @@
 
 <div class="section-group">
   <div class="section-heading">
-    <Icon name="google-photos-logo" size="12px" />
+    <Icon name="google-photos-logo" size="var(--icon-md)" />
     <span>GOOGLE PHOTOS CONNECTION</span>
   </div>
   <ManualLink page="reference/settings/#google-photos" label="Google Photos setup and permissions in the manual" />
@@ -120,7 +120,7 @@
           <span class="row-desc">Client ID and Client Secret</span>
         </div>
         <div class="row-control">
-          <Icon name={googleDetailsOpen ? "caret-down" : "caret-right"} size="11px" />
+          <Icon name={googleDetailsOpen ? "caret-down" : "caret-right"} size="var(--icon-md)" />
         </div>
       </button>
       {#if googleDetailsOpen}
@@ -214,7 +214,7 @@
 
 <div class="section-group">
   <div class="section-heading">
-    <Icon name="google-photos-logo" size="12px" />
+    <Icon name="google-photos-logo" size="var(--icon-md)" />
     <span>EXPORT &amp; SYNC</span>
   </div>
   <div class="card flush list divided" class:disabled-card={!googleConnected}>

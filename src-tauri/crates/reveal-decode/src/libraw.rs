@@ -52,6 +52,11 @@ impl RawDecoder for LibrawDecoder {
 
             check(ffi::libraw_open_file(lr, cpath.as_ptr()), "open_file")?;
 
+            // Fujifilm stores the exposure its RAW was UNDER-exposed by (DR200
+            // and DR400 expose the sensor lower, then lift the JPEG to match).
+            // Read here, applied when the data leaves libraw.
+            let exposure_gain = raw_exposure_gain((*lr).makernotes.fuji.ExpoMidPointShift);
+
             let p = &mut (*lr).params;
             p.output_color = OUTPUT_COLOR_ACES;
             p.output_bps = 16;
@@ -93,7 +98,8 @@ impl RawDecoder for LibrawDecoder {
 
             let px = std::slice::from_raw_parts((*img).data.as_ptr() as *const u16, w * h * 3);
             const INV: f32 = 1.0 / 65535.0;
-            let data: Vec<f32> = px.iter().map(|&v| v as f32 * INV).collect();
+            let scale = INV * exposure_gain;
+            let data: Vec<f32> = px.iter().map(|&v| v as f32 * scale).collect();
 
             drop(mem);
             drop(guard);
@@ -106,6 +112,29 @@ impl RawDecoder for LibrawDecoder {
             })
         }
     }
+}
+
+/// Gain that brings a Fujifilm RAW to the brightness the camera meant.
+///
+/// `shift` is the maker note's RawExposureBias (libraw `ExpoMidPointShift`): how
+/// many stops the sensor data sits below the camera's own JPEG — -1.7 on an
+/// X-T5 at DR200, -2.5 at DR400. Reveal used to ignore it, and every such
+/// photo opened 1 to 2.5 stops darker than the camera rendered it (measured on
+/// FFPX4015: the camera JPEG's median luminance is 0.128, Rapid with every
+/// slider at 0 gave 0.028, and +1.7 EV gave 0.143).
+///
+/// TO REVISIT (Francis, 2026-10-06: "on va peut-être y retourner plus tard pour
+/// le EV"): this is applied unconditionally, to every engine, before anything
+/// else. Open questions: a preference to switch it off; whether a photo already
+/// developed under the old behaviour should keep its look (there is no version
+/// flag on the recipe); whether the compensation belongs in the engines'
+/// auto-exposure instead; and the ~0.02 EV libraw's value differs from
+/// exiftool's (-1.72 against -1.7), which is noise next to the above.
+pub fn raw_exposure_gain(shift: f32) -> f32 {
+    if !shift.is_finite() || shift.abs() < 1.0e-3 || shift.abs() > 4.0 {
+        return 1.0;
+    }
+    2.0f32.powf(-shift)
 }
 
 pub struct ThumbPreview {
@@ -425,5 +454,26 @@ mod orientation_tests {
         for flip in [-1, 1, 2, 4, 7, 99] {
             assert_eq!(oriented_dimensions(7380, 4928, flip), (7380, 4928), "flip {flip}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::raw_exposure_gain;
+
+    #[test]
+    fn a_raw_stored_under_exposed_is_brought_up_by_that_many_stops() {
+        assert!((raw_exposure_gain(-1.0) - 2.0).abs() < 1e-6);
+        assert!((raw_exposure_gain(-1.72) - 2.0f32.powf(1.72)).abs() < 1e-4);
+        assert!((raw_exposure_gain(-1.72) - 3.294).abs() < 2e-3, "about 3.3x for the X-T5 at DR200");
+        assert!((raw_exposure_gain(0.5) - 2.0f32.powf(-0.5)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn nothing_to_compensate_or_nothing_sensible_leaves_the_data_alone() {
+        assert_eq!(raw_exposure_gain(0.0), 1.0);
+        assert_eq!(raw_exposure_gain(f32::NAN), 1.0);
+        assert_eq!(raw_exposure_gain(f32::NEG_INFINITY), 1.0);
+        assert_eq!(raw_exposure_gain(-9.0), 1.0, "a garbage bias must not wreck the picture");
     }
 }

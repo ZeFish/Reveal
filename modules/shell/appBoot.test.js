@@ -97,5 +97,37 @@ describe("appBoot", () => {
       expect(exportState.folder).toBe("/out");
       expect(openPhoto).toHaveBeenCalledWith("/test/photo.raw");
     });
+
+    it("opens the last folder without waiting for the full (story) refresh of the tree", async () => {
+      const invoke = vi.fn().mockResolvedValue(null);
+      // The light refresh answers; the full one (the NAS reads) never does.
+      const refreshDirs = vi.fn((light) => (light ? Promise.resolve(true) : new Promise(() => {})));
+      const openDir = vi.fn().mockResolvedValue(undefined);
+      const boot = performAppBoot({
+        invoke,
+        developState: {},
+        loadExternalEditors: vi.fn().mockResolvedValue([]),
+        refreshDirs,
+        session: { lastDirectory: () => "/saved/dir" },
+        library: { dirs: [{ dir: "/saved/dir" }] },
+        openDir,
+        rescan: vi.fn(),
+        layouts: { cull: { focus: false } },
+        currentMode: "cull",
+        importState: {},
+        loadPreferences: vi.fn().mockResolvedValue({}),
+        settingsState: { set: vi.fn() },
+        exportState: {},
+        initCullingState: vi.fn(),
+        setGpuAvailable: vi.fn(),
+        setGardenAccount: vi.fn(),
+        openPhoto: vi.fn(),
+        openFolder: vi.fn(),
+      });
+      await boot;
+      expect(openDir).toHaveBeenCalledWith("/saved/dir", false, true);
+      expect(refreshDirs).toHaveBeenNthCalledWith(1, true);
+      expect(refreshDirs).toHaveBeenCalledTimes(2); // the full one was started, not awaited
+    });
   });
 });

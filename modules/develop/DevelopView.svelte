@@ -1,6 +1,7 @@
 <script>
   import { Icon } from "@modules/core";
   import { createScopeAnalyzer } from "./developAnalysis.js";
+  import { nextStableWidth, displayBox } from "./stableDisplayWidth.js";
   import CaptionOverlay from "./CaptionOverlay.svelte";
   import CheckLayerOverlay from "./CheckLayerOverlay.svelte";
   import CropOverlay from "./CropOverlay.svelte";
@@ -94,6 +95,24 @@
     zoneMask ? `zone_${zoneMask}` : (checkLayer !== "none" ? checkLayer : (showClipping ? "clipping" : "none"))
   );
   let aspectRatio = $state("");
+  // See stableDisplayWidth.js: the width the photo is drawn at, whatever resolution
+  // the render in front of us happens to be.
+  /** @type {{ key: string, w: number }} */
+  let stable = $state({ key: "", w: 0 });
+  let frameW = $state(0);
+  let frameH = $state(0);
+  // Only where the plain caps do the right thing today: the "frame" zoom, no caption
+  // stacked under the photo, no crop or aspect override, not mid-crop.
+  const stableStyle = $derived.by(() => {
+    if (zoomMode !== "frame" || isCropping || objectFit !== "contain") return "";
+    if (showCaption && caption.trim()) return "";
+    const box = displayBox({ frameW, frameH, percent: developPhotoPercent, stable });
+    return box ? `width: ${box.w}px; height: ${box.h}px;` : "";
+  });
+  $effect(() => {
+    picked; // another photo: start over, a thumbnail must not be drawn at the render's size
+    stable = { key: "", w: 0 };
+  });
 
   let cropAspect = $derived(
     recipe?.crop_aspect && recipe.crop_aspect !== "original" && recipe.crop_aspect !== "free"
@@ -112,10 +131,21 @@
   let isCropping = $derived(showCropOverlay);
   let rotate = $derived(isCropping ? (recipe?.crop_angle || 0) : 0);
 
-  let transformStr = $derived(`rotate(${rotate}deg) scaleX(${flipH}) scaleY(${flipV})`);
+  // Right to left, as the engine does it: the picture is turned (straighten), then mirrored.
+  let transformStr = $derived(`scaleX(${flipH}) scaleY(${flipV}) rotate(${rotate}deg)`);
+  // The crop frame is mirrored with the picture but never turned: it is upright in the
+  // straightened picture, which is what the engine cuts out.
+  let frameStr = $derived(`scaleX(${flipH}) scaleY(${flipV})`);
+
+  // The Crop tab's zoom/pan (CropOverlay computes it): the crop frame stays centred and the
+  // picture moves behind it, so the photo wears the same view the overlay does.
+  let cropViewTransform = $state("");
+  let cropViewTransition = $state("");
 
   let matStyle = $derived(
-    `${frameCap} ${cropAspect ? `aspect-ratio: ${cropAspect};` : ""} object-fit: ${objectFit}; transform: ${transformStr};`
+    `${frameCap} ${cropAspect ? `aspect-ratio: ${cropAspect};` : ""} object-fit: ${objectFit}; transform: ${
+      isCropping && cropViewTransform ? `${cropViewTransform} ` : ""
+    }${transformStr};${isCropping && cropViewTransition ? ` transition: ${cropViewTransition};` : ""}`
   );
 
   const photoEl = $derived(useCanvas ? canvasEl : imgEl);
@@ -185,6 +215,9 @@
     const target = /** @type {HTMLImageElement} */ (e.currentTarget) || imgEl;
     if (target?.naturalWidth && target?.naturalHeight) {
       aspectRatio = `${target.naturalWidth} / ${target.naturalHeight}`;
+      // A blob: URL is a develop render; reveal://thumb is the grid's thumbnail.
+      const rendered = (target.currentSrc || target.src || "").startsWith("blob:");
+      stable = nextStableWidth(stable, target.naturalWidth, target.naturalHeight, rendered);
     }
     updateHistogram();
   }
@@ -282,6 +315,8 @@
 </script>
 
 <main
+  bind:clientWidth={frameW}
+  bind:clientHeight={frameH}
   class="zoom-{zoomMode}"
   class:panning
   class:frame-overflow={zoomMode === "frame" && developPhotoPercent > 100}
@@ -299,7 +334,7 @@
       role="status"
       title="This folder is unreachable — showing the cached copy"
     >
-      <Icon name="link-break" size="12px" />
+      <Icon name="link-break" size="var(--icon-md)" />
     </div>
   {:else if busyVisible}
     <div class="render-badge" class:centred={!hasSomethingOnScreen}>
@@ -326,7 +361,7 @@
       bind:this={imgEl}
       class="photo-mat"
       class:dimmed={!!status}
-      style={matStyle}
+      style="{matStyle} {stableStyle}"
       data-no-zoom
       draggable="false"
       src={imgUrl}
@@ -363,8 +398,10 @@
       {photoEl}
       {recipe}
       {renderAspect}
-      {transformStr}
+      transformStr={frameStr}
       {onCropChange}
+      bind:viewTransform={cropViewTransform}
+      bind:viewTransition={cropViewTransition}
     />
   {/if}
 </main>

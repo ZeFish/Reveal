@@ -148,7 +148,7 @@ export function createImportPanelMirror({
     if (outcome === "success") return "Import complete";
     if (outcome === "stopped") return "Import stopped";
     if (outcome === "failure") return "Import failed";
-    return "Importation";
+    return "Importing";
   });
 
   /** @type {Array<() => void>} */
@@ -215,7 +215,7 @@ export function createImportPanelMirror({
           const dcim = e.payload.dcim;
           const matched = cards.find(c => c.dcim === dcim);
           /** @type {Card} */
-          const card = matched ? { ...matched } : { name: "Carte SD", dcim, raw_count: 0 };
+          const card = matched ? { ...matched } : { name: "SD card", dcim, raw_count: 0 };
           card.archive = e.payload.archive;
           importingCard = card;
           ejectableCard = null;

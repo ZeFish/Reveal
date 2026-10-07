@@ -20,9 +20,14 @@
   .toast {
     max-width: min(32rem, calc(100vw - 2rem));
     text-align: center;
+    /* A long message (an error with its reason) wraps instead of being cut mid-sentence;
+       past three lines it is clipped with an ellipsis. */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
     -webkit-app-region: no-drag;
     animation: toast-in 160ms ease-out;
   }

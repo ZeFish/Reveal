@@ -175,14 +175,11 @@ export function createRenderPump({
           }
           developState.imgFailed = false;
           setStatus("");
-          const frame = library.frames.find((/** @type {any} */ item) => item.path === path);
-          if (frame && px >= PREVIEW_PX) {
-            frame.previewVersion = await freshPreviewVersion(frame.path);
-            refreshFrames();
-          }
+          // The grid's new version comes from the `preview-published` event, once the
+          // sidecar has actually landed — asking for it here raced the background write.
         }
       } else {
-        const bytes = await withTimeout(invoke("develop_preview", { path, recipe: snap, maxPx: px }), RENDER_TIMEOUT_MS);
+        const bytes = await withTimeout(invoke("develop_preview", { path, recipe: snap, maxPx: px, live }), RENDER_TIMEOUT_MS);
         const url = URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" }));
         const img = new Image();
         img.src = url;
@@ -193,11 +190,6 @@ export function createRenderPump({
           onLoupeBlobCreated(url);
           developState.useCanvas = false;
           developState.imgFailed = false;
-          const frame = library.frames.find((/** @type {any} */ item) => item.path === path);
-          if (frame) {
-            frame.previewVersion = await freshPreviewVersion(frame.path);
-            refreshFrames();
-          }
           setStatus("");
         } else {
           URL.revokeObjectURL(url);

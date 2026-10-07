@@ -40,7 +40,7 @@
     pct = 0,
     eta = null,
     headerIcon = "download-simple",
-    headerText = "Importation",
+    headerText = "Importing",
     thumbUrl = (p) => `reveal://thumb?p=${encodeURIComponent(p)}`,
     onStartDrag = () => {},
     onCancelImport = () => {},
@@ -68,8 +68,8 @@
         <div class="import-text">
           <div class="header">
             <span class="title with-icon">
-              <Icon name="download-simple" size="13px" />
-              <span>Importation</span>
+              <Icon name="download-simple" size="var(--icon-lg)" />
+              <span>Importing</span>
             </span>
             {#if progress && progress.total > 0}
               <span class="count">{progress.done}/{progress.total}</span>
@@ -111,7 +111,7 @@
       <div class="content">
         <div class="header">
           <span class="title with-icon">
-            <Icon name={headerIcon} size="13px" class={outcome === "failure" ? "icon-warn" : outcome === "success" ? "icon-ok" : "icon-stopped"} />
+            <Icon name={headerIcon} size="var(--icon-lg)" class={outcome === "failure" ? "icon-warn" : outcome === "success" ? "icon-ok" : "icon-stopped"} />
             <span>{headerText}</span>
           </span>
           {#if ejectableCard}
@@ -136,7 +136,7 @@
           <span class="title">Card detected</span>
           <span class="subtitle">{idleCard.name}</span>
         </div>
-        <p class="status-text">{idleCard.raw_count} RAWs disponibles</p>
+        <p class="status-text">{idleCard.raw_count} RAW{idleCard.raw_count === 1 ? "" : "s"} available</p>
         <div class="footer-row">
           <div></div>
           <button class="ghost-cancel-btn" onclick={onOpenReveal}>
@@ -247,7 +247,10 @@
   }
 
   .progress-container {
-    margin-bottom: calc(var(--space-d4) * 3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-d3);
+    margin-bottom: var(--space-d3);
   }
 
   .progress-text {
@@ -326,6 +329,11 @@
     cursor: pointer;
     flex-shrink: 0;
     pointer-events: auto;
+    /* The same height as the buttons in the panels. */
+    min-height: var(--control-h);
+    padding-block: 0;
+    display: inline-flex;
+    align-items: center;
   }
 
   .ghost-cancel-btn:disabled {

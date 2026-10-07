@@ -31,7 +31,7 @@
 
 <div class="section-group">
   <div class="section-heading">
-    <Icon name="lightning" size="12px" />
+    <Icon name="lightning" size="var(--icon-md)" />
     <span>AI CULLING &amp; AUTOMATION</span>
   </div>
   <ManualLink page="cull/ai-cull/#what-leaves-your-mac" label="What AI culling sends, and how it works" />
@@ -76,7 +76,7 @@
         <Dropdown label="Vision provider" triggerClass="outline small action-pill-btn" align="end">
           {#snippet trigger()}
             <span>{AI_PROVIDERS.find((p) => p.id === preferences.ai_provider)?.label ?? "Anthropic (Claude)"}</span>
-            <Icon name="caret-down" size="10px" />
+            <Icon name="caret-down" size="var(--icon-sm)" />
           {/snippet}
           {#each AI_PROVIDERS as provider}
             <DropdownItem onclick={() => (preferences.ai_provider = provider.id)}>{provider.label}</DropdownItem>

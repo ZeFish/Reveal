@@ -64,7 +64,7 @@
       title="Drag to move this text"
       aria-label="Move this paragraph"
     >
-      <Icon name="dots-six-vertical" size="14px" />
+      <Icon name="dots-six-vertical" size="var(--icon-lg)" />
     </button>
 
     <textarea
@@ -85,7 +85,7 @@
           title="Move this paragraph up"
           aria-label="Move this paragraph up"
         >
-          <Icon name="caret-up" size="10px" />
+          <Icon name="caret-up" size="var(--icon-sm)" />
         </button>
       {/if}
       {#if rowIndex < totalRows - 1}
@@ -96,7 +96,7 @@
           title="Move this paragraph down"
           aria-label="Move this paragraph down"
         >
-          <Icon name="caret-down" size="10px" />
+          <Icon name="caret-down" size="var(--icon-sm)" />
         </button>
       {/if}
       <button
@@ -106,7 +106,7 @@
         title="Remove this text"
         aria-label="Delete this paragraph"
       >
-        <Icon name="x" size="10px" />
+        <Icon name="x" size="var(--icon-sm)" />
       </button>
     </div>
   </div>

@@ -9,7 +9,7 @@ import {
   handleRecipeEdited,
   undoRecipeEdit as opUndoRecipeEdit,
   redoRecipeEdit as opRedoRecipeEdit,
-  clearDevelopment as opClearDevelopment,
+  showAsShot as opShowAsShot,
   setDevNum as opSetDevNum,
   resetOne as opResetOne,
   addLutLayer as opAddLutLayer,
@@ -42,7 +42,7 @@ import {
  *   library?: any,
  *   freshPreviewVersion?: (path: string) => Promise<number>,
  *   refreshFrames?: () => void,
- *   previewUrl?: (path: string, version?: number) => string,
+ *   previewUrl?: (path: string, version?: number, asShot?: boolean) => string,
  *   getImgUrl?: () => string | null,
  *   setImgUrl?: (url: string | null) => void,
  *   sendDevStateToPanel?: () => void,
@@ -120,13 +120,16 @@ export function createDevelopController(deps) {
   }
 
   async function clearDevelopment() {
-    await opClearDevelopment({
+    const path = getPhotoPath();
+    if (!path) return;
+    // Taking the develop settings off the photo's folder is a NAS write, owed to the photo and
+    // paid by the backend once the choice of engine has stood still (photo_writes.rs). A failure
+    // to queue it is not worth stopping the switch for.
+    invoke("queue_clear_development", { path }).catch(() => {});
+    // The camera's own picture, at once — no waiting on the disk.
+    await opShowAsShot({
       state,
-      photoPath: getPhotoPath(),
-      invoke,
-      library,
-      freshPreviewVersion,
-      refreshFrames,
+      photoPath: path,
       previewUrl,
       onSetLoupeUrl: (next) => {
         const cur = getImgUrl();
@@ -138,6 +141,9 @@ export function createDevelopController(deps) {
 
   /** @param {string | null} engineId */
   function applyEngineChange(engineId) {
+    // An engine chosen again within the delay: there is nothing left to clear.
+    const path = getPhotoPath();
+    if (engineId !== null && path) invoke("cancel_photo_writes", { path }).catch(() => {});
     opApplyEngineChange(state, engineId, clearDevelopment, (live) => edited(live));
   }
 
@@ -215,6 +221,9 @@ export function createDevelopController(deps) {
       opUpdateLutOpacity(state, stage, index, value, dockedEdited),
     setLutFile: (/** @type {string} */ stage, /** @type {number} */ index, /** @type {string} */ name) =>
       opSetLutFile(state, stage, index, name, dockedEdited),
+    // Draw the photo again as it now is (the Crop tab shows the whole frame, every
+    // other tab the cropped one, so switching between them changes the picture).
+    rerender: () => scheduleRender(previewPx),
     applyEngineChange,
     dockedEngineChanged: (/** @type {string} */ value) => applyEngineChange(value === "none" ? null : value),
     applyResetRecipe: () => opApplyResetRecipe(state, invoke, () => edited()),

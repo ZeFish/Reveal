@@ -433,8 +433,8 @@ fn validate_cache_filename(filename: &str) -> Result<(), String> {
 pub fn thumbnail(path: &str, size: u32) -> Result<Vec<u8>, String> {
     let asset = info(path)?;
     let metadata = metadata_path(path)?;
-    let developed = reveal_meta::read(&metadata)
-        .map_err(|e| e.to_string())?
+    let developed = crate::photo::Photo::new(path)
+        .sidecar()?
         .is_some_and(|sidecar| sidecar.engine_settings.is_some());
     if developed {
         if let Some(preview) = super::preview_sidecar_path(&metadata).filter(|p| p.is_file()) {

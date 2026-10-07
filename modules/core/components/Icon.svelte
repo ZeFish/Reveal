@@ -26,7 +26,7 @@
 <script>
   import { icons } from "../icons.js";
 
-  let { name, size = "13px", class: className = "" } = $props();
+  let { name, size = "var(--icon-lg)", class: className = "" } = $props();
 
   const inlined = $derived(icons[/** @type {keyof typeof icons} */ (name)]);
   let fetched = $state("");
@@ -44,12 +44,14 @@
 
   // Phosphor SVGs come with hardcoded width="256" height="256". Replace those
   // with the requested size so the icon sizes cleanly without external CSS.
+  // A size given as a CSS variable (`var(--icon-md)`) is not a valid attribute value; the span's
+  // own width/height below carry it, and the SVG fills the span.
   const svg = $derived(
-    rawSvg
+    rawSvg && /^[\d.]+(px)?$/.test(String(size))
       ? rawSvg
           .replace(/width="\d+"/, `width="${size}"`)
           .replace(/height="\d+"/, `height="${size}"`)
-      : ""
+      : rawSvg
   );
 </script>
 
@@ -62,3 +64,13 @@
     aria-hidden="true"
   >{@html svg}</span>
 {/if}
+
+<style>
+  /* Phosphor SVGs in @stnd/icon carry a viewBox but no width/height, so the
+     size replacement above has nothing to match: the SVG must fill the span. */
+  .reveal-icon :global(svg) {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+</style>

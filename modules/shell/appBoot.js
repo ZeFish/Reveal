@@ -33,7 +33,7 @@ export function initSessionBoot({ session, layouts, initCullingState, exportStat
  * @param {(cmd: string, args?: any) => Promise<any>} options.invoke
  * @param {any} options.developState
  * @param {() => Promise<any>} options.loadExternalEditors
- * @param {() => Promise<any>} options.refreshDirs
+ * @param {(light?: boolean) => Promise<any>} options.refreshDirs
  * @param {any} options.session
  * @param {any} options.library
  * @param {(dir: string, restoreMode?: boolean, restoreSession?: boolean) => Promise<any>} options.openDir
@@ -92,12 +92,21 @@ export async function performAppBoot({
   setGpuAvailable(gpuAvailable);
 
   developState.developDefaults = await invoke("default_recipe").catch(() => null);
-  await refreshDirs();
+  // The tree first (the index is local and answers at once), the folder you were in right
+  // after it. The full refresh also asks the library for each folder's story note, one
+  // read per folder on the NAS: awaited here it held the whole boot — and the folder you
+  // were in — for tens of seconds. It runs behind, and only repaints the sidebar's story dots.
+  const tick = (/** @type {string} */ what) => log?.(`boot: ${what} (${Math.round(performance.now())} ms since page load)`);
+  tick("tree");
+  await refreshDirs(true);
 
   const lastDir = session.lastDirectory?.() || library.dirs?.[library.dirs.length - 1]?.dir;
   if (lastDir) {
+    tick(`opening ${lastDir}`);
     await openDir(lastDir, false, true);
+    tick("folder open");
   }
+  refreshDirs().catch((/** @type {any} */ e) => log?.(`boot: story dots failed: ${e}`));
 
   if (library.root && !library.dirs?.length) {
     rescan();

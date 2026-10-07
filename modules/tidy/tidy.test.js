@@ -7,6 +7,7 @@ import {
   formatReasons,
   formatFromDirs,
   fetchTidyPlan,
+  applyTidyPlan,
 } from "./tidyOperations.js";
 
 describe("tidyState", () => {
@@ -74,5 +75,16 @@ describe("tidyOperations", () => {
 
     const empty = await fetchTidyPlan("", { invoke });
     expect(empty).toBe(null);
+  });
+
+  it("applyTidyPlan invokes tidy_apply command", async () => {
+    const invoke = vi.fn().mockResolvedValue({ moved: 15, errors: [] });
+    const res = await applyTidyPlan("/nas/photos", { invoke });
+
+    expect(invoke).toHaveBeenCalledWith("tidy_apply", { dir: "/nas/photos" });
+    expect(res.moved).toBe(15);
+
+    const empty = await applyTidyPlan("", { invoke });
+    expect(empty).toEqual({ moved: 0, errors: [] });
   });
 });

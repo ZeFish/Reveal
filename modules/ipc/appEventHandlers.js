@@ -59,7 +59,7 @@ import { PREVIEW_PX } from "@modules/develop";
  *   applyResetRecipe: () => Promise<any>,
  *   toggleCheckLayer: () => void,
  *   clearDevelopment: () => Promise<any>,
- *   scheduleRender: (px: number) => Promise<any> | void,
+ *   scheduleRender: (px: number, live?: boolean) => Promise<any> | void,
  *   exportCurrent: (destDir?: string) => Promise<any> | void,
  *   exportSelection: () => Promise<any> | void,
  *   exportToDailyNote: (target?: string) => Promise<any> | void,
@@ -86,6 +86,43 @@ import { PREVIEW_PX } from "@modules/develop";
 export function createAppEventHandlers(deps) {
   let lastTreeRefresh = 0;
   let lastImportRefresh = 0;
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
+  let importRefreshTimer;
+
+  /**
+   * Show what an import has copied so far, in the folder on screen.
+   *
+   * At most one refresh per 250 ms, and the LAST event of a burst is never dropped — it used
+   * to be, so the final photos waited for the end of the import. The photos come first: the
+   * folder tree (which on a NAS can take seconds) refreshes after, without holding them up.
+   * @param {string} destDir
+   */
+  function scheduleImportRefresh(destDir) {
+    clearTimeout(importRefreshTimer);
+    const wait = Math.max(0, 250 - (Date.now() - lastImportRefresh));
+    importRefreshTimer = setTimeout(async () => {
+      lastImportRefresh = Date.now();
+      if (deps.library.curDir === destDir) {
+        try {
+          const rawRows = await deps.invoke("index_frames", {
+            dir: destDir,
+            minRating: deps.cullingState.minRating,
+          });
+          const rows = (Array.isArray(rawRows) ? rawRows : []).filter(
+            (r) => r.name && !r.name.startsWith(".") && !r.name.startsWith("._")
+          );
+          if (deps.library.curDir === destDir) deps.refreshLoadedFrames(rows);
+        } catch (err) {}
+      }
+      try {
+        await deps.refreshDirs(true);
+      } catch (err) {}
+      if (!deps.library.curDir) {
+        deps.importState.lastImportedFolder = destDir;
+        deps.openDir(destDir);
+      }
+    }, wait);
+  }
   /** @type {any} */
   let savedRecipeBeforeHover = null;
   /** @type {string | null} */
@@ -172,34 +209,35 @@ export function createAppEventHandlers(deps) {
         list.push(payload.dest);
         deps.importState.importedByFolder.set(payload.destDir, list);
       }
-      if (payload?.destDir) {
-        const now = Date.now();
-        if (now - lastImportRefresh > 250) {
-          lastImportRefresh = now;
-          await deps.refreshDirs(true);
-          if (!deps.library.curDir) {
-            deps.importState.lastImportedFolder = payload.destDir;
-            deps.openDir(payload.destDir);
-          } else if (deps.library.curDir === payload.destDir) {
-            try {
-              const rawRows = await deps.invoke("index_frames", {
-                dir: deps.library.curDir,
-                minRating: deps.cullingState.minRating,
-              });
-              const rows = (Array.isArray(rawRows) ? rawRows : []).filter(
-                (r) => r.name && !r.name.startsWith(".") && !r.name.startsWith("._")
-              );
-              if (deps.library.curDir === payload.destDir) deps.refreshLoadedFrames(rows);
-            } catch (err) {}
-          }
-        }
-      }
+      if (payload?.destDir) scheduleImportRefresh(payload.destDir);
     },
 
     onImportPreviewReady: (e) => {
       const { dest, version } = e ?? {};
       const frame = deps.library.frames.find((/** @type {any} */ f) => f.path === dest);
       if (frame && version) frame.previewVersion = version;
+    },
+
+    // A developed photo's `.preview.jpg` (and its caches) has just been rewritten in the
+    // background — a Rapid settle, a crop. The grid reads the sidecar's version from the cell's
+    // URL, so give the frame the new one and re-publish the list.
+    onPreviewPublished: (e) => {
+      const { path, version } = e ?? {};
+      const frame = deps.library.frames.find((/** @type {any} */ f) => f.path === path);
+      if (!frame || !version || frame.previewVersion === version) return;
+      frame.previewVersion = version;
+      deps.refreshLoadedFrames([...deps.library.frames]);
+    },
+
+    // A photo's develop settings have just been taken off its folder (the switch to "None", paid
+    // after its quiet period): its `.preview.jpg` is gone, so give the cell a new version and let
+    // it ask for the camera's picture again.
+    onPreviewCleared: (e) => {
+      const { path } = e ?? {};
+      const frame = deps.library.frames.find((/** @type {any} */ f) => f.path === path);
+      if (!frame) return;
+      frame.previewVersion = Date.now();
+      deps.refreshLoadedFrames([...deps.library.frames]);
     },
 
     onImportStarted: () => {
@@ -209,18 +247,62 @@ export function createAppEventHandlers(deps) {
 
     onImportFinished: async (stats) => {
       deps.setProgress(null);
-      deps.notify(`Import complete ✓`, 4000);
+      // The AI pass and the desktop export are built on a SUCCESSFUL import. A stopped one, or
+      // one where files failed to copy (a card pulled out mid-way), leaves what was copied in
+      // place and builds nothing on it: it used to say "complete" and still start both on the
+      // partial import, which kept every core busy for minutes.
+      const stopped = Boolean(stats?.cancelled);
+      const failed = Number(stats?.failed) || 0;
+      const succeeded = !stopped && failed === 0;
+      deps.notify(
+        stopped
+          ? "Import stopped"
+          : failed > 0
+            ? `Import incomplete — ${failed} photo${failed === 1 ? "" : "s"} could not be copied`
+            : "Import complete ✓",
+        failed > 0 ? 8000 : 4000,
+      );
+      const log = (/** @type {string} */ m) => /** @type {any} */ (globalThis).__log?.(m);
+      log(`import-finished: copied=${stats?.copied} skipped=${stats?.skipped} folders=${JSON.stringify(stats?.folders)}`);
+      // The AI pass on what was just copied starts FIRST and on its own: it used
+      // to sit behind the folder refresh and the navigation, so when either one
+      // stalled on a NAS library the picks and the desktop export never happened
+      // and nothing said so. Only folders that received new photos are culled
+      // (a skipped photo is not in `importedByFolder`).
+      if (succeeded && (deps.cullingState.aiCullMarkStory || deps.cullingState.aiCullExportDesktop) && stats?.folders?.length) {
+        const byFolder = deps.importState.importedByFolder;
+        (async () => {
+          for (const imported of stats.folders) {
+            const folderPaths = byFolder.get(imported);
+            if (!folderPaths?.length) continue;
+            log(`import-finished: AI cull ${folderPaths.length} photos in ${imported}`);
+            try {
+              await deps.triggerAiCull(imported, folderPaths);
+            } catch (e) {
+              log(`import-finished: AI cull failed in ${imported}: ${e}`);
+            }
+          }
+        })();
+      }
       if (stats?.folders?.length) {
         const lastFolder = stats.folders[stats.folders.length - 1];
         deps.importState.lastImportedFolder = lastFolder;
-        await deps.refreshDirs();
-        await deps.openDir(lastFolder);
-      }
-      if ((deps.cullingState.aiCullMarkStory || deps.cullingState.aiCullExportDesktop) && stats?.folders?.length) {
-        for (const imported of stats.folders) {
-          const folderPaths = deps.importState.importedByFolder.get(imported);
-          if (folderPaths?.length) await deps.triggerAiCull(imported, folderPaths);
+        // The tree first, light: the full refresh also reads every folder's
+        // story note and, on a NAS library, took long enough that the folder was
+        // never reached. Navigation must not wait for it.
+        try {
+          await deps.refreshDirs(true);
+        } catch (e) {
+          log(`import-finished: tree refresh failed: ${e}`);
         }
+        try {
+          await deps.openDir(lastFolder);
+          log(`import-finished: opened ${lastFolder}`);
+        } catch (e) {
+          log(`import-finished: could not open ${lastFolder}: ${e}`);
+        }
+        // Then the full refresh, in the background.
+        deps.refreshDirs().catch((/** @type {any} */ e) => log(`import-finished: full refresh failed: ${e}`));
       }
     },
 
@@ -368,9 +450,21 @@ export function createAppEventHandlers(deps) {
             savedRecipeBeforeHover = { ...deps.developState.recipe };
             savedEngineBeforeHover = deps.developState.developEngine;
           }
-          deps.developState.recipe = { ...previewRecipe };
+          // A preset carries the crop of the photo it was saved from; previewing it must not
+          // reframe this one (applying already keeps each photo's own crop).
+          const own = savedRecipeBeforeHover ?? {};
+          deps.developState.recipe = {
+            ...previewRecipe,
+            ...Object.fromEntries(
+              ["crop_aspect", "crop_angle", "crop_x", "crop_y", "crop_w", "crop_h"]
+                .filter((k) => k in own)
+                .map((k) => [k, own[k]]),
+            ),
+          };
           deps.developState.developEngine = previewRecipe.engine === "rapid" ? "rapid" : "spektra";
-          deps.scheduleRender(PREVIEW_PX);
+          // `live`: a look, not an edit — nothing is written to the photo's `.preview.jpg`.
+          // Only a click (applyRecipeToFrames) develops and saves it for real.
+          deps.scheduleRender(PREVIEW_PX, true);
           deps.sendDevStateToPanel();
         } else if (savedRecipeBeforeHover) {
           deps.developState.recipe = { ...savedRecipeBeforeHover };
@@ -378,7 +472,7 @@ export function createAppEventHandlers(deps) {
           savedRecipeBeforeHover = null;
           savedEngineBeforeHover = null;
           if (deps.developState.developEngine && deps.developState.developEngine !== "none") {
-            deps.scheduleRender(PREVIEW_PX);
+            deps.scheduleRender(PREVIEW_PX, true);
           } else {
             deps.clearDevelopment();
           }

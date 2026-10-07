@@ -261,10 +261,6 @@
     if (!n) return "";
     return n.replace(/\.[^.]+$/, "");
   }
-
-  $effect(() => {
-    console.debug(`PhotoGrid geom: viewW=${viewW} (safe=${safeViewW}) viewH=${viewH} (safe=${safeViewH}) cols=${cols} sliceLen=${slice.length} totalRows=${totalRows} framesLen=${frames.length} virtual=${virtual} layout=${layout}`);
-  });
 </script>
 
 <div
@@ -357,7 +353,7 @@
               title="Add a paragraph here"
               onclick={() => openComposer(r)}
             >
-              <Icon name="plus" size="10px" />
+              <Icon name="plus" size="var(--icon-sm)" />
             </button>
           {/if}
         {/if}

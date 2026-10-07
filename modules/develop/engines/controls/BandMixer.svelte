@@ -124,8 +124,13 @@
   }
 
   .band {
-    flex: 1;
-    height: 18px;
+    flex: 1 1 0;
+    /* A swatch is a chip, not a button: none of the framework button's padding or minimum
+       size (they scale with the theme's type, and in a roomy theme the chips outgrew the row). */
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    height: 14px;
     border-radius: calc(var(--radius) - 2px);
     border: 1px solid transparent;
     cursor: pointer;

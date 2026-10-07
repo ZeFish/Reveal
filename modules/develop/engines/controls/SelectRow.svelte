@@ -57,7 +57,6 @@
     color: var(--color-foreground);
     text-align: left;
     white-space: nowrap;
-    overflow: hidden;
     text-overflow: ellipsis;
   }
   .panel-select {

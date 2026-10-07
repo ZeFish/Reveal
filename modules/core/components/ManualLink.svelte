@@ -9,6 +9,6 @@
 </script>
 
 <button type="button" class="ghost small" title="Open in the manual" onclick={() => openManual(page)}>
-  <Icon name="book-open" size="11px" />
+  <Icon name="book-open" size="var(--icon-md)" />
   <span>{label}</span>
 </button>

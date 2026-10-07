@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { createLibraryController } from "./libraryController.js";
+import { library, beginOpen, leaveFolder } from "./libraryState.svelte.js";
 
 describe("createLibraryController", () => {
   it("provides bound operations that delegate to library operations", async () => {
@@ -137,5 +138,26 @@ describe("createLibraryController", () => {
     await navCtrl.openFolder("/external/folder");
     expect(beginOpen).toHaveBeenCalledWith({ folder: "/external/folder" });
     expect(finish).toHaveBeenCalled();
+  });
+
+  // The import's progress handler and the `preview-published` handler both reach the photo list
+  // through the controller. It once had no such method; the wiring called it with `?.()` and
+  // nothing happened, so photos copied into the folder you were looking at never appeared.
+  it("replaces the photos of the open folder, so an import shows up while it runs", () => {
+    leaveFolder();
+    beginOpen({ curDir: "/nas/Import" }).commit([{ path: "/nas/Import/a.RAF", name: "a.RAF" }]);
+    const controller = createLibraryController({
+      invoke: vi.fn(),
+      refreshDirs: vi.fn(),
+      openDir: vi.fn(),
+      state: {},
+      library,
+    });
+    controller.refreshLoadedFrames([
+      { path: "/nas/Import/a.RAF", name: "a.RAF" },
+      { path: "/nas/Import/b.RAF", name: "b.RAF" },
+    ]);
+    expect(library.frames.map((f) => f.name)).toEqual(["a.RAF", "b.RAF"]);
+    expect(library.curDir).toBe("/nas/Import");
   });
 });

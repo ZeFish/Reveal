@@ -64,7 +64,7 @@ export const developState = $state({
   /** @type {Recipe | null} */
   copiedRecipe: null,
   dockedActiveTab: "dev",
-  dockedActiveZone: "all",
+  dockedActiveZone: "global",
   /** @type {'shadows' | 'midtones' | 'highlights' | null} */
   zoneMaskPreview: null,
   developPhotoPercent: typeof window !== "undefined" ? session.photoSize() : DEFAULT_PHOTO_SIZE,
@@ -81,9 +81,6 @@ export const developState = $state({
   restoringRecipeHistory: false,
   /** @type {ReturnType<typeof setTimeout> | undefined} */
   saveTimer: undefined,
-  recipeSaveBusy: false,
-  /** @type {Map<string, any>} */
-  recipeSaveQueue: new Map(),
 
   get showClipping() {
     return this.checkLayer !== "none";

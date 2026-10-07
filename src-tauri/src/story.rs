@@ -118,21 +118,10 @@ impl StoryNote {
         // that round-trip actually matches. Any mismatch leaves the disk
         // note completely untouched and returns an error instead of eating
         // the user's work.
-        let tmp = self.url.with_extension("md.tmp");
-        {
-            use std::io::Write;
-            let mut f = std::fs::File::create(&tmp)?;
-            f.write_all(out.as_bytes())?;
-            f.sync_all()?;
-        }
-        let verify = std::fs::read(&tmp)?;
-        if verify != out.as_bytes() {
-            let _ = std::fs::remove_file(&tmp);
-            return Err(io::Error::other(
-                "story note write verification failed (read-back mismatch) — note on disk left untouched",
-            ));
-        }
-        std::fs::rename(&tmp, &self.url)
+        //
+        // All of that now lives in `reveal_io::write_durable`, the one rule every
+        // user-data write shares (it also retries a NAS timeout).
+        reveal_io::write_durable(&self.url, out.as_bytes())
     }
 
     /// The folder's theme: the `theme:` key the Garden itself reads. The old

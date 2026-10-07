@@ -19,6 +19,40 @@
   text-box: trim-both cap alphabetic;
 }
 
+/* The app owns the SIZE of things; a theme owns colour, faces and weights.
+   Every theme is written for documents: forest asks for an 18px base, a golden-ratio
+   line height and a golden type scale, which is right for reading and, in a window
+   full of controls, makes every gap and row grow until the panels run to their edges.
+   The spacing rhythm (rlh), the type scale and the control sizes all derive from these
+   five tokens, so they are pinned here whatever the theme says.
+
+   The text-size preference (--font-text-size, set on <html> by applyTextSize) still
+   scales the whole interface; the default is the macOS theme's own 13px.
+
+   `:root:root[data-theme]` beats any theme's `[data-theme="x"]` / `:root[data-theme="x"]`
+   block, including the ones that load later and so come later in the cascade. */
+:root:root[data-theme] {
+  --font-size: var(--font-text-size, 13px);
+  --line-height: 1.25;
+  --font-ratio: 1.333;
+  --optical-ratio: 1.333;
+  --font-density: 1.25;
+
+  /* The height of every control that sits in a bar or a row — buttons, selects, text fields,
+     the segmented switches. One line of text plus a little air, so it follows the Text size
+     preference with the rest of the interface (24.4px at the default 13px). It was `24px`
+     written out in four places. */
+  --control-h: calc(var(--font-size) * var(--line-height) + var(--space-d2));
+
+  /* Icon sizes, on the control height: an icon in a bar or a row is a fixed share of it, so
+     icons grow with the text size and stay in proportion to the buttons that hold them.
+     sm — disclosure carets, inline glyphs in dense rows; md — row actions and labels;
+     lg — the icon of a button. (Not `--icon-size`: Icon.svelte sets that one itself.) */
+  --icon-sm: calc(var(--control-h) * 0.4);
+  --icon-md: calc(var(--control-h) * 0.5);
+  --icon-lg: calc(var(--control-h) * 0.57);
+}
+
 /* App-shell behaviors a document never needs. */
 html {
   height: 100%;
@@ -145,6 +179,7 @@ button {
    reads as a bar, not a setting. A slimmer rail and a proportionate thumb. */
 input[type="range"] {
   height: var(--space-d4);
+  background: var(--color-surface-dark-1);
 
   &::-webkit-slider-thumb {
     width: var(--space-d2);

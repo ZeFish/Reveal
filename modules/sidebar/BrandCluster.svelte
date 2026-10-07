@@ -22,7 +22,7 @@
 
 <div class="brand" data-tauri-drag-region>
   <button class="ghost icon small" onclick={onToggleSidebar} title="Folder panel (B)">
-    <Icon name="sidebar-simple" size="12px" />
+    <Icon name="sidebar-simple" size="var(--icon-md)" />
   </button>
   <button
     class="ghost icon small"
@@ -33,7 +33,7 @@
     <span class="focus-glyph" class:on={focusOn}></span>
   </button>
   <button class="ghost icon small" onclick={onToggleAppearance} title="Toggle system light/dark appearance (L)">
-    <Icon name="circle-half" size="12px" />
+    <Icon name="circle-half" size="var(--icon-md)" />
   </button>
   <button class="wordmark" onclick={onShowShortcuts} title="Keyboard shortcuts">REVEAL</button>
 </div>

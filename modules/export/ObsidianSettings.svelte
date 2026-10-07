@@ -30,7 +30,7 @@
 
 <div class="section-group">
   <div class="section-heading">
-    <Icon name="note-pencil" size="12px" />
+    <Icon name="note-pencil" size="var(--icon-md)" />
     <span>OBSIDIAN INTEGRATION</span>
   </div>
   <div class="card flush list divided">
@@ -52,7 +52,7 @@
         <div class="row-control">
           <div class="path-picker-group">
             <code class="path-display" title={preferences.vault || "~/Documents/Atelier (default)"}>
-              <Icon name="folder-open" size="12px" />
+              <Icon name="folder-open" size="var(--icon-md)" />
               <span class="path-text mono">
                 {preferences.vault ? formatPath(preferences.vault) : "~/Documents/Atelier (default)"}
               </span>
@@ -63,7 +63,7 @@
                   onclick={() => (preferences.vault = "")}
                   title="Reset to default"
                 >
-                  <Icon name="x" size="10px" />
+                  <Icon name="x" size="var(--icon-sm)" />
                 </button>
               {/if}
             </code>

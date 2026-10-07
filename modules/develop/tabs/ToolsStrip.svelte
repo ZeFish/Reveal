@@ -30,28 +30,28 @@
   );
 
   let checkLayerTitle = $derived(
-    effectiveCheckLayer === "clipping" ? "Écrêtage" :
+    effectiveCheckLayer === "clipping" ? "Clipping" :
     effectiveCheckLayer === "false_color" ? "False Color" :
     effectiveCheckLayer === "saturation" ? "Saturation" :
-    effectiveCheckLayer === "hue" ? "Teintes (Hue)" :
-    effectiveCheckLayer === "solar" ? "Solarisation" : "Désactivé"
+    effectiveCheckLayer === "hue" ? "Hue" :
+    effectiveCheckLayer === "solar" ? "Solarize" : "Off"
   );
 </script>
 
 <div class="tools-strip">
   <button class="tool-btn" title="Crop" onclick={onCropClick}>
-    <Icon name="crop" size="14px" />
+    <Icon name="crop" size="var(--icon-lg)" />
   </button>
   <div class="check-menu-wrap">
     <button
       class="tool-btn clipping-btn"
       class:active={effectiveCheckLayer !== "none"}
       aria-pressed={effectiveCheckLayer !== "none"}
-      title={`Check Layer (${checkLayerTitle}) — Clic pour basculer, clic-droit pour choisir`}
+      title={`Check Layer (${checkLayerTitle}) — click to toggle, right-click to choose`}
       onclick={toggleClipping}
       oncontextmenu={(e) => { e.preventDefault(); showMenu = !showMenu; }}
     >
-      <Icon name="circle-half" size="14px" />
+      <Icon name="circle-half" size="var(--icon-lg)" />
       {#if effectiveCheckLayer !== "none"}
         <span class="clip-dots">
           {#if effectiveCheckLayer === "clipping"}
@@ -71,20 +71,20 @@
     </button>
     {#if showMenu}
       <div class="check-menu-popover card" role="menu">
-        <button class="check-menu-item" class:selected={effectiveCheckLayer === "none"} onclick={() => { onSelectCheckLayer("none"); showMenu = false; }}>Désactivé</button>
-        <button class="check-menu-item" class:selected={effectiveCheckLayer === "clipping"} onclick={() => { onSelectCheckLayer("clipping"); showMenu = false; }}>Écrêtage (Hautes/Basses)</button>
-        <button class="check-menu-item" class:selected={effectiveCheckLayer === "false_color"} onclick={() => { onSelectCheckLayer("false_color"); showMenu = false; }}>False Color (IRE Vidéo)</button>
-        <button class="check-menu-item" class:selected={effectiveCheckLayer === "saturation"} onclick={() => { onSelectCheckLayer("saturation"); showMenu = false; }}>Masque de Saturation</button>
-        <button class="check-menu-item" class:selected={effectiveCheckLayer === "hue"} onclick={() => { onSelectCheckLayer("hue"); showMenu = false; }}>Masque des Teintes (Hue)</button>
-        <button class="check-menu-item" class:selected={effectiveCheckLayer === "solar"} onclick={() => { onSelectCheckLayer("solar"); showMenu = false; }}>Solarisation (Micro-contraste)</button>
+        <button class="check-menu-item" class:selected={effectiveCheckLayer === "none"} onclick={() => { onSelectCheckLayer("none"); showMenu = false; }}>Off</button>
+        <button class="check-menu-item" class:selected={effectiveCheckLayer === "clipping"} onclick={() => { onSelectCheckLayer("clipping"); showMenu = false; }}>Clipping (Highlights/Shadows)</button>
+        <button class="check-menu-item" class:selected={effectiveCheckLayer === "false_color"} onclick={() => { onSelectCheckLayer("false_color"); showMenu = false; }}>False Color (Video IRE)</button>
+        <button class="check-menu-item" class:selected={effectiveCheckLayer === "saturation"} onclick={() => { onSelectCheckLayer("saturation"); showMenu = false; }}>Saturation mask</button>
+        <button class="check-menu-item" class:selected={effectiveCheckLayer === "hue"} onclick={() => { onSelectCheckLayer("hue"); showMenu = false; }}>Hue mask</button>
+        <button class="check-menu-item" class:selected={effectiveCheckLayer === "solar"} onclick={() => { onSelectCheckLayer("solar"); showMenu = false; }}>Solarization (micro-contrast)</button>
       </div>
     {/if}
   </div>
   <button class="tool-btn" title="Presets" onclick={onPresetClick}>
-    <Icon name="sliders-horizontal" size="14px" />
+    <Icon name="sliders-horizontal" size="var(--icon-lg)" />
   </button>
   <button class="tool-btn" title="Export to Desktop" onclick={onExportDesktopClick}>
-    <Icon name="download-simple" size="14px" />
+    <Icon name="download-simple" size="var(--icon-lg)" />
   </button>
 </div>
 

@@ -33,6 +33,7 @@ import { dispatchShortcut } from "./shortcutDispatcher.js";
  *   actions: {
  *     switchMode: (mode: "cull" | "dev" | any, opts?: any) => Promise<any> | void,
  *     setSpaceLook?: (v: boolean) => void,
+ *     setDevPanel?: (v: boolean) => void,
  *     saveLayouts: () => void,
  *     toggleSidebar: () => void,
  *     exitFullscreen: () => void,
@@ -89,6 +90,7 @@ export function createKeyboardController(deps) {
     }
     if (res.action === "OPEN_DEV_PANEL") {
       if (actions.setSpaceLook) actions.setSpaceLook(res.spaceLook ?? false);
+      actions.setDevPanel?.(true);
       actions.saveLayouts();
       if (currentState.currentMode !== "dev") {
         actions.switchMode("dev", { openDevPanel: true });

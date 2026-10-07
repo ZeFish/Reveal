@@ -70,7 +70,8 @@ fn list_dir_blocking(path: &str) -> Result<Vec<FrameInfo>, String> {
         if !reveal_decode::RAW_EXTENSIONS.contains(&ext.as_str()) {
             continue;
         }
-        let rating = reveal_meta::read(&p)
+        let rating = crate::photo::Photo::new(p.to_string_lossy())
+            .sidecar()
             .ok()
             .flatten()
             .and_then(|s| s.rating)
@@ -86,22 +87,26 @@ fn list_dir_blocking(path: &str) -> Result<Vec<FrameInfo>, String> {
 }
 
 /// Star rating 0-5 — sidecar is the truth, the index mirrors it.
+///
+/// The index (local, cheap) is updated at once, so filters and sorting follow the stars the moment
+/// they are pressed. The sidecar of a file lives on the NAS: the write is owed to the photo and
+/// paid once it has been left alone (see `photo_writes`) — pressing 1, 2, 3 on the way to 4 is one
+/// write. A library asset's sidecar is in the app's own folder, so it is written straight away.
 #[tauri::command]
 pub(crate) async fn set_rating(
     index: tauri::State<'_, IndexState>,
+    writes: tauri::State<'_, crate::photo_writes::PhotoWritesState>,
     path: String,
     rating: u8,
 ) -> Result<(), String> {
-    let sidecar_path = path.clone();
-    crate::blocking(move || {
-        apple_photos::update_metadata(&sidecar_path, |sidecar| {
-            sidecar.rating = Some(rating.min(5));
-            Ok(())
-        })
-    })
-    .await?;
-    if apple_photos::is_asset(&path) || crate::immich::is_asset(&path) { return Ok(()); }
-    index.0.set_rating(&path, rating.min(5)).map_err(|e| e.to_string())
+    let photo = crate::photo::Photo::new(path.clone());
+    let rating = rating.min(5);
+    if !photo.is_file() {
+        let for_sidecar = photo.clone();
+        return crate::blocking(move || for_sidecar.set_rating(rating)).await;
+    }
+    writes.0.queue_set_rating(&path, rating);
+    index.0.set_rating(&path, rating).map_err(|e| e.to_string())
 }
 
 /// Index (or re-index) the archive root. Synchronous — returns the stats.
@@ -439,6 +444,50 @@ fn move_one(src: &std::path::Path, dest: &std::path::Path) -> std::io::Result<()
     std::fs::remove_file(src)
 }
 
+/// Move a photo and its companions into `dest_dir` as one unit.
+///
+/// `move_one` starts with a `rename`, which silently replaces whatever sits at
+/// the destination, so every target is checked first and a clash refuses the
+/// whole group before anything moves. If a move fails part way, what already
+/// moved goes back, so a photo is never separated from the sidecar that holds
+/// its decisions.
+fn move_group(
+    photo: &std::path::Path,
+    dest_dir: &std::path::Path,
+    companions: &[std::path::PathBuf],
+) -> Result<(), String> {
+    let mut pairs: Vec<(std::path::PathBuf, std::path::PathBuf)> = Vec::new();
+    for src in std::iter::once(photo).chain(companions.iter().map(|c| c.as_path())) {
+        let Some(name) = src.file_name() else { continue };
+        pairs.push((src.to_path_buf(), dest_dir.join(name)));
+    }
+    if let Some((_, dest)) = pairs.iter().find(|(_, dest)| dest.exists()) {
+        return Err(format!(
+            "\u{201c}{}\u{201d} is already in the destination folder",
+            dest.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+        ));
+    }
+    let mut done: Vec<&(std::path::PathBuf, std::path::PathBuf)> = Vec::new();
+    for pair in &pairs {
+        if let Err(e) = move_one(&pair.0, &pair.1) {
+            let mut stuck = Vec::new();
+            for (from, to) in done.iter().rev().map(|p| (&p.0, &p.1)) {
+                if let Err(back) = move_one(to, from) {
+                    stuck.push(format!("{} ({back})", to.display()));
+                }
+            }
+            let name = pair.0.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            return Err(if stuck.is_empty() {
+                format!("could not move {name}, so the photo stayed where it was: {e}")
+            } else {
+                format!("could not move {name} ({e}), and could not put back: {}", stuck.join(", "))
+            });
+        }
+        done.push(pair);
+    }
+    Ok(())
+}
+
 /// Whether two paths are one folder. Differs from `==` on a case-insensitive
 /// volume, where `Foo` and `foo` name the same place.
 fn is_same_dir(a: &std::path::Path, b: &std::path::Path) -> bool {
@@ -748,6 +797,118 @@ pub(crate) async fn tidy_plan(
     .map_err(|e| e.to_string())?
 }
 
+#[derive(serde::Serialize)]
+pub(crate) struct TidyApplyResult {
+    pub moved: usize,
+    pub errors: Vec<String>,
+}
+
+/// Applies a tidy plan on `dir`: moves photos into their planned day folders,
+/// carries sidecars and companions along, and refreshes the catalog index.
+#[tauri::command]
+pub(crate) async fn tidy_apply(
+    app: tauri::AppHandle,
+    index: tauri::State<'_, IndexState>,
+    dir: String,
+) -> Result<TidyApplyResult, String> {
+    let idx = index.0.clone();
+    let library = idx
+        .library_covering(&dir)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "This folder is not inside any of your libraries.".to_string())?;
+    let pattern = load_preferences(app.clone())
+        .get("date_folders")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or(reveal_import::DEFAULT_DATE_FORMAT)
+        .to_string();
+    let base = read_shell_prefs(&app)
+        .import_dir
+        .filter(|d| idx.library_covering(d).ok().flatten().is_some() && std::path::Path::new(d).is_dir())
+        .unwrap_or(library);
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = std::path::PathBuf::from(&dir);
+        let (raws, others) = reveal_import::tidy::find_photos(&root);
+        let dates = idx.capture_times_under(&dir).unwrap_or_default();
+        let photos = reveal_import::tidy::read_photos(
+            raws,
+            &|p: &std::path::Path| dates.get(p.to_string_lossy().as_ref()).copied(),
+            &|_done, _total| {},
+        );
+        let cfg = reveal_import::tidy::Config {
+            root: &root,
+            base: std::path::Path::new(&base),
+            pattern: &pattern,
+            now: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0),
+        };
+        let plan = reveal_import::tidy::plan(&cfg, photos, others, &|p: &std::path::Path| p.exists());
+
+        use reveal_import::tidy::Verdict;
+        let to_move: Vec<_> = plan
+            .items
+            .into_iter()
+            .filter(|i| matches!(i.verdict, Verdict::Move { .. }))
+            .collect();
+        let total = to_move.len();
+
+        let mut moved = 0usize;
+        let mut errors = Vec::new();
+        let mut touched_dirs: std::collections::HashSet<std::path::PathBuf> =
+            std::collections::HashSet::new();
+
+        for item in to_move {
+            let Some(dest_file) = item.to else { continue };
+            let Some(dest_dir) = dest_file.parent() else { continue };
+
+            if let Err(e) = std::fs::create_dir_all(dest_dir) {
+                errors.push(format!("could not create directory {}: {e}", dest_dir.display()));
+                continue;
+            }
+
+            if let Some(src_parent) = item.from.parent() {
+                touched_dirs.insert(src_parent.to_path_buf());
+            }
+            touched_dirs.insert(dest_dir.to_path_buf());
+
+            // The photo and everything that travels with it, or nothing.
+            let companions = reveal_import::tidy::companions_of(&item.from);
+            if let Err(e) = move_group(&item.from, dest_dir, &companions) {
+                errors.push(format!("{}: {e}", item.from.display()));
+                continue;
+            }
+
+            moved += 1;
+            let _ = app.emit(
+                "tidy-apply-progress",
+                serde_json::json!({
+                    "done": moved,
+                    "total": total,
+                    "current": item.from.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+                }),
+            );
+        }
+
+        // Reconcile index for each affected folder
+        for d in &touched_dirs {
+            let _ = idx.scan_with(d, |_, _| {});
+        }
+
+        let _ = app.emit("libraries-changed", serde_json::json!({}));
+        let _ = app.emit(
+            "tidy-apply-progress",
+            serde_json::json!({ "done": total, "total": total, "finished": true }),
+        );
+
+        Ok(TidyApplyResult { moved, errors })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -771,6 +932,53 @@ mod tests {
         let other = dir.join("Other");
         std::fs::create_dir(&other).unwrap();
         assert!(!is_same_dir(&foo, &other));
+    }
+
+    #[test]
+    fn a_group_moves_the_photo_with_its_companions() {
+        let dir = scratch("group-ok");
+        let (from, to) = (dir.join("from"), dir.join("to"));
+        std::fs::create_dir_all(&from).unwrap();
+        std::fs::create_dir_all(&to).unwrap();
+        let (raw, xmp) = (from.join("a.raf"), from.join("a.raf.xmp"));
+        std::fs::write(&raw, b"raw").unwrap();
+        std::fs::write(&xmp, b"xmp").unwrap();
+        move_group(&raw, &to, &[xmp.clone()]).unwrap();
+        assert!(!raw.exists() && !xmp.exists());
+        assert_eq!(std::fs::read(to.join("a.raf")).unwrap(), b"raw");
+        assert_eq!(std::fs::read(to.join("a.raf.xmp")).unwrap(), b"xmp");
+    }
+
+    #[test]
+    fn a_group_never_overwrites_and_moves_nothing_when_a_target_is_taken() {
+        let dir = scratch("group-clash");
+        let (from, to) = (dir.join("from"), dir.join("to"));
+        std::fs::create_dir_all(&from).unwrap();
+        std::fs::create_dir_all(&to).unwrap();
+        let (raw, xmp) = (from.join("a.raf"), from.join("a.raf.xmp"));
+        std::fs::write(&raw, b"raw").unwrap();
+        std::fs::write(&xmp, b"mine").unwrap();
+        std::fs::write(to.join("a.raf.xmp"), b"someone else's decisions").unwrap();
+        assert!(move_group(&raw, &to, &[xmp.clone()]).is_err());
+        assert!(raw.exists() && xmp.exists(), "nothing may have moved");
+        assert!(!to.join("a.raf").exists());
+        assert_eq!(std::fs::read(to.join("a.raf.xmp")).unwrap(), b"someone else's decisions");
+    }
+
+    #[test]
+    fn a_group_puts_the_photo_back_when_a_companion_cannot_follow() {
+        let dir = scratch("group-rollback");
+        let (from, to) = (dir.join("from"), dir.join("to"));
+        std::fs::create_dir_all(&from).unwrap();
+        std::fs::create_dir_all(&to).unwrap();
+        let raw = from.join("a.raf");
+        std::fs::write(&raw, b"raw").unwrap();
+        // A companion that vanished between planning and moving.
+        let ghost = from.join("a.raf.xmp");
+        let err = move_group(&raw, &to, &[ghost]).unwrap_err();
+        assert!(err.contains("stayed where it was"), "{err}");
+        assert_eq!(std::fs::read(&raw).unwrap(), b"raw", "the photo is back where it was");
+        assert!(!to.join("a.raf").exists());
     }
 
     #[test]

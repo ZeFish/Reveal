@@ -190,7 +190,7 @@ export function startAppLifecycle(options) {
         handleCullProgress: (payload) => cullingCtrl.handleCullProgress?.(payload),
         handleCullFinished: (payload) => cullingCtrl.handleCullFinished?.(payload),
         handleCullFailed: (payload) => cullingCtrl.handleCullFailed?.(payload),
-        refreshLoadedFrames: (rows) => libraryController.refreshLoadedFrames?.(rows),
+        refreshLoadedFrames: (rows) => libraryController.refreshLoadedFrames(rows),
         getSourceOffline,
         setSourceOffline,
         getPhotoPath,

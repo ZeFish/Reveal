@@ -1,11 +1,13 @@
 <script>
   import { Icon } from "@modules/core";
+  import CollapsibleGroup from "@modules/develop/engines/controls/CollapsibleGroup.svelte";
+  import SliderRow from "@modules/develop/engines/controls/SliderRow.svelte";
 
   let { recipe = $bindable(), edited = () => {} } = $props();
 
   const aspectPresets = [
     { label: "Original", value: "original" },
-    { label: "Libre", value: "free" },
+    { label: "Free", value: "free" },
     { label: "1:1", value: "1:1" },
     { label: "4:5", value: "4:5" },
     { label: "3:2", value: "3:2" },
@@ -49,11 +51,14 @@
     }
   }
 
-  /** @param {string | number} val */
-  function setAngle(val) {
+  /**
+   * @param {string | number} val
+   * @param {boolean} [live] true while the slider is still being dragged
+   */
+  function setAngle(val, live = false) {
     if (!recipe) return;
     recipe.crop_angle = Number(val);
-    edited(true);
+    edited(live);
   }
 
   /** @param {"h" | "v"} dir */
@@ -79,179 +84,143 @@
 </script>
 
 <div class="crop-tab">
-  <section class="section">
-    <div class="section-title">
-      <span class="din">Proportions</span>
-      <div class="title-actions">
-        {#if canFlipOrientation}
-          <button
-            type="button"
-            class="orientation-btn chip"
-            onclick={toggleAspectOrientation}
-            title="Basculer format Paysage / Portrait ({recipe?.crop_aspect})"
-            aria-label="Basculer format Paysage / Portrait"
-          >
-            <span class="aspect-badge">{recipe?.crop_aspect}</span>
-            <span>{isPortrait ? "Portrait" : "Paysage"} ⇄</span>
+  <div class="crop-scroll">
+    <CollapsibleGroup label="Proportions">
+      <div class="aspect-grid">
+        {#each aspectPresets as preset}
+          {@const isActive =
+            (recipe?.crop_aspect ?? "original") === preset.value ||
+            (preset.value.includes(":") && (recipe?.crop_aspect ?? "") === preset.value.split(":").reverse().join(":"))}
+          <button class="chip" aria-pressed={isActive} onclick={() => setAspect(preset.value)}>
+            {preset.label}
           </button>
-        {/if}
-        <button class="reset-btn" onclick={resetCrop} title="Réinitialiser le recadrage">Reset</button>
-      </div>
-    </div>
-    <div class="aspect-grid">
-      {#each aspectPresets as preset}
-        {@const isActive =
-          (recipe?.crop_aspect ?? "original") === preset.value ||
-          (preset.value.includes(":") && (recipe?.crop_aspect ?? "") === preset.value.split(":").reverse().join(":"))}
+        {/each}
+        <!-- The eighth cell: turn the frame between landscape and portrait. Greyed out when the
+             proportion has no other orientation (Original, Free, 1:1). -->
         <button
-          class="chip"
-          aria-pressed={isActive}
-          onclick={() => setAspect(preset.value)}
+          type="button"
+          class="chip orientation"
+          disabled={!canFlipOrientation}
+          onclick={toggleAspectOrientation}
+          title={canFlipOrientation
+            ? `Switch to ${isPortrait ? "landscape" : "portrait"} (${recipe?.crop_aspect})`
+            : "Landscape / portrait — pick a fixed proportion first"}
+          aria-label="Switch between landscape and portrait"
         >
-          {preset.label}
+          <Icon name="device-rotate" size="var(--icon-lg)" />
         </button>
-      {/each}
-    </div>
-  </section>
+      </div>
+    </CollapsibleGroup>
 
-  <div class="hairline"></div>
-
-  <section class="section">
-    <div class="section-title">
-      <span class="din">Straighten</span>
-      <button class="reset-btn" onclick={() => setAngle(0)}>0°</button>
-    </div>
-    <div class="slider-row">
-      <input
-        type="range"
-        min="-45"
-        max="45"
-        step="0.5"
+    <CollapsibleGroup label="Straighten">
+      <SliderRow
+        label="Angle"
         value={recipe?.crop_angle ?? 0}
-        style="--slider-value: {(((recipe?.crop_angle ?? 0) + 45) / 90) * 100}%"
-        oninput={(e) => setAngle(e.currentTarget.value)}
+        min={-45}
+        max={45}
+        step={0.5}
+        neutral={0}
+        formatter={(v) => `${v.toFixed(1)}°`}
+        onInput={(v) => setAngle(v, true)}
+        onChange={(v) => setAngle(v)}
+        onReset={() => setAngle(0)}
       />
-      <span class="val-mono">{recipe?.crop_angle ?? 0}°</span>
-    </div>
-  </section>
+    </CollapsibleGroup>
 
-  <div class="hairline"></div>
+    <CollapsibleGroup label="Orientation & Mirror">
+      <div class="btn-group">
+        <button class="action-btn" aria-pressed={recipe?.flip_h} onclick={() => toggleFlip("h")} title="Mirror horizontally">
+          <Icon name="flip-horizontal" size="var(--icon-lg)" />
+          <span>Horizontal</span>
+        </button>
+        <button class="action-btn" aria-pressed={recipe?.flip_v} onclick={() => toggleFlip("v")} title="Mirror vertically">
+          <Icon name="flip-vertical" size="var(--icon-lg)" />
+          <span>Vertical</span>
+        </button>
+      </div>
+    </CollapsibleGroup>
+  </div>
 
-  <section class="section">
-    <div class="section-title">
-      <span class="din">Orientation & Mirror</span>
-    </div>
-    <div class="btn-group">
-      <button
-        class="action-btn"
-        aria-pressed={recipe?.flip_h}
-        onclick={() => toggleFlip("h")}
-        title="Mirror horizontally"
-      >
-        <Icon name="flip-horizontal" size="14px" />
-        <span>Horizontal</span>
-      </button>
-      <button
-        class="action-btn"
-        aria-pressed={recipe?.flip_v}
-        onclick={() => toggleFlip("v")}
-        title="Mirror vertically"
-      >
-        <Icon name="flip-vertical" size="14px" />
-        <span>Vertical</span>
-      </button>
-    </div>
-  </section>
+  <!-- Pinned to the bottom, like Reset / Export on the Dev tab. -->
+  <div class="footer">
+    <button class="outline panel-btn" onclick={resetCrop} title="Back to the whole frame, no rotation, no mirror">
+      Reset crop
+    </button>
+  </div>
 </div>
 
 <style>
   .crop-tab {
     flex: 1;
-    overflow-y: auto;
+    min-height: 0;
     display: flex;
     flex-direction: column;
-    gap: var(--space);
-  }
-
-  .section {
-    display: flex;
-    flex-direction: column;
-    gap: calc(var(--space-d4) * 3);
-  }
-
-  .hairline {
-    height: 1px;
-    background: var(--color-border);
-    opacity: 0.6;
-  }
-
-  .section-title {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .title-actions {
-    display: flex;
-    align-items: center;
     gap: var(--space-d2);
   }
 
-  .orientation-btn {
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
+  .crop-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    /* No scrollbar: it sat on top of the values (same as the Dev tab). */
+    scrollbar-width: none;
+    display: flex;
+    flex-direction: column;
     gap: var(--space-d3);
-    padding: var(--space-d4) var(--space-d2);
-    font-size: var(--scale-d2);
   }
 
-  .aspect-badge {
-    font-weight: bold;
-    opacity: 0.8;
+.crop-scroll > :global(*) {
+    /* A group keeps its own height and the area scrolls; left to shrink, they squeezed each
+       other flat (the headers and the facts vanished). */
+    flex-shrink: 0;
   }
 
-  .reset-btn {
-    cursor: pointer;
-  }
-
+  /* Seven proportions and the orientation switch: two even rows of four. */
   .aspect-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: var(--space-d3);
+    padding-block: var(--space-d3);
   }
 
-  .chip {
+  .chip,
+  .action-btn {
     cursor: pointer;
     box-sizing: border-box;
-    text-align: center;
-    padding: var(--space-d3) var(--space-d2);
-  }
-
-  .slider-row {
-    display: flex;
+    min-height: var(--control-h);
+    padding-block: 0;
+    display: inline-flex;
     align-items: center;
-    gap: calc(var(--space-d4) * 3);
+    justify-content: center;
+    text-align: center;
   }
-
-  .val-mono {
-    width: 36px;
-    text-align: right;
+  .chip {
+    padding-inline: var(--space-d3);
+  }
+  .chip:disabled {
+    cursor: default;
+    opacity: 0.4;
   }
 
   .btn-group {
     display: flex;
-    gap: var(--space-d2);
+    gap: var(--space-d3);
+    padding-block: var(--space-d3);
+  }
+  .action-btn {
+    flex: 1;
+    gap: var(--space-d3);
+    padding-inline: calc(var(--space-d4) * 3);
   }
 
-  .action-btn {
-    cursor: pointer;
-    box-sizing: border-box;
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-d3);
-    padding: var(--space-d2) calc(var(--space-d4) * 3);
+  .footer {
+    flex-shrink: 0;
+    padding: var(--space-d3) 0;
+    border-top: var(--border);
+  }
+  .panel-btn {
+    width: 100%;
+    min-height: var(--control-h);
+    padding-block: 0;
   }
 </style>

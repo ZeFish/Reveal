@@ -1,0 +1,11 @@
+[package]
+name = "reveal-io"
+description = "The one rule for writing user data to a disk that may be a NAS"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+tempfile = "3"

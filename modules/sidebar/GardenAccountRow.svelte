@@ -62,7 +62,7 @@
           <span class="account-avatar">{(garden?.username ?? "?").slice(0, 1).toUpperCase()}</span>
           <span class="account-name">{garden?.username}</span>
         {:else}
-          <Icon name="stnd-garden" size="14px" />
+          <Icon name="stnd-garden" size="var(--icon-lg)" />
           <span>Connect Garden</span>
         {/if}
       </button>
@@ -107,7 +107,7 @@
   </Popover>
   <span class="dir-spacer"></span>
   <button class="ghost icon small" onclick={onShowSettings} title="Reveal settings">
-    <Icon name="gear" size="12px" />
+    <Icon name="gear" size="var(--icon-md)" />
   </button>
 </div>
 

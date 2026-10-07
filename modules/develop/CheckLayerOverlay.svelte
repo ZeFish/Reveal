@@ -1,5 +1,6 @@
 <script>
   import { renderCheckLayer } from "./developAnalysis.js";
+  import { zoneColors } from "./themeColor.js";
 
   /**
    * @typedef {Object} Props
@@ -35,7 +36,7 @@
     clipCanvasEl.height = height;
     const ctx = clipCanvasEl.getContext("2d");
     if (!ctx) return;
-    renderCheckLayer(data, effectiveCheckLayer, ctx, width, height);
+    renderCheckLayer(data, effectiveCheckLayer, ctx, width, height, effectiveCheckLayer.startsWith("zone_") ? zoneColors() : undefined);
   }
 
   $effect(() => {
@@ -55,23 +56,23 @@
 <div class="check-layer-hud hud">
   {#if zoneMask}
     <div class="hud-modes">
-      <span class="hud-title">MASQUE DE ZONE</span>
+      <span class="hud-title">ZONE MASK</span>
       <span
         class="hud-pill active"
         style={zoneMask === 'shadows' ? 'color: var(--color-blue);' : zoneMask === 'midtones' ? 'color: var(--color-green);' : 'color: var(--color-red);'}
       >
-        {zoneMask === 'shadows' ? 'Ombres (Bleu)' : zoneMask === 'midtones' ? 'Tons Moyens (Vert)' : 'Hautes Lumières (Rouge)'}
+        {zoneMask === 'shadows' ? 'Shadows' : zoneMask === 'midtones' ? 'Midtones' : 'Highlights'}
       </span>
       <button
         class="hud-close"
         onclick={onCloseZoneMask}
-        title="Fermer le masque (Touche 'M')"
-        aria-label="Fermer"
+        title="Close the mask (M key)"
+        aria-label="Close"
       >✕</button>
     </div>
     <div class="hud-legend">
       <span class="legend-item" style="color: var(--color-foreground);">
-        Survol d'onglet ou raccourci clavier 'M' pour verrouiller/déverrouiller l'affichage du masque.
+        Hover a zone tab, or press 'M', to lock or unlock the mask display.
       </span>
     </div>
   {:else}
@@ -81,7 +82,7 @@
         class="hud-pill"
         class:active={effectiveCheckLayer === "clipping"}
         onclick={() => onSelectCheckLayer("clipping")}
-      >Écrêtage</button>
+      >Clipping</button>
       <button
         class="hud-pill"
         class:active={effectiveCheckLayer === "false_color"}
@@ -96,41 +97,41 @@
         class="hud-pill"
         class:active={effectiveCheckLayer === "hue"}
         onclick={() => onSelectCheckLayer("hue")}
-      >Teintes (Hue)</button>
+      >Hue</button>
       <button
         class="hud-pill"
         class:active={effectiveCheckLayer === "solar"}
         onclick={() => onSelectCheckLayer("solar")}
-      >Solarisation</button>
+      >Solarize</button>
       <button
         class="hud-close"
         onclick={() => onSelectCheckLayer("none")}
-        title="Fermer le calque de contrôle"
-        aria-label="Fermer"
+        title="Close the check layer"
+        aria-label="Close"
       >✕</button>
     </div>
 
     <div class="hud-legend">
       {#if effectiveCheckLayer === "clipping"}
-        <span class="legend-item red">● Hautes lumières (&gt;98%)</span>
-        <span class="legend-item blue">● Basses lumières (&lt;2%)</span>
+        <span class="legend-item red">● Highlights (&gt;98%)</span>
+        <span class="legend-item blue">● Shadows (&lt;2%)</span>
       {:else if effectiveCheckLayer === "false_color"}
-        <span class="legend-item" style="color: #c084fc;">● Noir (0-2%)</span>
-        <span class="legend-item" style="color: #60a5fa;">● Ombres</span>
-        <span class="legend-item" style="color: #22d3ee;">● Détaillé</span>
-        <span class="legend-item" style="color: #4ade80;">● Gris 18%</span>
-        <span class="legend-item" style="color: #f472b6;">● Peau</span>
-        <span class="legend-item" style="color: #facc15;">● Hautes</span>
-        <span class="legend-item" style="color: #ef4444;">● Écrêtage (100%)</span>
+        <span class="legend-item" style="color: #c084fc;">● Black (0–2%)</span>
+        <span class="legend-item" style="color: #60a5fa;">● Shadows</span>
+        <span class="legend-item" style="color: #22d3ee;">● Detail</span>
+        <span class="legend-item" style="color: #4ade80;">● Grey 18%</span>
+        <span class="legend-item" style="color: #f472b6;">● Skin</span>
+        <span class="legend-item" style="color: #facc15;">● Highlights</span>
+        <span class="legend-item" style="color: #ef4444;">● Clipped (100%)</span>
       {:else if effectiveCheckLayer === "saturation"}
-        <span class="legend-item" style="color: #94a3b8;">0% Neutre</span>
+        <span class="legend-item" style="color: #94a3b8;">0% Neutral</span>
         <span class="sat-gradient-bar"></span>
-        <span class="legend-item" style="color: #f97316;">100% Saturé</span>
-        <span class="legend-item" style="color: #f43f5e;">● Sursaturé (&gt;85%)</span>
+        <span class="legend-item" style="color: #f97316;">100% Saturated</span>
+        <span class="legend-item" style="color: #f43f5e;">● Oversaturated (&gt;85%)</span>
       {:else if effectiveCheckLayer === "hue"}
-        <span class="legend-item" style="color: var(--color-foreground);">Spectre normalisé (L=50%, S=100%) — Contrôle des dérives et continuité</span>
+        <span class="legend-item" style="color: var(--color-foreground);">Normalized spectrum (L=50%, S=100%) — checks hue drift and continuity</span>
       {:else if effectiveCheckLayer === "solar"}
-        <span class="legend-item" style="color: var(--color-foreground);">Iso-lignes solaires — Détection poussières, aplats et micro-contrastes</span>
+        <span class="legend-item" style="color: var(--color-foreground);">Solarization iso-lines — spots dust, flat areas and micro-contrast</span>
       {/if}
     </div>
   {/if}

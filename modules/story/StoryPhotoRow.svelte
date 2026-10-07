@@ -77,11 +77,11 @@
         {/if}
         {#if row.blocks.length > 1}
           <button class="cell-break icon small" data-reveal onclick={() => onBreakOut(cell.block.id)} title="Split onto its own row">
-            <Icon name="rows" size="11px" />
+            <Icon name="rows" size="var(--icon-md)" />
           </button>
         {/if}
         <button class="cell-remove icon small" data-reveal onclick={() => onRemove(cell.block.id)} title="Remove from story">
-          <Icon name="x" size="10px" />
+          <Icon name="x" size="var(--icon-sm)" />
         </button>
       </div>
       {#if row.blocks.length === 1}

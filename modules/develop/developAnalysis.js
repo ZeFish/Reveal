@@ -90,6 +90,9 @@ export function createScopeAnalyzer() {
   return { analyze };
 }
 
+/** What the zone masks were painted with before they followed the theme. */
+const DEFAULT_ZONE_COLORS = { shadows: [0, 130, 255], midtones: [30, 200, 70], highlights: [255, 40, 40] };
+
 /**
  * Render visual check layer (clipping, false color, saturation, hue, solar, zone masks) onto a canvas context.
  *
@@ -98,8 +101,9 @@ export function createScopeAnalyzer() {
  * @param {CanvasRenderingContext2D} ctx
  * @param {number} width
  * @param {number} height
+ * @param {{ shadows: number[], midtones: number[], highlights: number[] }} [zoneColors] the theme's zone colours; the defaults are the old fixed ones
  */
-export function renderCheckLayer(sourceData, checkLayer, ctx, width, height) {
+export function renderCheckLayer(sourceData, checkLayer, ctx, width, height, zoneColors = DEFAULT_ZONE_COLORS) {
   if (checkLayer === "none" || !ctx) return;
 
   const data = sourceData.data;
@@ -125,19 +129,10 @@ export function renderCheckLayer(sourceData, checkLayer, ctx, width, height) {
 
       const weight = isShadows ? ws : (isHighlights ? wh : wm);
       if (weight > 0.01) {
-        if (isShadows) {
-          outData[i] = 0;
-          outData[i + 1] = 130;
-          outData[i + 2] = 255;
-        } else if (isHighlights) {
-          outData[i] = 255;
-          outData[i + 1] = 40;
-          outData[i + 2] = 40;
-        } else {
-          outData[i] = 30;
-          outData[i + 1] = 200;
-          outData[i + 2] = 70;
-        }
+        const [cr, cg, cb] = isShadows ? zoneColors.shadows : isHighlights ? zoneColors.highlights : zoneColors.midtones;
+        outData[i] = cr;
+        outData[i + 1] = cg;
+        outData[i + 2] = cb;
         outData[i + 3] = Math.round(weight * 210);
       }
     }

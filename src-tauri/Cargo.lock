@@ -3905,6 +3905,7 @@ dependencies = [
  "core-graphics 0.24.0",
  "image",
  "kamadak-exif",
+ "libc",
  "notify",
  "objc",
  "rawler",
@@ -3914,6 +3915,7 @@ dependencies = [
  "reveal-engine",
  "reveal-import",
  "reveal-index",
+ "reveal-io",
  "reveal-meta",
  "reveal-publish",
  "serde",
@@ -3983,6 +3985,7 @@ dependencies = [
  "kamadak-exif",
  "rayon",
  "reveal-decode",
+ "reveal-io",
  "rusqlite",
  "serde",
  "sha2",
@@ -4003,10 +4006,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "reveal-io"
+version = "0.46.3"
+dependencies = [
+ "tempfile",
+]
+
+[[package]]
 name = "reveal-meta"
 version = "0.46.3"
 dependencies = [
  "quick-xml 0.37.5",
+ "reveal-io",
  "serde",
  "serde_json",
  "thiserror 2.0.18",

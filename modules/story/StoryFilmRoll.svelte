@@ -30,7 +30,7 @@
 {#if frames.length}
   <div class="roll pane">
     <div class="roll-header">
-      <Icon name="stack-simple" size="13px" />
+      <Icon name="stack-simple" size="var(--icon-lg)" />
       <span class="roll-title">FILM ROLL · {frames.length}</span>
     </div>
     <div class="roll-strip">
@@ -50,7 +50,7 @@
         >
           <img src={thumbUrl(f.path, f.previewVersion ?? 0)} alt={f.name} loading="lazy" draggable="false" />
           {#if storySet.has(s)}
-            <span class="roll-check"><Icon name="check" size="9px" /></span>
+            <span class="roll-check"><Icon name="check" size="var(--icon-sm)" /></span>
           {/if}
         </div>
       {/each}

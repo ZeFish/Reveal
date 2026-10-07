@@ -1,6 +1,7 @@
 <script>
   import { invoke } from "@tauri-apps/api/core";
   import { isTauri, Icon, Destination } from "@modules/core";
+  import CollapsibleGroup from "@modules/develop/engines/controls/CollapsibleGroup.svelte";
 
   let {
     installedEditors = [],
@@ -64,134 +65,164 @@
   }
 </script>
 
-<div class="pane-scroll">
-  <div class="sec-body">
-    <div class="frow">
-      <span class="din frow-label">Destination</span>
-      <span class="spacer"></span>
-      <select class="panel-select" bind:value={activeDestinationId}>
-        <option value="folder">Local Folder</option>
-        <option value="obsidian">Obsidian Daily Note</option>
-        <option value="garden">Garden (Web)</option>
-      </select>
-    </div>
-    {#if installedEditors.length > 0}
-      <div class="frow">
-        <span class="din frow-label">Editor</span>
-        <span class="spacer"></span>
-        <select
-          class="panel-select"
-          onchange={(e) => openInEditor(e.currentTarget.value)}
-          value=""
-        >
-          <option value="" disabled selected>Open in…</option>
-          {#each installedEditors as [name, path]}
-            <option value={path}>{name}</option>
-          {/each}
-        </select>
+<div class="export-tab">
+  <div class="export-scroll">
+    <CollapsibleGroup label="Destination">
+      <div class="rows">
+        <div class="frow">
+          <span class="din frow-label">Send to</span>
+          <span class="spacer"></span>
+          <select class="panel-select" bind:value={activeDestinationId} aria-label="Destination">
+            <option value="folder">Local Folder</option>
+            <option value="obsidian">Obsidian Daily Note</option>
+            <option value="garden">Garden (Web)</option>
+          </select>
+        </div>
+        {#if installedEditors.length > 0}
+          <div class="frow">
+            <span class="din frow-label">Editor</span>
+            <span class="spacer"></span>
+            <select
+              class="panel-select"
+              aria-label="Open in an editor"
+              onchange={(e) => openInEditor(e.currentTarget.value)}
+              value=""
+            >
+              <option value="" disabled selected>Open in…</option>
+              {#each installedEditors as [name, path]}
+                <option value={path}>{name}</option>
+              {/each}
+            </select>
+          </div>
+        {/if}
       </div>
-    {/if}
-    {#if activeDestinationId === "folder"}
-      <div class="frow">
-        <span class="din frow-label">Folder</span>
-        <span class="spacer"></span>
-        <button
-          class="ghost folder-pick"
-          onclick={() => onChooseExportFolder()}
-          title="Choose the export folder"
-        >
-          <span class="mono">{exportFolder ? exportFolder.split("/").pop() : "Desktop"}</span>
-          <Icon name="folder-open" size="10px" />
-        </button>
-      </div>
-    {/if}
+    </CollapsibleGroup>
+
     {#if activeDestinationId === "folder" || activeDestinationId === "obsidian"}
-      <div class="frow">
-        <span class="din frow-label">Size</span>
-        <span class="spacer"></span>
-        <select class="panel-select" bind:value={exportEdge} onchange={exportSettingsChanged}>
-          <option value={0}>Full</option>
-          <option value={4096}>4096</option>
-          <option value={2048}>2048</option>
-          <option value={1600}>1600</option>
-          <option value={1024}>1024</option>
-        </select>
-      </div>
-      <div class="frow">
-        <span class="din frow-label">White border</span>
-        <span class="spacer"></span>
-        <input
-          type="checkbox"
-          role="switch"
-          aria-label="White border"
-          checked={exportBorder}
-          onchange={() => {
-            exportBorder = !exportBorder;
-            exportSettingsChanged();
-          }}
-        />
-      </div>
+      <CollapsibleGroup label="Output">
+        <div class="rows">
+          {#if activeDestinationId === "folder"}
+            <div class="frow">
+              <span class="din frow-label">Folder</span>
+              <span class="spacer"></span>
+              <button class="ghost folder-pick" onclick={() => onChooseExportFolder()} title="Choose the export folder">
+                <span class="mono">{exportFolder ? exportFolder.split("/").pop() : "Desktop"}</span>
+                <Icon name="folder-open" size="var(--icon-md)" />
+              </button>
+            </div>
+          {/if}
+          <div class="frow">
+            <span class="din frow-label">Size</span>
+            <span class="spacer"></span>
+            <select class="panel-select" aria-label="Size" bind:value={exportEdge} onchange={exportSettingsChanged}>
+              <option value={0}>Full</option>
+              <option value={4096}>4096</option>
+              <option value={2048}>2048</option>
+              <option value={1600}>1600</option>
+              <option value={1024}>1024</option>
+            </select>
+          </div>
+          <div class="frow">
+            <span class="din frow-label">White border</span>
+            <span class="spacer"></span>
+            <input
+              type="checkbox"
+              role="switch"
+              aria-label="White border"
+              checked={exportBorder}
+              onchange={() => {
+                exportBorder = !exportBorder;
+                exportSettingsChanged();
+              }}
+            />
+          </div>
+        </div>
+      </CollapsibleGroup>
+    {:else if activeDestinationId === "garden"}
+      <CollapsibleGroup label="Publish">
+        <div class="rows">
+          <div class="frow">
+            <span class="din frow-label">Allow download</span>
+            <span class="spacer"></span>
+            <input
+              type="checkbox"
+              role="switch"
+              aria-label="Allow download"
+              checked={allowDownload}
+              onchange={toggleAllowDownload}
+            />
+          </div>
+          {#if publishStatus}
+            {#if publishStatus.startsWith("http")}
+              <a
+                class="hint published-link"
+                href={publishStatus}
+                onclick={(e) => { e.preventDefault(); invoke("open_path", { path: publishStatus }); }}
+                title="Open the published page"
+              >{publishStatus}</a>
+            {:else}
+              <p class="hint">{publishStatus}</p>
+            {/if}
+          {/if}
+        </div>
+      </CollapsibleGroup>
     {/if}
+  </div>
+
+  <!-- The action stays in reach, pinned to the bottom like Reset / Export on the Dev tab. -->
+  <div class="footer">
     {#if activeDestinationId === "folder"}
       <button class="accent panel-btn" onclick={() => onExport()} disabled={!photoPath}>Export to Folder</button>
     {:else if activeDestinationId === "obsidian"}
       <button class="accent panel-btn" onclick={() => onExportDaily()} disabled={!photoPath}>Send to Daily Note</button>
     {:else if activeDestinationId === "garden"}
-      <div class="frow">
-        <span class="din frow-label">Allow download</span>
-        <span class="spacer"></span>
-        <input
-          type="checkbox"
-          role="switch"
-          aria-label="Allow download"
-          checked={allowDownload}
-          onchange={toggleAllowDownload}
-        />
-      </div>
       <button class="accent panel-btn" onclick={publishPhoto} disabled={!photoPath || publishing}>
         {publishing ? "Publishing…" : "Publish to Garden"}
       </button>
-      {#if publishStatus}
-        {#if publishStatus.startsWith("http")}
-          <a
-            class="hint published-link"
-            href={publishStatus}
-            onclick={(e) => { e.preventDefault(); invoke("open_path", { path: publishStatus }); }}
-            title="Open the published page"
-          >{publishStatus}</a>
-        {:else}
-          <p class="hint">{publishStatus}</p>
-        {/if}
-      {/if}
     {/if}
   </div>
 </div>
 
 <style>
-  .pane-scroll {
+  .export-tab {
     flex: 1;
-    overflow-y: auto;
+    min-height: 0;
     display: flex;
     flex-direction: column;
-    gap: var(--space);
+    gap: var(--space-d2);
   }
 
-  .sec-body {
+  .export-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    /* No scrollbar: it sat on top of the values (same as the other tabs). */
+    scrollbar-width: none;
     display: flex;
     flex-direction: column;
-    gap: calc(var(--space-d4) * 3);
+    gap: var(--space-d3);
+  }
+  .export-scroll > :global(*) {
+    /* Groups keep their height and the area scrolls; left to shrink they squeeze each other flat. */
+    flex-shrink: 0;
+  }
+
+  .rows {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-d4);
+    padding-block: var(--space-d3);
   }
 
   .frow {
     display: flex;
     align-items: center;
     gap: var(--space-d2);
-    min-height: 16px;
+    min-height: var(--control-h);
   }
   .frow-label {
     width: 88px;
     flex-shrink: 0;
-    overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -199,30 +230,38 @@
     flex: 1;
   }
 
-  /* Sizing only — select/button/switch identity (chevron, borders, hover,
-     checked-state fill) all come from Standard's own zero-class rules
-     (packages/styles/_standard-11-forms.scss, _standard-13-components.scss)
-     plus the app-wide pill shape in +layout.svelte. This panel just needs
-     everything smaller and right-aligned than either provides by default. */
+  /* Sizing only — select/button/switch identity (chevron, borders, hover, checked-state fill)
+     comes from Standard's own zero-class rules plus the app-wide pill shape in +layout.svelte. */
   .panel-select {
     width: auto;
     max-width: 170px;
-    padding: var(--space-d8) calc(var(--space-d4) * 6) var(--space-d8) var(--space-d2);
+    min-height: var(--control-h);
+    padding-block: 0;
+    padding-inline: var(--space-d2) calc(var(--space-d4) * 6);
   }
 
   .folder-pick {
-    padding: var(--space-d8) var(--space-d2);
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--control-h);
+    padding-block: 0;
+    padding-inline: var(--space-d2);
     gap: var(--space-d4);
   }
   .folder-pick :global(.icon) {
     color: var(--color-muted);
   }
 
+  .footer {
+    flex-shrink: 0;
+    padding: var(--space-d3) 0;
+    border-top: var(--border);
+  }
   .panel-btn {
     display: block;
     width: 100%;
-    padding: var(--space-d2) 0;
-    margin-top: var(--space-d4);
+    min-height: var(--control-h);
+    padding-block: 0;
   }
 
   .hint {

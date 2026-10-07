@@ -46,4 +46,20 @@ describe("developAnalysis", () => {
     expect(createImageData).toHaveBeenCalledWith(width, height);
     expect(putImageData).toHaveBeenCalled();
   });
+  it("paints a zone mask with the colours it is given", () => {
+    // one dark pixel (shadows), one bright (highlights), one mid (midtones)
+    const data = new Uint8ClampedArray([5, 5, 5, 255, 250, 250, 250, 255, 120, 120, 120, 255]);
+    const paint = (/** @type {string} */ layer, /** @type {any} */ colors) => {
+      const out = new Uint8ClampedArray(12);
+      const ctx = /** @type {any} */ ({ createImageData: () => ({ data: out }), putImageData() {} });
+      renderCheckLayer(/** @type {any} */ ({ data }), layer, ctx, 3, 1, colors);
+      return out;
+    };
+    const theme = { shadows: [1, 2, 3], midtones: [4, 5, 6], highlights: [7, 8, 9] };
+    expect([...paint("zone_shadows", theme).slice(0, 3)]).toEqual([1, 2, 3]);
+    expect([...paint("zone_highlights", theme).slice(4, 7)]).toEqual([7, 8, 9]);
+    expect([...paint("zone_midtones", theme).slice(8, 11)]).toEqual([4, 5, 6]);
+    // without colours, the masks keep their old look
+    expect([...paint("zone_shadows", undefined).slice(0, 3)]).toEqual([0, 130, 255]);
+  });
 });

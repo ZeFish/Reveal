@@ -21,7 +21,6 @@
 //! existing one cannot be merged safely (not XML, no `rdf:Description`), it is
 //! set aside as `<sidecar>.bak` rather than overwritten.
 
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -86,13 +85,9 @@ pub fn write(original: &Path, sidecar: &Sidecar) -> Result<(), MetaError> {
         // that we could read anyway).
         Err(_) => render(sidecar),
     };
-    let tmp = path.with_extension("xmp.tmp");
-    {
-        let mut f = std::fs::File::create(&tmp)?;
-        f.write_all(doc.as_bytes())?;
-        f.sync_all()?;
-    }
-    std::fs::rename(&tmp, &path)?;
+    // The shared rule for writing to a disk that may be a NAS: retry, fsync,
+    // read back, rename (see reveal-io).
+    reveal_io::write_durable(&path, doc.as_bytes())?;
     Ok(())
 }
 

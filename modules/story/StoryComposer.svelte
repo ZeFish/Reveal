@@ -415,11 +415,11 @@
       <div class="row-tools">
         {#if rows.some((r) => r.type === "photos" && r.blocks.length > 1)}
           <button class="split-all-btn" onclick={splitAll} title="Place each photo on its own row">
-            <Icon name="rows" size="12px" /><span>Split into individual rows</span>
+            <Icon name="rows" size="var(--icon-md)" /><span>Split into individual rows</span>
           </button>
         {/if}
         <button class="split-all-btn" onclick={sortByDate} title="Reorder photos chronologically">
-          <Icon name="arrows-down-up" size="12px" /><span>By date</span>
+          <Icon name="arrows-down-up" size="var(--icon-md)" /><span>By date</span>
         </button>
       </div>
     {/if}
@@ -516,7 +516,7 @@
 
     {#if blocks.length}
       <button class="add-prose" onclick={addProse}>
-        <Icon name="plus" size="12px" />
+        <Icon name="plus" size="var(--icon-md)" />
         <span>Add a paragraph</span>
       </button>
     {/if}

@@ -49,7 +49,7 @@
       aria-expanded={!collapsed}
     >
       <span class="chevron" class:collapsed>
-        <Icon name="caret-down" size="8px" />
+        <Icon name="caret-down" size="var(--icon-sm)" />
       </span>
       <span class="group-title">{label}</span>
       <span class="group-line"></span>
@@ -67,7 +67,7 @@
   .collapsible-group {
     display: flex;
     flex-direction: column;
-    gap: var(--space-d4);
+    gap: 0;
   }
 
   .group-header {
@@ -76,7 +76,7 @@
     border: none;
     display: flex;
     align-items: center;
-    gap: var(--space-d3);
+    gap: var(--space-d2);
     padding: var(--space-d2) 0;
     width: 100%;
     text-align: left;
@@ -112,6 +112,8 @@
   .group-controls {
     display: flex;
     flex-direction: column;
-    gap: var(--space-d4);
+    gap: 0;
+    padding-inline-start: var(--space);
+    padding-inline-end: var(--space-d2);
   }
 </style>

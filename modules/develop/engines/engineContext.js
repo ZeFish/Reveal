@@ -7,8 +7,27 @@
 
 export const INVERTED_CONTROLS = new Set(["print_exposure_ev"]);
 
+/** Stored as 0..1 in the recipe, shown as a percentage. */
+export const PERCENT_CONTROLS = new Set(["film_prep"]);
+
 /**
- * Resolves the active target inside a recipe (global or zone_shadows / zone_midtones / zone_highlights).
+ * Like {@link getActiveTarget} but never writes: a zone that does not exist yet
+ * reads as empty. Use it wherever a value is only displayed — rendering must not
+ * mutate state (Svelte throws `state_unsafe_mutation`).
+ * @param {any} recipe
+ * @param {string} [activeZone]
+ * @returns {any}
+ */
+export function peekActiveTarget(recipe, activeZone = "global") {
+  if (!recipe || !activeZone || activeZone === "global") return recipe;
+  return recipe[`zone_${activeZone}`] ?? EMPTY_TARGET;
+}
+
+const EMPTY_TARGET = Object.freeze({});
+
+/**
+ * Resolves the active target inside a recipe (global or zone_shadows / zone_midtones / zone_highlights),
+ * creating the zone if it is missing. Only call it from an event handler.
  * @param {any} recipe
  * @param {string} [activeZone]
  * @returns {any}
@@ -27,6 +46,7 @@ export function getActiveTarget(recipe, activeZone = "global") {
  */
 export function toDisplay(id, v) {
   const val = v ?? 0;
+  if (PERCENT_CONTROLS.has(id)) return val * 100;
   return INVERTED_CONTROLS.has(id) ? -val : val;
 }
 
@@ -36,6 +56,7 @@ export function toDisplay(id, v) {
  * @returns {number}
  */
 export function fromDisplay(id, v) {
+  if (PERCENT_CONTROLS.has(id)) return v / 100;
   return INVERTED_CONTROLS.has(id) ? -v : v;
 }
 
@@ -105,6 +126,9 @@ export function formatVal(id, v) {
   }
   if (id === "film_format_mm") {
     return `${Math.round(v)} mm`;
+  }
+  if (id === "film_prep") {
+    return v <= 0 ? "Off" : `${Math.round(v)}%`;
   }
   return (v > 0 ? "+" : "") + Math.round(v);
 }

@@ -155,17 +155,10 @@ pub(crate) fn served_preview_mtime(source: &std::path::Path) -> u64 {
 /// re-opening a developed photo never bumps the file's mtime — keeping backups
 /// quiet and the future staleness check honest.
 pub(crate) fn write_sidecar_if_changed(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
-    if let Ok(existing) = std::fs::read(path) {
-        if existing == bytes {
-            return Ok(());
-        }
-    }
     // An Apple Photos preview lands inside a per-asset directory that nothing
-    // creates on the read path any more — writing owns making room.
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(path, bytes)
+    // creates on the read path any more — `write_durable` makes room for it, retries
+    // a NAS timeout, and reads the file back before it replaces the old one.
+    reveal_io::write_durable_if_changed(path, bytes)
 }
 
 /// Persist a `reveal://thumb` render as the durable `.preview.jpg` sidecar so
@@ -196,58 +189,6 @@ pub(crate) fn persist_thumb_cache(source: &std::path::Path, bytes: &[u8], size: 
         if let Err(e) = write_sidecar_if_changed(&sidecar_path, bytes) {
             eprintln!("thumb cache write {}: {e}", sidecar_path.display());
         }
-    }
-}
-
-/// Bounds how many `reveal://thumb` decodes run at once. Without this, a
-/// folder opened all-at-once (masonry isn't grid-virtualized yet, per the
-/// README) can spawn one blocking decode per visible cell — fine for the
-/// cheap embedded-thumb path, but the companion-JPEG/full-develop fallbacks
-/// are expensive enough that hundreds running concurrently spikes memory
-/// into the tens of GB (confirmed 2026-08-02 opening a 213-photo RAW+JPEG
-/// folder — see reveal.md memory notes).
-pub(crate) struct ThumbSemaphore {
-    count: std::sync::Mutex<usize>,
-    cv: std::sync::Condvar,
-    max: usize,
-}
-
-impl ThumbSemaphore {
-    pub(crate) fn new(max: usize) -> Self {
-        Self { count: std::sync::Mutex::new(0), cv: std::sync::Condvar::new(), max }
-    }
-
-    pub(crate) fn acquire(&self) {
-        let mut count = self.count.lock().unwrap();
-        while *count >= self.max {
-            count = self.cv.wait(count).unwrap();
-        }
-        *count += 1;
-    }
-
-    fn release(&self) {
-        let mut count = self.count.lock().unwrap();
-        *count -= 1;
-        self.cv.notify_one();
-    }
-}
-
-pub(crate) struct ThumbConcurrencyState(pub(crate) std::sync::Arc<ThumbSemaphore>);
-
-/// RAII guard: acquired before a thumb decode, released (even on early
-/// return/panic-unwind) when the request finishes.
-pub(crate) struct ThumbPermit<'a>(&'a ThumbSemaphore);
-
-impl<'a> ThumbPermit<'a> {
-    pub(crate) fn acquire(sem: &'a ThumbSemaphore) -> Self {
-        sem.acquire();
-        Self(sem)
-    }
-}
-
-impl Drop for ThumbPermit<'_> {
-    fn drop(&mut self) {
-        self.0.release();
     }
 }
 
@@ -558,11 +499,13 @@ pub(crate) async fn developed_preview_jpeg(
     path: &str,
     recipe: &reveal_engine::Recipe,
     max_px: u32,
+    live: bool,
 ) -> Result<Vec<u8>, String> {
     // The durable truth is the `.preview.jpg` sibling of the RAW (file over
     // app), a 2048px develop that doubles as a web-ready export. Only the
-    // settled full-res render persists.
-    let durable = max_px >= 2048;
+    // settled full-res render persists — and not a `live` one, which is a look at something
+    // that is not the photo's saved state (a preset under the pointer).
+    let durable = max_px >= 2048 && !live;
 
     // No cache read here, deliberately. This is called to PRODUCE a render of
     // the recipe it was handed; the cache holds whatever was published last,
@@ -579,25 +522,65 @@ pub(crate) async fn developed_preview_jpeg(
     // instead of next to the RAW, so the grid never saw fresh develops.
     let path_owned = path.to_string();
     let recipe_owned = recipe.clone();
+    let engine_for_publish = engine.clone();
     let out = tauri::async_runtime::spawn_blocking(move || {
         let source = apple_photos::source(&path_owned)?;
         engine.develop_jpeg(&source, &recipe_owned, max_px).map_err(|e| format!("{e:#}"))
     })
     .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| format!("{e:#}"))?;
+    .map_err(|e| e.to_string())??;
 
     eprintln!(
         "develop_preview: {}x{} decode {} ms pipeline {} ms",
         out.width, out.height, out.decode_ms, out.render_ms
     );
-    // One call publishes to both stores — see the contract on this function.
-    // It writes next to the RAW, which may be on the NAS: off the runtime.
-    let (app_for_write, path_for_write, bytes) = (app.clone(), path.to_string(), out.jpeg.clone());
-    let _ = crate::blocking(move || {
-        Ok(write_preview_sidecar_bytes(&app_for_write, &path_for_write, &bytes, durable, max_px))
-    })
-    .await;
+
+    // The picture is already in hand: hand it back NOW. Publishing writes next to the RAW,
+    // which may be on the NAS (and retries a timeout for several seconds), and the screen
+    // must not wait for it — same as the Rapid canvas. The newest settle wins
+    // (`next_publish_generation`), and `preview-published` tells the grid when it landed.
+    if durable {
+        let generation = next_publish_generation(path);
+        let (app, path, recipe, jpeg) = (app.clone(), path.to_string(), recipe.clone(), out.jpeg.clone());
+        tauri::async_runtime::spawn(async move {
+            if !still_wanted_after_quiet(&path, generation).await {
+                return;
+            }
+            // The Crop tab asks for the WHOLE frame (the overlay is drawn on it), but what
+            // gets published for the grid and the exports is always the cropped photo.
+            // Publishing that render left an uncropped `.preview.jpg` behind whenever
+            // the person left Develop from the Crop tab.
+            let bytes = if !recipe.apply_crop {
+                let (engine, path, recipe) = (engine_for_publish, path.clone(), recipe.clone());
+                let cropped = tauri::async_runtime::spawn_blocking(move || {
+                    let source = apple_photos::source(&path)?;
+                    let mut cropped = recipe;
+                    cropped.apply_crop = true;
+                    engine.develop_jpeg(&source, &cropped, max_px).map_err(|e| format!("{e:#}"))
+                })
+                .await;
+                match cropped {
+                    Ok(Ok(rendered)) => rendered.jpeg,
+                    _ => return, // nothing worth publishing: the sidecar keeps its last good render
+                }
+            } else {
+                jpeg
+            };
+            // Another settle may have claimed the photo while this one rendered.
+            if !publish_generation_is_current(&path, generation) {
+                return;
+            }
+            let (app_for_write, path_for_write) = (app.clone(), path.clone());
+            let version = crate::blocking(move || {
+                Ok(write_preview_sidecar_bytes(&app_for_write, &path_for_write, &bytes, true, max_px))
+            })
+            .await
+            .unwrap_or(0);
+            if version != 0 {
+                let _ = app.emit("preview-published", serde_json::json!({ "path": path, "version": version }));
+            }
+        });
+    }
     Ok(out.jpeg)
 }
 
@@ -608,8 +591,9 @@ pub(crate) async fn develop_preview(
     path: String,
     recipe: reveal_engine::Recipe,
     max_px: u32,
+    live: Option<bool>,
 ) -> Result<IpcResponse, String> {
-    let jpeg = developed_preview_jpeg(&app, &state, &path, &recipe, max_px).await?;
+    let jpeg = developed_preview_jpeg(&app, &state, &path, &recipe, max_px, live.unwrap_or(false)).await?;
     Ok(IpcResponse::new(jpeg))
 }
 
@@ -630,7 +614,7 @@ pub(crate) async fn copy_developed_preview_to_clipboard(
     recipe: reveal_engine::Recipe,
     max_px: u32,
 ) -> Result<(), String> {
-    let jpeg = developed_preview_jpeg(&app, &state, &path, &recipe, max_px).await?;
+    let jpeg = developed_preview_jpeg(&app, &state, &path, &recipe, max_px, false).await?;
     #[cfg(target_os = "macos")]
     {
         return macos::clipboard::write_jpeg_image(&jpeg);
@@ -703,6 +687,21 @@ pub(crate) fn publish_generation_is_current(path: &str, generation: u64) -> bool
     guard.get(path).is_none_or(|current| *current == generation)
 }
 
+/// How long a settled render waits before it is written to disk.
+///
+/// Trying engines — Rapid, Spektra, None, back — settles a render each time, and every settle used
+/// to write `.preview.jpg` (and the recipe) to the NAS at once: three writes for a person who was
+/// only looking. The picture on screen does not wait for this; only the file does. A settle that a
+/// newer one has replaced by then is dropped without rendering or writing anything.
+pub(crate) const PUBLISH_QUIET: std::time::Duration = crate::photo_writes::QUIET;
+
+/// Wait out [`PUBLISH_QUIET`], then say whether this publish is still the newest one claimed for
+/// the photo. `false`: leave the disk alone.
+pub(crate) async fn still_wanted_after_quiet(path: &str, generation: u64) -> bool {
+    let _ = tauri::async_runtime::spawn_blocking(|| std::thread::sleep(PUBLISH_QUIET)).await;
+    publish_generation_is_current(path, generation)
+}
+
 /// THE CONTRACT: every preview-serving path, for every develop engine, MUST
 /// funnel its final JPEG bytes through this one function on settle (durable).
 /// This is the only place that PUBLISHES a render, and it publishes to both
@@ -740,8 +739,22 @@ pub(crate) fn write_preview_sidecar_bytes(
     let Some(sidecar) = preview_sidecar_path(source) else {
         return 0;
     };
+    // `write_sidecar_if_changed` already retries a NAS timeout (reveal-io). If it
+    // still fails, publish NOTHING and say so: the render used to be cached under the
+    // OLD sidecar's version, so the grid kept the old picture, the cache held a new
+    // one under the wrong key, and nothing said so.
     if let Err(e) = write_sidecar_if_changed(&sidecar, jpeg) {
-        eprintln!("preview sidecar write {path}: {e}");
+        eprintln!("preview sidecar write {path}: {e} (gave up)");
+        let _ = app.emit(
+            "app-error",
+            serde_json::json!({
+                "message": format!(
+                    "Could not save the preview of {} ({e}). The photo's settings are saved; its grid preview will update on the next develop.",
+                    source.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| path.to_string())
+                )
+            }),
+        );
+        return 0;
     }
     let version = served_preview_mtime(source);
 
@@ -910,6 +923,10 @@ pub(crate) async fn write_preview_sidecar(
     max_px: u32,
     generation: u64,
 ) -> Result<(), String> {
+    // Let the engine switching settle before doing the work of publishing.
+    if !still_wanted_after_quiet(path, generation).await {
+        return Ok(());
+    }
     // Render, then publish. This used to read the local cache first and reuse
     // whatever it found — which, once the cache key stopped carrying a recipe
     // digest, meant a settled Rapid edit republished the PREVIOUS render as
@@ -917,7 +934,10 @@ pub(crate) async fn write_preview_sidecar(
     // cannot answer "is this that recipe?", so it is not asked.
     let engine = engine.clone();
     let path_owned = path.to_string();
-    let recipe_owned = recipe.clone();
+    let mut recipe_owned = recipe.clone();
+    // What is published is the photo as cropped, even when the screen is showing the
+    // whole frame for the Crop tab.
+    recipe_owned.apply_crop = true;
     let rendered = tauri::async_runtime::spawn_blocking(move || {
         let source = apple_photos::source(&path_owned)?;
         engine.develop_jpeg(&source, &recipe_owned, max_px).map_err(|e| format!("{e:#}"))
@@ -933,10 +953,16 @@ pub(crate) async fn write_preview_sidecar(
         return Ok(());
     }
     let (app_for_write, path_for_write) = (app.clone(), path.to_string());
-    crate::blocking(move || {
+    let version = crate::blocking(move || {
         Ok(write_preview_sidecar_bytes(&app_for_write, &path_for_write, &rendered.jpeg, true, max_px))
     })
     .await?;
+    // This runs AFTER the canvas has its pixels (see `develop_preview_rgba`), so by the time the
+    // webview asked for the sidecar's new version it had not landed yet and the grid kept the
+    // old picture. Say when it has: the grid takes the new version and redraws the cell.
+    if version != 0 {
+        let _ = app.emit("preview-published", serde_json::json!({ "path": path, "version": version }));
+    }
     Ok(())
 }
 

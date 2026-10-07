@@ -8,6 +8,7 @@
   import { Icon } from "@modules/core";
   import {
     getActiveTarget,
+    peekActiveTarget,
     toDisplay,
     fromDisplay,
     getNeutral,
@@ -55,9 +56,14 @@
     return getActiveTarget(recipe, activeZone);
   }
 
+  // Display-only reads: never create a missing zone while rendering.
+  function peek() {
+    return peekActiveTarget(recipe, activeZone);
+  }
+
   /** @param {string} id @returns {number} */
   function getSliderVal(id) {
-    return Number(target()?.[id] ?? 0);
+    return Number(peek()?.[id] ?? 0);
   }
 
   /** @param {string} id @param {number} val */
@@ -67,7 +73,7 @@
 
   /** @param {string} id @param {number} index @returns {number} */
   function getIndexedVal(id, index) {
-    return Number(target()?.[id]?.[index] ?? 0);
+    return Number(peek()?.[id]?.[index] ?? 0);
   }
 
   /** @param {string} id @param {number} index @param {number} val */
@@ -92,7 +98,7 @@
   function lutListFor(stage) {
     if (isZoneActive) {
       const key = stage === "pre" ? "pre_luts" : "post_luts";
-      return Array.isArray(target()[key]) ? target()[key] : [];
+      return Array.isArray(peek()[key]) ? peek()[key] : [];
     }
     if (stage === "pre") return recipe.rapid_pre_luts?.length ? recipe.rapid_pre_luts : (recipe.pre_luts || []);
     return recipe.rapid_post_luts?.length ? recipe.rapid_post_luts : (recipe.post_luts || []);
@@ -175,7 +181,7 @@
           {#if control.kind === "toggle"}
             <ToggleRow
               label={control.label}
-              checked={Boolean(target()?.[control.id])}
+              checked={Boolean(peek()?.[control.id])}
               onChange={(checked) => {
                 target()[control.id] = checked;
                 edited();
@@ -234,7 +240,7 @@
               label={control.label}
               bands={control.bands}
               channels={control.channels}
-              readField={(f) => Number(target()?.[f.id]?.[f.index ?? 0] ?? 0)}
+              readField={(f) => Number(peek()?.[f.id]?.[f.index ?? 0] ?? 0)}
               writeField={(f, v) => {
                 const t = target();
                 if (!Array.isArray(t[f.id])) t[f.id] = [];
@@ -302,7 +308,7 @@
                       onclick={() => onRemoveLut(control.stage, idx)}
                       title="Remove this LUT layer"
                     >
-                      <Icon name="x" size="9px" />
+                      <Icon name="x" size="var(--icon-sm)" />
                     </button>
                   </div>
                   {#if layer.name}

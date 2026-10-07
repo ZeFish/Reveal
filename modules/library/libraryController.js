@@ -19,6 +19,7 @@ import {
   createFolder as opCreateFolder,
   moveDir as opMoveDir,
 } from "./libraryOperations.js";
+import { refreshLoadedFrames as setLoadedFrames } from "./libraryState.svelte.js";
 
 /**
  * Creates a bound library controller instance.
@@ -71,6 +72,14 @@ export function createLibraryController(deps) {
   } = deps;
 
   return {
+    /**
+     * Replace the photos of the folder on screen — an import writing into it, a preview
+     * rewritten behind it. The event handlers reach this through the wiring; it used to be
+     * missing here, and the wiring's optional call quietly did nothing.
+     * @param {any[]} rows
+     */
+    refreshLoadedFrames: (rows) => setLoadedFrames(rows),
+
     indexRoot: () =>
       opIndexRoot({
         invoke,

@@ -54,7 +54,7 @@
 
 <div class="section-group">
   <div class="section-heading">
-    <Icon name="arrows-down-up" size="12px" />
+    <Icon name="arrows-down-up" size="var(--icon-md)" />
     <span>PHOTO ORGANIZATION &amp; IMPORT</span>
   </div>
   <div class="card flush list divided date-card">
@@ -73,7 +73,7 @@
           />
           <Dropdown label="Date folder presets" triggerClass="ghost icon preset-toggle-btn" align="end">
             {#snippet trigger()}
-              <Icon name="caret-down" size="10px" />
+              <Icon name="caret-down" size="var(--icon-sm)" />
             {/snippet}
             {#each datePresets as preset}
               <DropdownItem onclick={() => selectDatePattern(preset.pattern)}>
@@ -111,7 +111,7 @@
         <Dropdown label="Default import preset" triggerClass="outline small action-pill-btn" align="end">
           {#snippet trigger()}
             <span>{defaultImportPreset ?? "None"}</span>
-            <Icon name="caret-down" size="10px" />
+            <Icon name="caret-down" size="var(--icon-sm)" />
           {/snippet}
           <DropdownItem onclick={() => onSetDefaultImportPreset(null)}>None</DropdownItem>
           {#each presets as preset}
@@ -125,7 +125,7 @@
 
 <div class="section-group">
   <div class="section-heading">
-    <Icon name="folder-open" size="12px" />
+    <Icon name="folder-open" size="var(--icon-md)" />
     <span>EXPORT &amp; ASSETS</span>
   </div>
   <div class="card flush list divided">
@@ -137,7 +137,7 @@
       <div class="row-control">
         <div class="path-picker-group">
           <code class="path-display" title={preferences.export_folder || "Desktop (default)"}>
-            <Icon name="folder-open" size="12px" />
+            <Icon name="folder-open" size="var(--icon-md)" />
             <span class="path-text mono">
               {preferences.export_folder ? formatPath(preferences.export_folder) : "Desktop (default)"}
             </span>
@@ -148,7 +148,7 @@
                 onclick={() => (preferences.export_folder = "")}
                 title="Reset to Desktop"
               >
-                <Icon name="x" size="10px" />
+                <Icon name="x" size="var(--icon-sm)" />
               </button>
             {/if}
           </code>
@@ -166,7 +166,7 @@
       <div class="row-control">
         <div class="path-picker-group">
           <code class="path-display" title={preferences.lut_folder || "Built-in LUTs only"}>
-            <Icon name="folder-open" size="12px" />
+            <Icon name="folder-open" size="var(--icon-md)" />
             <span class="path-text mono">
               {preferences.lut_folder ? formatPath(preferences.lut_folder) : "Built-in LUTs"}
             </span>
@@ -177,7 +177,7 @@
                 onclick={() => (preferences.lut_folder = "")}
                 title="Clear"
               >
-                <Icon name="x" size="10px" />
+                <Icon name="x" size="var(--icon-sm)" />
               </button>
             {/if}
           </code>

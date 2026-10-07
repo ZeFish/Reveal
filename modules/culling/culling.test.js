@@ -134,6 +134,23 @@ describe("modules/culling", () => {
       expect(invoke).toHaveBeenCalledWith("set_rating", { path: "/a/1.jpg", rating: 5 });
       expect(frame1.rating).toBe(5);
     });
+
+    it("shows the new rating before the write comes back, and restores it if the write fails", async () => {
+      /** @type {(e?: any) => void} */
+      let fail = () => {};
+      vi.mocked(invoke).mockImplementation(
+        () => new Promise((_, reject) => { fail = reject; }),
+      );
+      const frame = { path: "/a/3.jpg", name: "3.jpg", rating: 2 };
+      const { setSelection } = await import("@modules/core");
+      setSelection(new Set(["/a/3.jpg"]));
+
+      const done = rate([frame], 4);
+      expect(frame.rating).toBe(4); // on screen already, the disk has not answered
+      fail("offline");
+      await done;
+      expect(frame.rating).toBe(2);
+    });
   });
 
   describe("stopCull", () => {

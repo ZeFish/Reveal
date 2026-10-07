@@ -237,3 +237,35 @@ describe("checkLayer & engine changes", () => {
     expect(onClear).toHaveBeenCalled();
   });
 });
+
+describe("applyRecipeToFrames", () => {
+  it("renders the photo on screen first, and saves the others without waiting one by one", async () => {
+    const { applyRecipeToFrames } = await import("./developOperations.js");
+    /** @type {string[]} */
+    const calls = [];
+    const state = { recipe: { engine: "spektra", crop_aspect: "1:1", crop_x: 0.1 }, developEngine: "spektra", useCanvas: false };
+    const invoke = vi.fn(async (/** @type {string} */ cmd, /** @type {any} */ args) => {
+      calls.push(`${cmd}:${args?.path ?? ""}`);
+      return cmd === "load_sidecar" ? { engine_settings: {} } : undefined;
+    });
+    const scheduleRender = vi.fn(() => calls.push("render-on-screen"));
+    await applyRecipeToFrames({
+      state,
+      recipeToApply: { engine: "rapid", exposure: 1 },
+      targetFrames: [{ path: "/a.raw", name: "a" }, { path: "/b.raw", name: "b" }],
+      photoPath: "/a.raw",
+      invoke,
+      scheduleRender,
+      sendDevStateToPanel: () => {},
+      PREVIEW_PX: 2048,
+    });
+    // Before any disk or NAS call, the open photo already has its new settings and its render.
+    expect(calls[0]).toBe("render-on-screen");
+    expect(state.recipe).toMatchObject({ engine: "rapid", exposure: 1, crop_aspect: "1:1", crop_x: 0.1 });
+    // The open photo is rendered by the pump, not twice; the other one is developed and saved.
+    expect(calls).not.toContain("develop_preview:/a.raw");
+    expect(calls).toContain("develop_preview:/b.raw");
+    expect(calls).toContain("save_recipe:/a.raw");
+    expect(calls).toContain("save_recipe:/b.raw");
+  });
+});

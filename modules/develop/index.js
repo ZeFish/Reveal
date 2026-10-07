@@ -19,7 +19,7 @@ export {
   recordRecipeCommit,
   undoRecipeEdit,
   redoRecipeEdit,
-  saveRecipeSoon,
+  queueRecipeSave,
   handleRecipeEdited,
   setDevNum,
   resetOne,
@@ -35,7 +35,7 @@ export {
   toggleCheckLayer,
   copySettings,
   applyRecipeToFrames,
-  clearDevelopment,
+  showAsShot,
   captionEdited,
   tagsEdited,
 } from "./developOperations.js";

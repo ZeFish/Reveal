@@ -57,8 +57,9 @@ export function initApplePhotos() {
     });
 
   const unlistenPromise = listen("apple-photos-transfer", ({ payload }) => {
+    // An error is shown by the transfer alert (with its Dismiss) and by nothing else: a second
+    // announcement through `hold` drew over it at the same spot, bottom centre.
     transfer = /** @type {any} */ (payload);
-    if (payload.phase === "error") hold(`Apple Photos: ${payload.error}`);
   });
 
   return () => {

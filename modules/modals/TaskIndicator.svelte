@@ -19,7 +19,7 @@
 </script>
 
 {#if running.length}
-  <button class="task-indicator" onclick={() => onOpen()} title={label}>
+  <button class="task-indicator hud" onclick={() => onOpen()} title={label}>
     <span class="loader" aria-hidden="true"></span>
     <span class="ti-label">{label}</span>
     <progress class="ti-track" value={aggregatePct} max="100"></progress>
@@ -27,7 +27,9 @@
 {/if}
 
 <style>
-  /* Placement belongs to NotificationStack now, not to each notice. */
+  /* Placement belongs to NotificationStack now, not to each notice. The pill
+     itself (background, blur, shadow, radius) is the shared `.hud`, the same one
+     Toast wears — without it the label floated bare over the photos. */
   .task-indicator {
     display: flex;
     align-items: center;

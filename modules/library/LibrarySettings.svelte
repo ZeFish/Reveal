@@ -89,7 +89,7 @@
 
 <div class="section-group">
   <div class="section-heading">
-    <Icon name="books" size="12px" />
+    <Icon name="books" size="var(--icon-md)" />
     <span>CATALOGUED LIBRARIES</span>
   </div>
   <div class="card flush list divided">

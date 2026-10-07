@@ -47,7 +47,7 @@
     aria-expanded={open}
     title={open ? "Collapse catalogue" : "Expand catalogue"}
   >
-    <span class="disc" class:open><Icon name="caret-right" size="9px" /></span>
+    <span class="disc" class:open><Icon name="caret-right" size="var(--icon-sm)" /></span>
   </button>
   <button
     class="section-main ghost"
@@ -59,7 +59,7 @@
     oncontextmenu={(event) => onContextMenu(event)}
   >
     {#if source?.icon}
-      <Icon name={source.icon} size="10px" class="source-icon" />
+      <Icon name={source.icon} size="var(--icon-sm)" class="source-icon" />
     {/if}
     <span class="section-name">{name}</span>
   </button>
@@ -76,7 +76,7 @@
     aria-label={`Reindex ${name}`}
     aria-busy={scanning}
   >
-    <Icon name="arrows-clockwise" size="9px" class={scanning ? "spin" : ""} />
+    <Icon name="arrows-clockwise" size="var(--icon-sm)" class={scanning ? "spin" : ""} />
   </button>
 </div>
 
@@ -84,7 +84,7 @@
   .section {
     display: flex;
     align-items: center;
-    padding: var(--space-d4) var(--space-d2);
+    padding-block: var(--space-d4);
     margin-top: var(--space-d3);
     border-top: var(--border);
     user-select: none;
@@ -132,8 +132,13 @@
     opacity: 0.7;
     vertical-align: middle;
   }
+  /* The name already takes the free space (flex: 1 above). A second flex: 1 here split it in
+     two and cut the name short — "FFP-P…" with room to spare. */
   .dir-spacer {
-    flex: 1;
+    flex: 0 0 0;
+  }
+  .section-main {
+    min-width: 0;
   }
   .dir-count {
     font-variant-numeric: tabular-nums;

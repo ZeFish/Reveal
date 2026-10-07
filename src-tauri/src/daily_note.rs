@@ -83,7 +83,7 @@ impl DailyNote {
         let trimmed_content = content.trim_end();
         let updated = format!("{trimmed_content}\n\n{block}\n");
 
-        std::fs::write(&note_file, updated)
+        reveal_io::write_durable(&note_file, updated.as_bytes())
             .map_err(|e| format!("Could not write daily note '{}': {e}", note_file.display()))?;
         Ok(note_file)
     }

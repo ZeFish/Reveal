@@ -124,6 +124,7 @@ describe("developRunner", () => {
         path: "/photo.raw",
         recipe: { engine: "spektra", apply_crop: true },
         maxPx: 1024,
+        live: false,
       });
       expect(onLoupeBlobCreated).toHaveBeenCalledWith("blob:mock");
       expect(developState.inflight).toBe(false);

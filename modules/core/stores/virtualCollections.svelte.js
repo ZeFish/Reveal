@@ -1,7 +1,7 @@
 /**
  * Virtual & Curated Collections store.
  *
- * Manages smart queries (Favoris, Picks, Stories) and curated photo sets
+ * Manages smart queries (Favorites, Picks, Stories) and curated photo sets
  * that support drag-and-drop organisation without moving files on disk.
  */
 
@@ -53,13 +53,13 @@ let userCollections = $state(readSavedCollections());
 export const SMART_COLLECTIONS = [
   Collection.fromVirtual({
     id: "virtual://favorites",
-    name: "Favoris 5★",
+    name: "Favorites 5★",
     icon: "star",
     query: { filter: { minRating: 5 } },
   }),
   Collection.fromVirtual({
     id: "virtual://picks",
-    name: "Sélectionnés",
+    name: "Picked",
     icon: "flag",
     query: { filter: { pick: "picked" } },
   }),
@@ -106,14 +106,14 @@ export const virtualCollections = {
     const smart = [
       Collection.fromVirtual({
         id: "virtual://favorites",
-        name: "Favoris 5★",
+        name: "Favorites 5★",
         icon: "star",
         count: favCount,
         query: { filter: { minRating: 5 } },
       }),
       Collection.fromVirtual({
         id: "virtual://picks",
-        name: "Sélectionnés",
+        name: "Picked",
         icon: "flag",
         count: pickCount,
         query: { filter: { pick: "picked" } },

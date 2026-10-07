@@ -190,7 +190,11 @@
   }
 
   $effect(() => {
-    ghosts = filterGhosts(ghosts, dirs);
+    // Only write when something was dropped: filterGhosts always returns a new
+    // array, and assigning it back to the state this effect reads loops forever
+    // (effect_update_depth_exceeded).
+    const kept = filterGhosts(ghosts, dirs);
+    if (kept.length !== ghosts.length) ghosts = kept;
   });
 
   $effect(() => {
@@ -279,9 +283,9 @@
 
     if (col.id.startsWith("virtual://curated")) {
       const added = virtualCollections.addPhotos(col.id, paths);
-      notify(`${added} photo${added > 1 ? "s" : ""} ajoutée${added > 1 ? "s" : ""} à ${col.name} ✓`);
+      notify(`${added} photo${added > 1 ? "s" : ""} added to ${col.name} ✓`);
     } else {
-      notify(`Collection dynamique : filtre automatique.`);
+      notify(`Smart collection: it fills itself from its filter.`);
     }
   }
 
@@ -380,7 +384,7 @@
     <span class="dir-spacer"></span>
     {#if scanning}
       <span class="indexing" title="Indexing">
-        <Icon name="arrows-clockwise" size="9px" class="spin" />
+        <Icon name="arrows-clockwise" size="var(--icon-sm)" class="spin" />
         <span class="idx-count">{(indexProgress?.frames ?? grandTotal).toLocaleString("en-CA")}</span>
       </span>
     {:else}
@@ -394,7 +398,7 @@
       }}
       title="Add catalogue"
     >
-      <Icon name="plus" size="9px" />
+      <Icon name="plus" size="var(--icon-sm)" />
     </button>
   </div>
 
@@ -407,15 +411,15 @@
           class="add-btn"
           onclick={(e) => {
             e.stopPropagation();
-            const name = prompt("Nom de la collection :", "Nouvelle collection");
+            const name = prompt("Collection name:", "New collection");
             if (name?.trim()) {
               const created = virtualCollections.create(name.trim());
-              notify(`Collection "${created.name}" créée ✓`);
+              notify(`Collection "${created.name}" created ✓`);
             }
           }}
-          title="Créer une collection"
+          title="Create a collection"
         >
-          <Icon name="plus" size="9px" />
+          <Icon name="plus" size="var(--icon-sm)" />
         </button>
       </div>
       {#each collections as col (col.id)}
@@ -433,9 +437,9 @@
             if (col.id.startsWith("virtual://curated")) {
               e.preventDefault();
               e.stopPropagation();
-              if (confirm(`Supprimer la collection "${col.name}" ?`)) {
+              if (confirm(`Delete the collection "${col.name}"?`)) {
                 virtualCollections.remove(col.id);
-                notify(`Collection "${col.name}" supprimée`);
+                notify(`Collection "${col.name}" deleted`);
               }
             }
           }}
@@ -443,7 +447,7 @@
             if (e.key === "Enter") onOpenDir(col.id);
           }}
         >
-          <span class="disc"><Icon name={col.icon || "bookmark"} size="11px" /></span>
+          <span class="disc"><Icon name={col.icon || "bookmark"} size="var(--icon-md)" /></span>
           <span class="dir-name">{col.name}</span>
           <span class="dir-spacer"></span>
           {#if col.count > 0}
@@ -454,14 +458,14 @@
               class="del-col-btn"
               onclick={(e) => {
                 e.stopPropagation();
-                if (confirm(`Supprimer la collection "${col.name}" ?`)) {
+                if (confirm(`Delete the collection "${col.name}"?`)) {
                   virtualCollections.remove(col.id);
-                  notify(`Collection "${col.name}" supprimée`);
+                  notify(`Collection "${col.name}" deleted`);
                 }
               }}
-              title="Supprimer la collection"
+              title="Delete the collection"
             >
-              <Icon name="x" size="8px" />
+              <Icon name="x" size="var(--icon-sm)" />
             </button>
           {/if}
         </div>
@@ -603,6 +607,16 @@
     gap: var(--space-d8);
     width: 100%;
     margin-top: calc(var(--space-d4) * 3);
+    /* The tree is the part of the sidebar that scrolls: it takes what the header and the footer
+       leave, so the library note and the account row (with its Settings gear) stay at the bottom.
+       Without this a long tree pushed them below the window, out of reach. */
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+  .tree > :global(*) {
+    flex-shrink: 0;
   }
   .lib-row {
     box-sizing: border-box;
@@ -611,7 +625,7 @@
     gap: var(--space-d2);
     width: 100%;
     margin: 0;
-    padding: var(--space-d3) calc(var(--space-d4) * 3);
+    padding-block: var(--space-d3);
     cursor: pointer;
     user-select: none;
     font-size: 11px;
@@ -664,7 +678,7 @@
     gap: var(--space-d2);
     width: 100%;
     margin: 0;
-    padding: var(--space-d4) calc(var(--space-d4) * 3);
+    padding-block: var(--space-d4);
     cursor: pointer;
     user-select: none;
     font-size: 11px;
@@ -689,7 +703,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    flex: 1;
     min-width: 0;
   }
   .dir-rename {

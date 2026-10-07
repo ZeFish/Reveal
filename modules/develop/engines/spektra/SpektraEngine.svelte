@@ -34,8 +34,9 @@
   const isPositive = $derived(
     films.find((f) => f.name === recipe?.film)?.film_type === "positive"
   );
-  const isBw = $derived(
-    films.find((f) => f.name === recipe?.film)?.is_bw ?? false
+  // Only films that ship a family of curves, one per development time, respond to it.
+  const hasDevelopmentTimes = $derived(
+    films.find((f) => f.name === recipe?.film)?.has_development_times ?? false
   );
 
   /** @param {string} id @returns {number} */
@@ -78,6 +79,28 @@
         edited(false);
       }}
       onReset={() => resetControl("exposure_ev")}
+    />
+  </CollapsibleGroup>
+
+  <!-- Before the film: the picture's local contrast arranged for it (film_prep.rs). Off by default. -->
+  <CollapsibleGroup label="Before the film">
+    <SliderRow
+      label="Local contrast"
+      value={toDisplay("film_prep", getVal("film_prep"))}
+      min={0}
+      max={100}
+      step={5}
+      neutral={0}
+      formatter={(v) => formatVal("film_prep", v)}
+      onInput={(v) => {
+        setVal("film_prep", fromDisplay("film_prep", v));
+        edited(true);
+      }}
+      onChange={(v) => {
+        setVal("film_prep", fromDisplay("film_prep", v));
+        edited(false);
+      }}
+      onReset={() => resetControl("film_prep")}
     />
   </CollapsibleGroup>
 
@@ -126,7 +149,7 @@
   <CollapsibleGroup label="Chemistry">
     <SliderRow
       label="Duration"
-      disabled={!isBw}
+      disabled={!hasDevelopmentTimes}
       value={getVal("development_time_min")}
       min={0}
       max={20}
@@ -204,45 +227,135 @@
       }}
       onReset={() => resetControl("density_gamma")}
     />
+      <SliderRow
+      label="Y Filter"
+      value={getVal("y_shift")}
+      min={-10}
+      max={10}
+      step={1}
+      neutral={getNeutral(defaults, "global", "y_shift")}
+      formatter={(v) => formatVal("y_shift", v)}
+      onInput={(v) => {
+        setVal("y_shift", v);
+        edited(true);
+      }}
+      onChange={(v) => {
+        setVal("y_shift", v);
+        edited(false);
+      }}
+      onReset={() => resetControl("y_shift")}
+    />
+    <SliderRow
+      label="M Filter"
+      value={getVal("m_shift")}
+      min={-10}
+      max={10}
+      step={1}
+      neutral={getNeutral(defaults, "global", "m_shift")}
+      formatter={(v) => formatVal("m_shift", v)}
+      onInput={(v) => {
+        setVal("m_shift", v);
+        edited(true);
+      }}
+      onChange={(v) => {
+        setVal("m_shift", v);
+        edited(false);
+      }}
+      onReset={() => resetControl("m_shift")}
+    />
   </CollapsibleGroup>
 
   <!-- Film Effects -->
   <CollapsibleGroup label="Film Effects">
     <SliderRow
-      label="Grain Amount"
-      value={getVal("grain_amount")}
+      label="Halation"
+      value={getVal("halation")}
       min={0}
-      max={2}
-      step={0.01}
-      neutral={getNeutral(defaults, "global", "grain_amount")}
-      formatter={(v) => formatVal("grain_amount", v)}
+      max={1}
+      step={0.05}
+      neutral={getNeutral(defaults, "global", "halation")}
+      formatter={(v) => formatVal("halation", v)}
       onInput={(v) => {
-        setVal("grain_amount", v);
+        setVal("halation", v);
         edited(true);
       }}
       onChange={(v) => {
-        setVal("grain_amount", v);
+        setVal("halation", v);
         edited(false);
       }}
-      onReset={() => resetControl("grain_amount")}
+      onReset={() => resetControl("halation")}
     />
     <SliderRow
-      label="Roughness"
-      value={getVal("grain_roughness")}
-      min={0}
-      max={2}
-      step={0.01}
-      neutral={getNeutral(defaults, "global", "grain_roughness")}
-      formatter={(v) => formatVal("grain_roughness", v)}
+      label="Halation Size"
+      value={getVal("halation_size")}
+      min={0.5}
+      max={1.5}
+      step={0.05}
+      neutral={getNeutral(defaults, "global", "halation_size")}
+      formatter={(v) => formatVal("halation_size", v)}
       onInput={(v) => {
-        setVal("grain_roughness", v);
+        setVal("halation_size", v);
         edited(true);
       }}
       onChange={(v) => {
-        setVal("grain_roughness", v);
+        setVal("halation_size", v);
         edited(false);
       }}
-      onReset={() => resetControl("grain_roughness")}
+      onReset={() => resetControl("halation_size")}
+    />
+    <SliderRow
+      label="Diffusion"
+      value={getVal("diffusion")}
+      min={0}
+      max={1.5}
+      step={0.05}
+      neutral={getNeutral(defaults, "global", "diffusion")}
+      formatter={(v) => formatVal("diffusion", v)}
+      onInput={(v) => {
+        setVal("diffusion", v);
+        edited(true);
+      }}
+      onChange={(v) => {
+        setVal("diffusion", v);
+        edited(false);
+      }}
+      onReset={() => resetControl("diffusion")}
+    />
+    <SliderRow
+      label="Grain"
+      value={getVal("grain")}
+      min={0}
+      max={1}
+      step={0.05}
+      neutral={getNeutral(defaults, "global", "grain")}
+      formatter={(v) => formatVal("grain", v)}
+      onInput={(v) => {
+        setVal("grain", v);
+        edited(true);
+      }}
+      onChange={(v) => {
+        setVal("grain", v);
+        edited(false);
+      }}
+      onReset={() => resetControl("grain")}
+    />
+    <SliderRow
+      label="Sharpen"
+      value={getVal("sharpen")}
+      min={0}
+      max={1}
+      step={0.05}
+      neutral={getNeutral(defaults, "global", "sharpen")}
+      formatter={(v) => formatVal("sharpen", v)}
+      onInput={(v) => {
+        setVal("sharpen", v);
+        edited(true);
+      }}
+      onChange={(v) => {
+        setVal("sharpen", v);
+        edited(false);
+      }}
+      onReset={() => resetControl("sharpen")}
     />
 
     <ToggleRow

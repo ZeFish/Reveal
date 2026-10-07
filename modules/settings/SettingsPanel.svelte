@@ -254,7 +254,7 @@
             aria-current={activeCategory === cat.id ? "true" : undefined}
             onclick={() => (activeCategory = cat.id)}
           >
-            <Icon name={cat.icon} size="14px" />
+            <Icon name={cat.icon} size="var(--icon-lg)" />
             <span>{cat.label}</span>
           </button>
         {/each}
@@ -458,9 +458,12 @@
     align-items: center;
     justify-content: flex-end;
   }
+  /* Every control in a row — pill buttons, selects, text fields — is `--control-h` tall (app.scss),
+     the height the Develop panel's bars use. They were 14px pills beside 31px fields. */
   .detail-scroll :global(.mono-input) {
     box-sizing: border-box;
-    padding: var(--space-d3) calc(var(--space-d4) * 3);
+    height: var(--control-h);
+    padding: 0 calc(var(--space-d4) * 3);
     width: 190px;
     max-width: 100%;
   }
@@ -506,6 +509,15 @@
   .detail-scroll :global(.action-pill-btn) {
     white-space: nowrap;
     gap: var(--space-d4);
+    min-height: var(--control-h);
+    padding-block: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .detail-scroll :global(select) {
+    min-height: var(--control-h);
+    padding-block: 0;
   }
   .detail-scroll :global(.stepper-group) {
     display: flex;
@@ -560,5 +572,11 @@
     display: flex;
     align-items: center;
     gap: var(--space-d2);
+  }
+  .footer-actions button {
+    min-height: var(--control-h);
+    padding-block: 0;
+    display: inline-flex;
+    align-items: center;
   }
 </style>

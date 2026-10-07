@@ -156,33 +156,21 @@ export function redoRecipeEdit(state, currentMode, onEdited) {
 }
 
 /**
- * Debounced queue for saving recipe sidecars to disk.
+ * Hand a recipe to the backend to be written to the photo's sidecar.
+ *
+ * Not written here: the backend (photo_writes.rs) keeps the LATEST recipe per photo, writes it
+ * once the photo has been left alone, retries what a NAS recovers from, flushes it before the
+ * photo's sidecar is read and when the app closes, and says so if it finally fails. All that is
+ * left to do here is the hand-over — which only fails if the backend cannot be reached.
+ *
  * @param {string} path
  * @param {any} snapshot
- * @param {{
- *   invoke: (cmd: string, args?: any) => Promise<any>,
- *   hold?: (msg: string) => void,
- *   state: any
- * }} context
+ * @param {{ invoke: (cmd: string, args?: any) => Promise<any>, hold?: (msg: string) => void }} context
  */
-export function saveRecipeSoon(path, snapshot, { invoke, hold, state }) {
-  if (state.recipeSaveBusy) {
-    state.recipeSaveQueue.set(path, snapshot);
-    return;
-  }
-  state.recipeSaveBusy = true;
-  invoke("save_recipe", { path, recipe: snapshot })
-    .catch((error) => {
-      if (hold) hold(`Could not save development settings: ${error}`);
-    })
-    .finally(() => {
-      state.recipeSaveBusy = false;
-      const next = state.recipeSaveQueue.entries().next();
-      if (!next.done) {
-        state.recipeSaveQueue.delete(next.value[0]);
-        saveRecipeSoon(next.value[0], next.value[1], { invoke, hold, state });
-      }
-    });
+export function queueRecipeSave(path, snapshot, { invoke, hold }) {
+  invoke("queue_save_recipe", { path, recipe: snapshot }).catch((/** @type {any} */ error) => {
+    if (hold) hold(`Could not save development settings: ${error}`);
+  });
 }
 
 /**
@@ -229,7 +217,7 @@ export function handleRecipeEdited(
   const snapshot = state.recipe ? { ...state.recipe } : null;
   state.saveTimer = setTimeout(() => {
     if (path && snapshot && typeof invoke === "function") {
-      saveRecipeSoon(path, snapshot, { invoke, hold, state });
+      queueRecipeSave(path, snapshot, { invoke, hold });
     }
   }, debounceMs);
 }
@@ -500,20 +488,37 @@ export async function applyRecipeToFrames({
 }) {
   if (!recipeToApply || !targetFrames.length || activity?.progress) return;
   const snapshot = { ...recipeToApply };
+  const CROP_KEYS = ["crop_aspect", "crop_angle", "crop_x", "crop_y", "crop_w", "crop_h"];
+
+  // The photo on screen answers first: it takes the new settings (keeping its own crop) and
+  // renders now, before anyone has talked to the NAS about the other photos.
+  const onScreen = photoPath ? targetFrames.find((f) => f.path === photoPath) : undefined;
+  if (onScreen && state.recipe) {
+    const own = Object.fromEntries(CROP_KEYS.filter((k) => k in state.recipe).map((k) => [k, state.recipe[k]]));
+    state.recipe = { ...snapshot, ...own };
+    state.developEngine = snapshot.engine === "rapid" ? "rapid" : "spektra";
+    if (state.developEngine !== "rapid") state.useCanvas = false;
+    if (scheduleRenderFn) scheduleRenderFn(PREVIEW_PX);
+    if (sendDevStateToPanel) sendDevStateToPanel();
+  }
+
   if (setProgress) {
     setProgress({ verb: "Applying settings", done: 0, total: targetFrames.length, current: "" });
   }
   const jobId = startActivity
     ? startActivity("develop", `Apply settings to ${targetFrames.length} photo(s)`, targetFrames.length)
     : null;
-  try {
-    for (const [i, frame] of targetFrames.entries()) {
-      if (patchProgress) patchProgress({ current: frame.name });
-      if (updateActivity && jobId) updateActivity(jobId, { current: frame.name });
+  let failed = 0;
+  /** @type {unknown} */
+  let firstError = null;
 
+  /** @param {any} frame */
+  async function applyOne(frame) {
+    if (patchProgress) patchProgress({ current: frame.name });
+    if (updateActivity && jobId) updateActivity(jobId, { current: frame.name });
+    try {
       const existingSidecar = await invoke("load_sidecar", { path: frame.path }).catch(() => null);
       const existingSettings = existingSidecar?.engine_settings ?? {};
-
       /** @type {Record<string, any>} */
       const frameRecipe = {
         ...snapshot,
@@ -524,41 +529,48 @@ export async function applyRecipeToFrames({
         crop_w: existingSettings.crop_w ?? 1,
         crop_h: existingSettings.crop_h ?? 1,
       };
-
-      const developing = invoke("develop_preview", {
-        path: frame.path,
-        recipe: frameRecipe,
-        maxPx: PREVIEW_PX,
-      });
-      const upcoming = targetFrames[i + 1];
-      if (upcoming?.path) invoke("prefetch_photo", { path: upcoming.path }).catch(() => {});
-      const bytes = await developing;
+      if (frame !== onScreen) {
+        // Rendering publishes the grid preview (in the background — the answer does not wait
+        // for the NAS). The photo on screen is rendered by the pump above instead.
+        await invoke("develop_preview", { path: frame.path, recipe: frameRecipe, maxPx: PREVIEW_PX });
+      }
       await invoke("save_recipe", { path: frame.path, recipe: frameRecipe });
-      if (freshPreviewVersion) frame.previewVersion = await freshPreviewVersion(frame.path);
-      if (updateActivity && jobId && advanceProgress) {
-        updateActivity(jobId, { done: advanceProgress() });
-      }
-
-      if (frame.path === photoPath) {
-        state.recipe = { ...frameRecipe };
-        state.developEngine = frameRecipe.engine === "rapid" ? "rapid" : "spektra";
-        if (state.developEngine === "rapid") {
-          if (scheduleRenderFn) scheduleRenderFn(PREVIEW_PX);
-        } else {
-          state.useCanvas = false;
-          if (onUpdateLoupeUrl) onUpdateLoupeUrl(bytes);
-        }
-        if (sendDevStateToPanel) sendDevStateToPanel();
-      }
-      if (refreshFrames) refreshFrames();
+    } catch (e) {
+      failed += 1;
+      firstError ??= e;
+    } finally {
+      if (updateActivity && jobId && advanceProgress) updateActivity(jobId, { done: advanceProgress() });
     }
-    if (notify) {
+  }
+
+  try {
+    // Two at a time: each photo is partly waiting on the NAS (read the sidecar, write the
+    // recipe), so a second one fills that wait; more would only hold several decoded frames
+    // in memory at once (a 100-megapixel RAW is over a gigabyte once decoded).
+    const WORKERS = 2;
+    let next = 0;
+    const next_frame = () => (next < targetFrames.length ? targetFrames[next++] : null);
+    const prefetched = new Set();
+    const worker = async () => {
+      for (let frame = next_frame(); frame; frame = next_frame()) {
+        const upcoming = targetFrames[next];
+        if (upcoming?.path && !prefetched.has(upcoming.path)) {
+          prefetched.add(upcoming.path);
+          invoke("prefetch_photo", { path: upcoming.path }).catch(() => {});
+        }
+        await applyOne(frame);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(WORKERS, targetFrames.length) }, worker));
+    if (refreshFrames) refreshFrames();
+    if (failed && notify) {
+      notify(`Could not apply settings to ${failed} photo${failed === 1 ? "" : "s"}: ${firstError}`);
+    } else if (notify) {
       notify(`Settings applied to ${targetFrames.length} photo${targetFrames.length === 1 ? "" : "s"}`, 2500);
     }
-    if (updateActivity && jobId) updateActivity(jobId, { phase: "Complete", status: "completed" });
-  } catch (e) {
-    if (notify) notify(`Could not apply settings: ${e}`);
-    if (updateActivity && jobId) updateActivity(jobId, { phase: String(e), status: "failed" });
+    if (updateActivity && jobId) {
+      updateActivity(jobId, failed ? { phase: String(firstError), status: "failed" } : { phase: "Complete", status: "completed" });
+    }
   } finally {
     if (setProgress) setProgress(null);
     if (releaseActive && jobId) releaseActive(jobId);
@@ -566,53 +578,35 @@ export async function applyRecipeToFrames({
 }
 
 /**
- * Clears development settings for the photo and restores as-shot preview.
+ * Show the photo as the camera shot it — NOW. Nothing is read from or written to the photo's
+ * folder: the camera's own picture is asked for directly (`asShot`), so the switch to "None"
+ * never waits on clearing the develop settings off the NAS (the backend clears them later, and
+ * only if the person stays on None — see photo_writes.rs).
+ *
  * @param {{
  *   state: any,
  *   photoPath: string | null,
- *   invoke: (cmd: string, args?: any) => Promise<any>,
- *   library: { frames: any[] },
- *   freshPreviewVersion?: (path: string) => Promise<number>,
- *   refreshFrames?: () => void,
- *   previewUrl?: (path: string, v: number) => string,
+ *   previewUrl?: (path: string, version?: number, asShot?: boolean) => string,
  *   onSetLoupeUrl?: (url: string) => void,
- * }} params
+ * }} o
  */
-export async function clearDevelopment({
-  state,
-  photoPath,
-  invoke,
-  library,
-  freshPreviewVersion,
-  refreshFrames,
-  previewUrl,
-  onSetLoupeUrl,
-}) {
+export async function showAsShot({ state, photoPath, previewUrl, onSetLoupeUrl }) {
   if (!photoPath) return;
   const path = photoPath;
-  await invoke("clear_recipe", { path });
-  if (path !== photoPath) return;
   state.developEngine = null;
-  const frame = library.frames.find((item) => item.path === path);
-  if (frame && freshPreviewVersion) {
-    frame.previewVersion = await freshPreviewVersion(frame.path);
-  }
-  if (refreshFrames) refreshFrames();
-
-  if (previewUrl && onSetLoupeUrl) {
-    const next = previewUrl(path, frame?.previewVersion ?? Date.now());
-    const probe = new Image();
-    probe.src = next;
-    try {
-      await probe.decode();
-    } catch {
-      /* show anyway; onerror handles */
-    }
-    if (path !== photoPath) return;
-    onSetLoupeUrl(next);
-  }
   state.useCanvas = false;
   state.status = "";
+  if (!previewUrl || !onSetLoupeUrl) return;
+  const next = previewUrl(path, Date.now(), true);
+  const probe = new Image();
+  probe.src = next;
+  try {
+    await probe.decode();
+  } catch {
+    /* show anyway; onerror handles */
+  }
+  // Only if the person has not chosen an engine again while the picture was decoding.
+  if (state.developEngine === null) onSetLoupeUrl(next);
 }
 
 /**

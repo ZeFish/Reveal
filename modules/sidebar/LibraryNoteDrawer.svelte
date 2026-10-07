@@ -21,7 +21,7 @@
 <div class="lib-section">
   <button class="lib-toggle" onclick={() => (libOpen = !libOpen)}>
     <span>Library</span>
-    <span class="disc" class:open={libOpen}><Icon name="caret-right" size="9px" /></span>
+    <span class="disc" class:open={libOpen}><Icon name="caret-right" size="var(--icon-sm)" /></span>
   </button>
   {#if libOpen}
     <textarea
@@ -32,7 +32,7 @@
       oninput={(e) => onCatalogChange(e.currentTarget.value)}
     ></textarea>
     <button class="lib-open-note" onclick={onOpenNote}>
-      <Icon name="note-pencil" size="10px" />
+      <Icon name="note-pencil" size="var(--icon-sm)" />
       <span>Open note</span>
     </button>
   {/if}

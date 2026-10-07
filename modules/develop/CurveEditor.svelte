@@ -214,7 +214,7 @@
         disabled={isIdentity}
         onclick={resetChannel}
       >
-        <Icon name="x" size="9px" />
+        <Icon name="x" size="var(--icon-sm)" />
       </button>
     {/if}
   </div>
