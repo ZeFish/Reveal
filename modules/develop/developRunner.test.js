@@ -26,8 +26,8 @@ describe("developRunner", () => {
       expect(invoke).not.toHaveBeenCalled();
 
       vi.advanceTimersByTime(450);
-      expect(invoke).toHaveBeenCalledWith("prefetch_photo", { path: "/p3.raw" });
-      expect(invoke).toHaveBeenCalledWith("prefetch_photo", { path: "/p1.raw" });
+      expect(invoke).toHaveBeenCalledWith("prefetch_photo", { path: "/p3.raw", neighbour: true });
+      expect(invoke).toHaveBeenCalledWith("prefetch_photo", { path: "/p1.raw", neighbour: true });
     });
 
     it("warms selection in cull mode after debounce", () => {
@@ -44,7 +44,34 @@ describe("developRunner", () => {
       prefetcher.warmSelection("/p1.raw");
       vi.advanceTimersByTime(450);
 
+      expect(invoke).toHaveBeenCalledWith("prefetch_photo", { path: "/p1.raw", warm: true });
+    });
+  });
+
+  describe("warmCurrent", () => {
+    const make = (isTauri) => {
+      const invoke = vi.fn().mockResolvedValue(undefined);
+      const prefetcher = createPrefetcher({
+        isTauri,
+        invoke,
+        getPhotoPath: () => "/p1.raw",
+        getView: () => [],
+        getSel: () => 0,
+        getCurrentMode: () => "dev",
+      });
+      return { invoke, prefetcher };
+    };
+
+    it("decodes the open photo at once, with no engine to render it", () => {
+      const { invoke, prefetcher } = make(true);
+      prefetcher.warmCurrent("/p1.raw");
       expect(invoke).toHaveBeenCalledWith("prefetch_photo", { path: "/p1.raw" });
+    });
+
+    it("does nothing outside the app", () => {
+      const { invoke, prefetcher } = make(false);
+      prefetcher.warmCurrent("/p1.raw");
+      expect(invoke).not.toHaveBeenCalled();
     });
   });
 

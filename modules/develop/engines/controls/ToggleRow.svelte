@@ -38,9 +38,12 @@
     gap: var(--space-d3);
     min-height: 22px;
   }
+  /* The field dims itself (the framework's disabled look); the label follows it. */
+  .frow.disabled .frow-label {
+    opacity: var(--opacity-disabled);
+  }
   .frow.disabled {
-    opacity: 0.38;
-    pointer-events: none;
+    cursor: not-allowed;
   }
   .frow-label {
     width: 6.2rem;

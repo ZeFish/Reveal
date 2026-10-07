@@ -242,12 +242,19 @@ impl Shared {
     }
 
     fn pay(&self, path: &str, owed: &Owed) {
+        let started = Instant::now();
         let develop = match &owed.develop {
             Some(Develop::Save(recipe)) => Some(self.disk.save_recipe(path, recipe)),
             Some(Develop::Clear) => Some(self.disk.clear_development(path)),
             None => None,
         };
         let rating = owed.rating.map(|stars| self.disk.set_rating(path, stars));
+        eprintln!(
+            "[perf] photo-writes {path}: paid in {} ms (develop: {}, rating: {})",
+            started.elapsed().as_millis(),
+            owed.develop.is_some(),
+            owed.rating.is_some()
+        );
         // One failing write does not stop the other, and neither stops the queue.
         for result in [develop, rating].into_iter().flatten() {
             if let Err(e) = result {

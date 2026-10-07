@@ -750,7 +750,7 @@ export function createAppController() {
     });
   }
 
-  const { prefetchNeighbours, warmSelection } = createPrefetcher({
+  const { prefetchNeighbours, warmSelection, warmCurrent } = createPrefetcher({
     isTauri,
     invoke,
     getPhotoPath: () => photoPath,
@@ -762,6 +762,13 @@ export function createAppController() {
   $effect(() => {
     const path = view[sel]?.path;
     if (path) untrack(() => warmSelection(path));
+  });
+
+  // Develop reads the photo's RAW, often over the same NAS link the grid's thumbnails use:
+  // while it is open the grid's thumbnails decode one at a time instead of six.
+  $effect(() => {
+    const developing = currentMode === "dev";
+    if (isTauri) invoke("set_thumb_priority", { develop: developing }).catch(() => {});
   });
 
   const workingParker = createWorkingParker({
@@ -801,6 +808,7 @@ export function createAppController() {
     setStatus: (s) => { status = s; },
     getPreferences: () => preferences,
     prefetchNeighbours,
+    warmCurrent,
     scheduleWorkingPark,
     scheduleRender,
     switchMode: (m, opts) => switchMode(m, opts),

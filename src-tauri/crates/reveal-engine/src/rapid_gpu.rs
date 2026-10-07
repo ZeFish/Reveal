@@ -259,6 +259,9 @@ pub(crate) struct Inputs<'a> {
     /// Which zones are modified. Untouched ones are not run at all.
     pub zone_active: [bool; 3],
     pub has_color_wheels: bool,
+    /// The format the picture leaves in (`develop_rapid_with` decides it: the recipe's format,
+    /// or none once a Pre-Lut stack has already used it).
+    pub output_encoding: crate::LutEncoding,
     /// The photo's black and white as the global layer receives them, and as
     /// the zones receive them (after the global layer's exposure and Whites).
     pub range: crate::rapid::PhotoRange,
@@ -324,7 +327,7 @@ fn run_inner(inputs: &Inputs, recipe: &Recipe) -> Option<ImageBuf> {
         vignette_roundness: recipe.vignette_roundness,
         vignette_feather: recipe.vignette_feather,
         highlight_desat: recipe.highlight_desat,
-        encoding: recipe.encoding().code(),
+        encoding: inputs.output_encoding.code(),
         agx_look,
         zone_reach: recipe.zone_reach.clamp(50.0, 100.0) / 100.0,
         range: [

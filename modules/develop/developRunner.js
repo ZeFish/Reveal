@@ -34,7 +34,7 @@ export function createPrefetcher({
       const i = view.findIndex((f) => f.path === path);
       if (i < 0) return;
       for (const n of [view[i + 1], view[i - 1]]) {
-        if (n?.path) invoke("prefetch_photo", { path: n.path }).catch(() => {});
+        if (n?.path) invoke("prefetch_photo", { path: n.path, neighbour: true }).catch(() => {});
       }
     }, 450);
   }
@@ -48,13 +48,25 @@ export function createPrefetcher({
       const view = getView();
       const sel = getSel();
       if (view[sel]?.path !== path) return;
-      invoke("prefetch_photo", { path }).catch(() => {});
+      invoke("prefetch_photo", { path, warm: true }).catch(() => {});
     }, 450);
+  }
+
+  /**
+   * Decode the photo that is open into the engine's cache without rendering it. In None there
+   * is no render to do it, so the first move to Rapid or Spektra paid the whole NAS read and the
+   * RAW decode at once; this pays them while the photo is only being looked at.
+   * @param {string} path
+   */
+  function warmCurrent(path) {
+    if (!isTauri || !path) return;
+    invoke("prefetch_photo", { path }).catch(() => {});
   }
 
   return {
     prefetchNeighbours,
     warmSelection,
+    warmCurrent,
   };
 }
 
@@ -149,6 +161,11 @@ export function createRenderPump({
     developState.pendingLive = false;
     const path = photoPath;
     const snap = { ...developState.recipe, apply_crop: !isDockedCrop() };
+    const renderKey = `${path}|${snap.engine}`;
+    if (developState.renderKey !== renderKey) {
+      developState.renderKey = renderKey;
+      developState.renderMs = null;
+    }
     const t0 = performance.now();
 
     try {
@@ -197,6 +214,8 @@ export function createRenderPump({
       }
     } catch (e) {
       if (path === getPhotoPath()) setStatus(`Error: ${e}`);
+      // A render that failed is an answer too: the controls must not stay greyed for good.
+      if (developState.renderMs === null) developState.renderMs = 0;
     } finally {
       developState.inflight = false;
       if (developState.pendingPx !== null) pump();

@@ -850,19 +850,37 @@ pub(crate) fn pack_developed_frame(width: u32, height: u32, render_ms: u128, dec
 pub(crate) async fn develop_preview_rgba(
     app: tauri::AppHandle,
     state: tauri::State<'_, EngineState>,
+    thumbs: tauri::State<'_, crate::thumb_queue::ThumbQueueState>,
     path: String,
     recipe: reveal_engine::Recipe,
     max_px: u32,
     live: Option<bool>,
 ) -> Result<IpcResponse, String> {
     let engine = state.0.clone();
+    let thumbs = thumbs.0.clone();
+    let asked = std::time::Instant::now();
     let out = {
         let engine = engine.clone();
         let path = path.clone();
         let recipe = recipe.clone();
+        let live_flag = live.unwrap_or(false);
         tauri::async_runtime::spawn_blocking(move || {
+            let _wire = thumbs.foreground(&path);
+            let picked_up = asked.elapsed().as_millis();
+            let t = std::time::Instant::now();
             let source = apple_photos::source(&path)?;
-            engine.develop_rgba8(&source, &recipe, max_px).map_err(|e| format!("{e:#}"))
+            let source_ms = t.elapsed().as_millis();
+            let out = engine.develop_rgba8(&source, &recipe, max_px).map_err(|e| format!("{e:#}"));
+            eprintln!(
+                "[perf] develop_preview_rgba {}: live={} max_px={} picked up after {} ms, source {} ms, engine {} ms",
+                path,
+                live_flag,
+                max_px,
+                picked_up,
+                source_ms,
+                t.elapsed().as_millis() - source_ms
+            );
+            out
         })
         .await
         .map_err(|e| e.to_string())?
@@ -870,8 +888,13 @@ pub(crate) async fn develop_preview_rgba(
     };
 
     eprintln!(
-        "develop_preview_rgba: {}x{} decode {} ms render {} ms",
-        out.width, out.height, out.decode_ms, out.render_ms
+        "develop_preview_rgba: {}x{} decode {} ms render {} ms — {} ms from request to result, {} KB for the webview",
+        out.width,
+        out.height,
+        out.decode_ms,
+        out.render_ms,
+        asked.elapsed().as_millis(),
+        out.rgba.len() / 1024
     );
 
     // File over app: the canvas render above is display-only, in memory. The

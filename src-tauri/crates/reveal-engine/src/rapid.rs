@@ -70,8 +70,8 @@ impl RenderEngine for RapidEngine {
                     EngineControl::Slider {
                         id: "contrast".to_string(),
                         label: "Contrast".to_string(),
-                        min: -0.5,
-                        max: 0.5,
+                        min: -1.0,
+                        max: 1.0,
                         step: 0.01,
                         preset: false,
                     },
@@ -1585,6 +1585,16 @@ pub(crate) fn develop_rapid_with(
     // The global layer plus the three tonal zones. Only the layers that carry a
     // modification are run: with nothing touched but the global sliders, the
     // zone weights are never computed and the render costs what it always did.
+    // The format is used once. Without a Pre-Lut the render leaves in it, for a Post-Lut built on
+    // that format. With a Pre-Lut stack the format was consumed on the way in, to feed the stack,
+    // and what the stack returned is the working signal: it is graded as it is and leaves as it
+    // is, for the Post-Lut to take from there. (Encoding it a second time on the way out made a
+    // look LUT's already-finished picture come out as a flat log image.)
+    let output_encoding = if !pre_luts.is_empty() && recipe.encoding() != crate::LutEncoding::Display {
+        crate::LutEncoding::Linear
+    } else {
+        recipe.encoding()
+    };
     let layers = Layers::from_recipe(recipe);
     let zone_active = layers.zone_active();
     let any_zone = zone_active.iter().any(|a| *a);
@@ -1632,6 +1642,7 @@ pub(crate) fn develop_rapid_with(
                 layers: &layers,
                 zone_active,
                 has_color_wheels,
+                output_encoding,
                 range,
                 zone_range,
             },
@@ -1761,7 +1772,7 @@ pub(crate) fn develop_rapid_with(
                 + PROPHOTO_TO_REC709[2][2] * b)
                 .max(0.0);
 
-            let encoding = recipe.encoding();
+            let encoding = output_encoding;
             if encoding != crate::LutEncoding::Display {
                 // The signal leaves in the chosen format, without the tone map: it feeds the
                 // Post-Lut stack (a print LUT built for Cineon or LogC3), and on its own it is
@@ -2766,6 +2777,33 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    /// The format is used once. A Pre-Lut stack eats it on the way in, and what the stack
+    /// returns leaves as it is: a LogC3 identity stack gives the picture encoded once, not twice.
+    #[test]
+    fn a_pre_lut_stack_uses_the_format_and_the_render_does_not_encode_it_again() {
+        let dir = identity_lut_dir("once");
+        let px = [0.18f32, 0.18, 0.18];
+        let input = ImageBuf::from_data(1, 1, px.to_vec());
+        let mut recipe = rapid_recipe();
+        recipe.lut_encoding = crate::LutEncoding::LogC3;
+        recipe.rapid_pre_luts = vec![LutLayer { name: "identity".to_string(), opacity: 1.0 }];
+        for use_gpu in [false, true] {
+            if use_gpu && !crate::rapid_gpu::available() {
+                continue;
+            }
+            let out = develop_rapid_with(&input, &recipe, &dir, use_gpu).data;
+            let once = crate::LutEncoding::LogC3.encode(0.18);
+            for c in 0..3 {
+                assert!(
+                    (out[c] - once).abs() < 0.01,
+                    "gpu={use_gpu}: channel {c} left as {} instead of the stack's own output {once}",
+                    out[c]
+                );
+            }
+        }
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     /// Not a correctness test — the measurement that justifies the GPU path
     /// existing, kept so it can be re-run after any change to either path
     /// (adding a stage to the shader, say) rather than trusting that the
@@ -2841,6 +2879,7 @@ mod tests {
                 layers: &layers,
                 zone_active: layers.zone_active(),
                 has_color_wheels: false,
+                output_encoding: recipe.encoding(),
                 range: PhotoRange::REFERENCE,
                 zone_range: PhotoRange::REFERENCE,
             },

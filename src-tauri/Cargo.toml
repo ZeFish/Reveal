@@ -77,3 +77,19 @@ block = "0.1"
 
 [dev-dependencies]
 tempfile = "3"
+
+# `tauri dev` builds with this profile. Unoptimised, the per-pixel loops and the JPEG encoder
+# (the grid's preview sidecar is written after every settled edit) ran 10–50× slower and kept the
+# CPU saturated, so the preview stopped following the sliders. Dependencies and the pixel crates
+# are optimised; the app crate stays at opt-level 0 so rebuilds stay quick.
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.dev.package.reveal-engine]
+opt-level = 3
+
+[profile.dev.package.reveal-decode]
+opt-level = 3
+
+[profile.dev.package.reveal-publish]
+opt-level = 3

@@ -180,9 +180,9 @@ pub fn apply_stack_display(img: &mut ImageBuf, stack: &[(std::sync::Arc<Cube>, f
 ///
 /// Each sample goes to Rec.709 primaries, is encoded in the recipe's format, runs through the
 /// stack, and goes back to ProPhoto primaries. The *curve* is never undone: what the stack
-/// returns is taken as it is, and a stack that works in a log format ends with the conversion LUT
-/// the user chose to bring the signal back to linear. Only the primaries are bookkeeping, so a
-/// Linear stack that does nothing leaves the picture exactly as it was.
+/// returns is the working signal, taken as it is, graded as it is, and it leaves as it is (the
+/// render does not encode it again). Only the primaries are bookkeeping, so a Linear stack that
+/// does nothing leaves the picture exactly as it was.
 pub fn apply_stack_encoded(
     img: &mut ImageBuf,
     stack: &[(std::sync::Arc<Cube>, f32)],

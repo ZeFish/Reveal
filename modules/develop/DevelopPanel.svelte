@@ -207,6 +207,7 @@
         {photoPath}
         {histogram}
         {scopes}
+        loading={!!developEngine && renderMs === null}
       />
     {:else if activeTab === 'crop'}
       <CropTab bind:recipe {edited} />
@@ -252,6 +253,7 @@
     display: flex;
     flex-direction: column;
     padding: var(--space-d2);
+    border-radius: var(--window-radius);
   }
 
   /* The frame is the workspace's, so Svelte can't see it from here: without `:global` the rule is dropped. */

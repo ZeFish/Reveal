@@ -11,6 +11,7 @@
    * @property {string} value
    * @property {SelectOption[]} options
    * @property {boolean} [disabled]
+   * @property {string} [hint] why the row is the way it is (shown on hover; useful when it is disabled)
    * @property {(value: string) => void} [onChange]
    */
 
@@ -20,11 +21,12 @@
     value = "",
     options = [],
     disabled = false,
+    hint = "",
     onChange = () => {},
   } = $props();
 </script>
 
-<div class="frow" class:disabled>
+<div class="frow" class:disabled title={hint || undefined}>
   <span class="din frow-label" title={label}>{label}</span>
   <select
     class="panel-select"
@@ -46,9 +48,12 @@
     gap: var(--space-d3);
     min-height: 22px;
   }
+  /* The field dims itself (the framework's disabled look); the label follows it. */
+  .frow.disabled .frow-label {
+    opacity: var(--opacity-disabled);
+  }
   .frow.disabled {
-    opacity: 0.38;
-    pointer-events: none;
+    cursor: not-allowed;
   }
   .frow-label {
     width: 6.2rem;

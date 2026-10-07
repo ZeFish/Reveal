@@ -9,8 +9,10 @@
   // container class app-specific: Standard's global `.grid` utility flows
   // children by column, which would turn this contact sheet into one long row.
   import PhotoCell from "./PhotoCell.svelte";
-  import { Icon } from "@modules/core";
-  import { untrack } from "svelte";
+  import { Icon, isTauri } from "@modules/core";
+  import { invoke } from "@tauri-apps/api/core";
+  import { untrack, onDestroy } from "svelte";
+  import { visiblePaths } from "./visibleCells.js";
 
   /** @param {HTMLElement} node */
   function autofocus(node) {
@@ -76,6 +78,20 @@
   const slice = $derived(
     virtual ? frames.slice(start, (lastRow + 1) * cols) : frames,
   );
+  // Tell the backend which cells are on screen: their thumbnails are read before the others'.
+  // Debounced, so a fast scroll sends where it lands, not every row it crossed.
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
+  let visibleTimer;
+  $effect(() => {
+    if (!isTauri || !virtual) return;
+    const paths = visiblePaths(frames, { top, viewH: safeViewH, rowPitch, cols });
+    clearTimeout(visibleTimer);
+    visibleTimer = setTimeout(() => invoke("set_visible_thumbs", { paths }).catch(() => {}), 80);
+  });
+  onDestroy(() => {
+    clearTimeout(visibleTimer);
+    if (isTauri) invoke("set_visible_thumbs", { paths: [] }).catch(() => {});
+  });
   // The rows scrolled past / still below live as padding, so the scrollbar
   // and positions are those of the full set.
   const padTop = $derived(virtual ? firstRow * rowPitch : 0);

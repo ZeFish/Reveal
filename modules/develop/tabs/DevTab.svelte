@@ -25,6 +25,8 @@
     scopes = null,
     activeZone = $bindable("global"),
     onSetZoneMask = () => {},
+    /** The photo is still being read and decoded: nothing below the engine switch can act on it yet. */
+    loading = false,
   } = $props();
 
   /** @param {string} id */
@@ -67,7 +69,10 @@
   </div>
 
   <div class="pane-scroll">
-    <div class="engine-scope" class:inactive={!developEngine}>
+    {#if loading && developEngine}
+      <p class="loading-note" role="status">Loading the photo — the controls wake up when it is ready.</p>
+    {/if}
+    <div class="engine-scope" class:inactive={!developEngine} inert={loading && !!developEngine}>
       {#if activeEngine}
         <EngineRunner
           engine={activeEngine}
@@ -132,6 +137,14 @@
     gap: 0;
   }
 
+
+  /* While the photo loads the zone is `inert`: the framework dims it and blocks it, no rule here. */
+  .loading-note {
+    margin: 0;
+    padding: var(--space-d4) var(--space-d2) 0;
+    color: var(--color-muted);
+    font-size: 0.72rem;
+  }
 
   /* Segmented control for the engine switch */
   .engine-row {

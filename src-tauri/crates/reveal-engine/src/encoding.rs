@@ -2,9 +2,10 @@
 //!
 //! A `.cube` is authored for one encoding of the signal: a print emulation wants Cineon, a
 //! LogC3 look wants LogC3, a finishing look wants the picture as it is displayed. The recipe
-//! names one format for the whole chain: the scene is encoded in it before the Pre-Lut, and the
-//! render leaves in it for the Post-Lut. Nothing is converted back in between — that is the job
-//! of the conversion LUTs the user puts in the stack.
+//! names one format for the chain, and the format is used once: with a Pre-Lut, the scene is
+//! encoded in it to feed the stack, and what the stack returns is the working signal, which
+//! leaves as it is for the Post-Lut; without a Pre-Lut, the render itself leaves in the format.
+//! Nothing is converted back in between.
 
 use serde::{Deserialize, Serialize};
 

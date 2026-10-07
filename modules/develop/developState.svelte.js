@@ -30,6 +30,8 @@ export const developState = $state({
   developEngine: null,
   /** @type {number | null} */
   renderMs: null,
+  /** `path|engine` of the last render asked for: a new one clears `renderMs`, which is what tells the panel the photo is loading. */
+  renderKey: "",
   /** @type {number | null} */
   renderAspect: null,
   useCanvas: false,

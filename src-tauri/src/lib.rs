@@ -1389,15 +1389,64 @@ fn list_engines(
 /// pipeline_input) and any failure just means the real open pays what it
 /// would have paid anyway.
 #[tauri::command]
-async fn prefetch_photo(state: tauri::State<'_, EngineState>, path: String) -> Result<(), String> {
+async fn prefetch_photo(
+    state: tauri::State<'_, EngineState>,
+    thumbs: tauri::State<'_, thumb_queue::ThumbQueueState>,
+    path: String,
+    neighbour: Option<bool>,
+    warm: Option<bool>,
+) -> Result<(), String> {
     let engine = state.0.clone();
+    let thumbs = thumbs.0.clone();
+    let neighbour = neighbour.unwrap_or(false);
+    let warm = warm.unwrap_or(false);
     tauri::async_runtime::spawn_blocking(move || {
+        // In the grid: the cells on screen get their pictures first, then the selected photo is
+        // read, and the thumbnails of cells off screen wait behind it. In Develop, the photo in
+        // hand takes the wire at once and a neighbour waits until it is done.
+        let _warming;
+        let _wire = if warm {
+            _warming = Some(thumbs.warming_after_visible(std::time::Duration::from_secs(15)));
+            None
+        } else if neighbour {
+            match thumbs.foreground_after_current(std::time::Duration::from_secs(60)) {
+                Some(wire) => Some(wire),
+                None => {
+                    eprintln!("[perf] prefetch_photo {path}: neighbour skipped, the person moved on");
+                    return;
+                }
+            }
+        } else {
+            Some(thumbs.foreground(&path))
+        };
+        let t = std::time::Instant::now();
+        eprintln!("[perf] prefetch_photo {path}: start ({})", if warm { "grid selection" } else if neighbour { "neighbour" } else { "the photo itself" });
         if let Ok(source) = apple_photos::source(&path) {
+            let source_ms = t.elapsed().as_millis();
             engine.prefetch(&source, 2048);
+            eprintln!(
+                "[perf] prefetch_photo {}: source {} ms, decoded+cached {} ms total",
+                path,
+                source_ms,
+                t.elapsed().as_millis()
+            );
         }
     })
     .await
     .map_err(|e| e.to_string())
+}
+
+/// The grid says which photos are on screen: their thumbnails are served first (see `thumb_queue`).
+#[tauri::command]
+fn set_visible_thumbs(state: tauri::State<'_, thumb_queue::ThumbQueueState>, paths: Vec<String>) {
+    state.0.set_visible(paths);
+}
+
+/// Develop is open (`true`) or closed (`false`): while it is, the grid's thumbnails decode one at
+/// a time so the photo being worked on has the NAS link to itself (see `thumb_queue`).
+#[tauri::command]
+fn set_thumb_priority(state: tauri::State<'_, thumb_queue::ThumbQueueState>, develop: bool) {
+    state.0.set_background(develop);
 }
 
 /// Whether the Rapid engine's per-pixel pass can run on the GPU here.
@@ -1900,6 +1949,8 @@ pub fn run() {
             list_engines,
             gpu_available,
             prefetch_photo,
+            set_thumb_priority,
+            set_visible_thumbs,
             list_profiles,
             list_luts,
             list_presets,

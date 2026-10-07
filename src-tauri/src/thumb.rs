@@ -298,6 +298,7 @@ pub(crate) fn serve(
     }
 
     let queue = app.state::<thumb_queue::ThumbQueueState>().0.clone();
+    let asked = std::time::Instant::now();
     tauri::async_runtime::spawn_blocking(move || {
         // Bounds how many of these run at once, newest request first, and drops one nobody has
         // waited for in a long while — see `thumb_queue`. A priority request holds no slot: it
@@ -305,9 +306,18 @@ pub(crate) fn serve(
         let _slot = if req.priority {
             None
         } else {
-            match queue.acquire(thumb_queue::MAX_WAIT) {
-                Some(slot) => Some(slot),
+            match queue.acquire(&req.path, thumb_queue::MAX_WAIT) {
+                Some(slot) => {
+                    eprintln!(
+                        "[perf] thumb {}: waited {} ms for a slot ({})",
+                        req.name(),
+                        asked.elapsed().as_millis(),
+                        queue.describe()
+                    );
+                    Some(slot)
+                }
                 None => {
+                    eprintln!("[perf] thumb {}: gave up after {} ms in line", req.name(), asked.elapsed().as_millis());
                     // The cell asked long ago and has most likely scrolled away; if it is
                     // still there, it asks again.
                     responder.respond(Reply::unavailable(Vec::new()).into_http());
@@ -315,7 +325,10 @@ pub(crate) fn serve(
                 }
             }
         };
+        let started = std::time::Instant::now();
+        let name = req.name();
         responder.respond(decode(&app, &req).into_http());
+        eprintln!("[perf] thumb {name}: decoded in {} ms", started.elapsed().as_millis());
     });
 }
 

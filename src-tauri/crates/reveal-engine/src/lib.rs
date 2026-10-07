@@ -910,6 +910,7 @@ impl Engine {
         // no network, no decode, just a local read of exactly the buffer the
         // pipeline wants.
         if let Some(img) = self.unpark_working(path, max_px) {
+            eprintln!("[perf] pipeline_input {}: parked frame read from disk", path.display());
             let key = (path.to_path_buf(), max_px);
             self.store_preview_input(key, img.clone());
             return Ok((img, 0));
@@ -961,6 +962,12 @@ impl Engine {
                 Ok(img)
             },
         )?;
+        eprintln!(
+            "[perf] decode {}: {} ({} ms)",
+            key.0.display(),
+            if decoded { "RAW decoded" } else { "decode cache hit" },
+            t.elapsed().as_millis()
+        );
         Ok((img, if decoded { t.elapsed().as_millis() } else { 0 }))
     }
 

@@ -457,9 +457,14 @@
     width: auto;
     height: auto;
     border: none;
-    border-radius: var(--radius);
+    /* The photo's own corner is `--radius`, whatever the engine draws it with: a border-radius
+       on a box with padding only leaves `radius - padding` for the picture inside, which was
+       about nothing for an image and something else for a canvas. So the mat's corner is the
+       photo's plus the padding it wraps it in. */
+    --mat-pad: calc(var(--space-d4) * 3);
+    border-radius: calc(var(--radius) + var(--mat-pad));
     object-fit: contain;
-    padding: calc(var(--space-d4) * 3);
+    padding: var(--mat-pad);
     background: var(--color-surface-raised);
     box-shadow: var(--shadow), var(--shadow-glow);
     transition: all var(--transition-fast);

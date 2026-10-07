@@ -407,6 +407,8 @@
         label="Look AgX"
         value={recipe?.agx_look ?? "base"}
         options={AGX_OPTIONS}
+        disabled={lutEncodingOf(recipe) !== "display"}
+        hint={lutEncodingOf(recipe) !== "display" ? "The AgX look only applies to the Display encoding: in a log or linear encoding the render leaves without the tone map." : ""}
         onChange={(val) => {
           recipe.agx_look = val;
           edited();

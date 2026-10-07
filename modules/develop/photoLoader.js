@@ -43,6 +43,7 @@ export function openingUrl(path, version = 0) {
  *   setStatus: (status: string) => void,
  *   getPreferences: () => any,
  *   prefetchNeighbours: (path: string) => void,
+ *   warmCurrent?: (path: string) => void,
  *   scheduleWorkingPark: (path: string) => void,
  *   scheduleRender: (px: number) => void,
  *   switchMode: (mode: "dev" | "cull", opts?: any) => Promise<any> | void,
@@ -66,6 +67,7 @@ export function createPhotoLoader(deps) {
     setStatus,
     getPreferences,
     prefetchNeighbours,
+    warmCurrent = () => {},
     scheduleWorkingPark,
     scheduleRender,
     switchMode,
@@ -133,6 +135,8 @@ export function createPhotoLoader(deps) {
       if (developState.developEngine) {
         scheduleRender(previewPx);
       } else {
+        // No engine renders it yet: decode it now so choosing one is not a wait.
+        warmCurrent(path);
         setStatus("");
       }
 
