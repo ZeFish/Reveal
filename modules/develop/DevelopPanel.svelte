@@ -254,8 +254,9 @@
     padding: var(--space-d2);
   }
 
-  .docked-panel-frame .panel {
-      padding:0 !important;
+  /* The frame is the workspace's, so Svelte can't see it from here: without `:global` the rule is dropped. */
+  :global(.docked-panel-frame) .panel {
+    padding: 0;
   }
 
   /* The accent follows the zone being worked on — the same colours that name the zones in

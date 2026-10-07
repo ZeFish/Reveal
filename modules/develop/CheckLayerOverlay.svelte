@@ -229,7 +229,4 @@
     margin: 0 4px;
   }
 
-  .legend-item.blue {
-    color: var(--color-blue);
-  }
 </style>

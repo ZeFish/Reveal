@@ -90,14 +90,16 @@ export function createScopeAnalyzer() {
   return { analyze };
 }
 
+/** @typedef {[number, number, number]} Rgb */
+
 /**
  * The colours the check layers paint. This is the one source: the legend, the
  * toolbar dots and the photo marks read these, they never restate them.
  * RGB triplets, because the painter writes them straight into ImageData.
  */
 export const CHECK_COLORS = {
-  clipHighlights: [255, 30, 30],
-  clipShadows: [0, 120, 255],
+  clipHighlights: /** @type {Rgb} */ ([255, 30, 30]),
+  clipShadows: /** @type {Rgb} */ ([0, 120, 255]),
   /** Luminance bands of false colour, darkest first; `below` is the upper bound on Rec.709 luma (0-255). */
   falseColor: [
     { below: 6, rgb: [140, 20, 180], label: "Black (0–2%)" },
@@ -111,17 +113,19 @@ export const CHECK_COLORS = {
     { below: 250, rgb: [255, 115, 0], label: null },
     { below: Infinity, rgb: [255, 20, 20], label: "Clipped (100%)" },
   ],
-  satStrong: [255, 140, 20],
-  satOver: [255, 0, 170],
+  satStrong: /** @type {Rgb} */ ([255, 140, 20]),
+  satOver: /** @type {Rgb} */ ([255, 0, 170]),
   /** Hue and solar paint a ramp or iso-lines, not one colour: these are their swatches. */
   hueSwatch: [0, 175, 210],
   solarSwatch: [226, 232, 240],
 };
 
 /** `[r,g,b]` → `rgb(r g b)` for CSS. */
+/** @param {number[]} rgb */
 export const rgbCss = ([r, g, b]) => `rgb(${r} ${g} ${b})`;
 
 /** The colour that stands for a whole check layer in the toolbar and on photo marks. */
+/** @type {Record<string, number[]>} */
 export const CHECK_SWATCH = {
   clipping: CHECK_COLORS.clipHighlights,
   false_color: CHECK_COLORS.falseColor[4].rgb,
@@ -200,7 +204,7 @@ export function renderCheckLayer(sourceData, checkLayer, ctx, width, height, zon
       const b = data[i + 2];
       const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
 
-      const band = CHECK_COLORS.falseColor.find((x) => y < x.below);
+      const band = CHECK_COLORS.falseColor.find((x) => y < x.below) ?? CHECK_COLORS.falseColor[CHECK_COLORS.falseColor.length - 1];
       [outData[i], outData[i + 1], outData[i + 2]] = band.rgb;
       outData[i + 3] = 255;
     }
