@@ -1,5 +1,6 @@
 <script>
   import { Icon } from "@modules/core";
+  import { CHECK_SWATCH, rgbCss } from "./developAnalysis.js";
 
   // The photo's stars and its place in the quick collection, shown while developing — the
   // same two marks the grid cell carries, here also clickable. Both answer at once; the
@@ -113,7 +114,7 @@
     onclick={() => onToggleCheckLayer()}
   >
     <Icon name="circle-half" size="var(--icon-sm)" />
-    {#if checkLayer !== "none"}<span class="clip-indicator {checkLayer}"></span>{/if}
+    {#if checkLayer !== "none"}<span class="clip-indicator" style:background={CHECK_SWATCH[checkLayer] ? rgbCss(CHECK_SWATCH[checkLayer]) : null}></span>{/if}
   </button>
   <button
     type="button"
@@ -194,11 +195,6 @@
     border-radius: 50%;
     background: var(--color-accent);
 
-    &.clipping { background: #ef4444; }
-    &.false_color { background: #22c55e; }
-    &.saturation { background: #ec4899; }
-    &.hue { background: #06b6d4; }
-    &.solar { background: #e2e8f0; }
   }
   .compare-btn.on {
     color: var(--color-accent);

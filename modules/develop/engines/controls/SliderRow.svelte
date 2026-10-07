@@ -139,7 +139,7 @@
   }
   .frow.sub-param {
     padding-left: var(--space-d2);
-    border-left: 2px solid var(--color-border);
+    box-shadow: inset var(--stroke-width-lg) 0 0 0 var(--color-border);
   }
   .frow-label {
     width: 6.2rem;
@@ -173,7 +173,6 @@
     color: var(--color-muted);
     /* A field that looks like the number it was: the frame only shows when it is wanted. */
     background: transparent;
-    border: 1px solid transparent;
     border-radius: var(--radius);
     padding: 0 2px;
     min-height: 0;
@@ -181,11 +180,11 @@
     box-shadow: none;
   }
   .val:hover {
-    border-color: var(--color-border);
+    box-shadow: var(--shadow-border);
   }
   .val:focus {
     color: var(--color-foreground);
-    border-color: var(--color-accent);
+    box-shadow: inset 0 0 0 var(--stroke-width) var(--color-accent);
     outline: none;
   }
 </style>

@@ -140,7 +140,7 @@
   }
   .lut-layer-card {
     background: var(--color-surface);
-    border: var(--border);
+    box-shadow: var(--shadow-border);
     border-radius: var(--radius);
     padding: calc(var(--space-d4) * 2);
     display: flex;

@@ -325,11 +325,19 @@
     width: 100%;
     height: 44px;
     border-radius: var(--radius-sm, 3px);
-    background: color-mix(in srgb, var(--color-foreground) 4%, transparent);
-    border: var(--stroke-width) solid color-mix(in srgb, var(--color-foreground) 10%, transparent);
+    background: var(--color-fill-tertiary);
     overflow: hidden;
     cursor: pointer;
     transition: height var(--duration-fast, 0.12s) var(--ease-soft, ease);
+  }
+  /* The frame is a ring over the canvas, which would cover an inset shadow on the box itself. */
+  .scopes::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: var(--shadow-border);
+    pointer-events: none;
   }
   .scopes.mono {
     background: var(--color-background);

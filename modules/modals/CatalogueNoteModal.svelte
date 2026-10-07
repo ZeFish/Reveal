@@ -44,7 +44,7 @@
     justify-content: space-between;
     align-items: center;
     padding: var(--space) calc(var(--space-d4) * 6);
-    border-bottom: var(--stroke-width) solid var(--color-border);
+    box-shadow: var(--shadow-border-bottom);
     background: var(--color-surface-sunken);
   }
   .modal-header h3 {
@@ -83,7 +83,7 @@
     justify-content: flex-end;
     gap: var(--space);
     padding: var(--space) calc(var(--space-d4) * 6);
-    border-top: var(--stroke-width) solid var(--color-border);
+    box-shadow: var(--shadow-border-top);
     background: var(--color-surface-sunken);
   }
   .modal-footer button {

@@ -313,7 +313,7 @@
     min-height: var(--control-h);
     padding: var(--space-d4) var(--space-d3);
     background: var(--color-surface);
-    border: var(--stroke-width) solid var(--color-border);
+    box-shadow: var(--shadow-border);
     border-radius: var(--radius);
   }
   .tag-chip {
@@ -343,7 +343,7 @@
     outline: none;
   }
   .tag-list:focus-within {
-    border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+    box-shadow: inset 0 0 0 var(--stroke-width) color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
   }
   .ai-btn {
     cursor: pointer;
@@ -373,7 +373,7 @@
     align-items: center;
     gap: var(--space-d3);
     padding: var(--space-d3) 0;
-    border-top: var(--border);
+    box-shadow: var(--shadow-border-top);
   }
   .path {
     flex: 1;

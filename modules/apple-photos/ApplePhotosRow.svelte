@@ -103,7 +103,7 @@
     border-radius: var(--radius-sm);
   }
   .dir-row:hover {
-    background: var(--color-surface);
+    background: var(--color-hover);
   }
   .disc {
     width: 12px;

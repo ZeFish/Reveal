@@ -57,7 +57,7 @@
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    border: var(--stroke-width) solid currentColor;
+    box-shadow: inset 0 0 0 var(--stroke-width) currentColor;
     position: relative;
   }
   .focus-glyph::after {
@@ -65,7 +65,7 @@
     position: absolute;
     inset: 2px;
     border-radius: 50%;
-    border: var(--stroke-width) solid currentColor;
+    box-shadow: inset 0 0 0 var(--stroke-width) currentColor;
   }
   .focus-glyph.on::after {
     background: currentColor;

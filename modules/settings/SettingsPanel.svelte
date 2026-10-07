@@ -337,7 +337,7 @@
     margin: 0;
     padding: 0 var(--space-d2) var(--space-d2);
     background: var(--color-surface-raised);
-    border-right: var(--border);
+    box-shadow: var(--shadow-border-right);
     overflow-y: auto;
   }
   .categories-spacer {
@@ -357,7 +357,7 @@
   .nav-section-spaced {
     margin-top: var(--space-d3);
     padding-top: var(--space-d3);
-    border-top: var(--border);
+    box-shadow: var(--shadow-border-top);
   }
   .nav-section-items {
     display: flex;
@@ -429,10 +429,10 @@
     transition: background var(--duration-instant) var(--ease-soft);
   }
   .detail-scroll :global(.accordion-header:hover) {
-    background: var(--color-surface);
+    background: var(--color-hover);
   }
   .detail-scroll :global(.sub-row) {
-    background: color-mix(in srgb, var(--color-foreground) 3%, transparent);
+    background: var(--color-fill-quaternary);
     padding-left: calc(var(--space) + var(--space-d4));
   }
   .detail-scroll :global(.disabled-card) {
@@ -524,7 +524,7 @@
     align-items: center;
     gap: 1px;
     background: var(--color-surface);
-    border: var(--border);
+    box-shadow: var(--shadow-border);
     border-radius: var(--radius-sm);
   }
   .detail-scroll :global(.stepper-btn) {
@@ -562,7 +562,7 @@
   /* Footer */
   .settings-footer {
     padding: var(--space) calc(var(--space-d4) * 5);
-    border-top: var(--border);
+    box-shadow: var(--shadow-border-top);
     display: flex;
     align-items: center;
     justify-content: flex-end;

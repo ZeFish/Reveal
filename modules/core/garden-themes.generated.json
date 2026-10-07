@@ -108,8 +108,8 @@
     {
       "id": "claude",
       "label": "Claude",
-      "darkBackground": "#262626",
-      "darkAccent": "#d87757",
+      "darkBackground": "#232221",
+      "darkAccent": "#d17051",
       "fontHeader": null,
       "fontText": null,
       "fontPackages": [

@@ -172,6 +172,8 @@
   .panel-btn {
     padding: var(--space-d3) 0;
   }
+
+
   .btn-row {
     display: flex;
     gap: var(--space-d2);
@@ -188,6 +190,6 @@
     z-index: 5;
     padding: var(--space-d3) 0;
     background: var(--color-surface-raised);
-    border-top: var(--border);
+    box-shadow: var(--shadow-border-top);
   }
 </style>

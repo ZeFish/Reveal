@@ -69,7 +69,7 @@
     align-items: center;
     justify-content: space-between;
     padding: var(--space) calc(var(--space-d4) * 5);
-    border-bottom: var(--stroke-width) solid var(--color-border);
+    box-shadow: var(--shadow-border-bottom);
   }
   .panel-header h2 {
     margin: 0;
@@ -86,7 +86,7 @@
     display: flex;
     justify-content: flex-end;
     padding: var(--space-d2) calc(var(--space-d4) * 5);
-    border-top: var(--stroke-width) solid var(--color-border);
+    box-shadow: var(--shadow-border-top);
   }
   .shortcuts-grid {
     padding: calc(var(--space-d4) * 5);

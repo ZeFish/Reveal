@@ -120,7 +120,7 @@
     background: var(--color-surface);
     padding: var(--space-d4);
     border-radius: var(--radius);
-    border: var(--stroke-width) solid var(--color-border);
+    box-shadow: var(--shadow-border);
   }
 
   .band {
@@ -132,7 +132,6 @@
     padding: 0;
     height: 14px;
     border-radius: calc(var(--radius) - 2px);
-    border: 1px solid transparent;
     cursor: pointer;
     position: relative;
     display: flex;
@@ -149,8 +148,7 @@
   }
 
   .band.active {
-    border-color: var(--color-foreground);
-    box-shadow: 0 0 0 1px var(--color-foreground);
+    box-shadow: inset 0 0 0 1px var(--color-foreground), 0 0 0 1px var(--color-foreground);
   }
 
   .band.touched::after {

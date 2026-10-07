@@ -90,6 +90,46 @@ export function createScopeAnalyzer() {
   return { analyze };
 }
 
+/**
+ * The colours the check layers paint. This is the one source: the legend, the
+ * toolbar dots and the photo marks read these, they never restate them.
+ * RGB triplets, because the painter writes them straight into ImageData.
+ */
+export const CHECK_COLORS = {
+  clipHighlights: [255, 30, 30],
+  clipShadows: [0, 120, 255],
+  /** Luminance bands of false colour, darkest first; `below` is the upper bound on Rec.709 luma (0-255). */
+  falseColor: [
+    { below: 6, rgb: [140, 20, 180], label: "Black (0–2%)" },
+    { below: 26, rgb: [15, 60, 220], label: "Shadows" },
+    { below: 56, rgb: [0, 175, 210], label: "Detail" },
+    { below: 96, rgb: [65, 65, 65], label: null },
+    { below: 122, rgb: [10, 210, 45], label: "Grey 18%" },
+    { below: 148, rgb: [255, 130, 165], label: "Skin" },
+    { below: 196, rgb: [140, 140, 140], label: null },
+    { below: 232, rgb: [255, 225, 0], label: "Highlights" },
+    { below: 250, rgb: [255, 115, 0], label: null },
+    { below: Infinity, rgb: [255, 20, 20], label: "Clipped (100%)" },
+  ],
+  satStrong: [255, 140, 20],
+  satOver: [255, 0, 170],
+  /** Hue and solar paint a ramp or iso-lines, not one colour: these are their swatches. */
+  hueSwatch: [0, 175, 210],
+  solarSwatch: [226, 232, 240],
+};
+
+/** `[r,g,b]` → `rgb(r g b)` for CSS. */
+export const rgbCss = ([r, g, b]) => `rgb(${r} ${g} ${b})`;
+
+/** The colour that stands for a whole check layer in the toolbar and on photo marks. */
+export const CHECK_SWATCH = {
+  clipping: CHECK_COLORS.clipHighlights,
+  false_color: CHECK_COLORS.falseColor[4].rgb,
+  saturation: CHECK_COLORS.satOver,
+  hue: CHECK_COLORS.hueSwatch,
+  solar: CHECK_COLORS.solarSwatch,
+};
+
 /** What the zone masks were painted with before they followed the theme. */
 const DEFAULT_ZONE_COLORS = { shadows: [0, 130, 255], midtones: [30, 200, 70], highlights: [255, 40, 40] };
 
@@ -144,14 +184,10 @@ export function renderCheckLayer(sourceData, checkLayer, ctx, width, height, zon
       const g = data[i + 1];
       const b = data[i + 2];
       if (r >= 252 && g >= 252 && b >= 252) {
-        outData[i] = 255;
-        outData[i + 1] = 30;
-        outData[i + 2] = 30;
+        [outData[i], outData[i + 1], outData[i + 2]] = CHECK_COLORS.clipHighlights;
         outData[i + 3] = 230;
       } else if (r <= 3 && g <= 3 && b <= 3) {
-        outData[i] = 0;
-        outData[i + 1] = 120;
-        outData[i + 2] = 255;
+        [outData[i], outData[i + 1], outData[i + 2]] = CHECK_COLORS.clipShadows;
         outData[i + 3] = 230;
       }
     }
@@ -164,27 +200,8 @@ export function renderCheckLayer(sourceData, checkLayer, ctx, width, height, zon
       const b = data[i + 2];
       const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
 
-      if (y < 6) {
-        outData[i] = 140; outData[i + 1] = 20; outData[i + 2] = 180;
-      } else if (y < 26) {
-        outData[i] = 15; outData[i + 1] = 60; outData[i + 2] = 220;
-      } else if (y < 56) {
-        outData[i] = 0; outData[i + 1] = 175; outData[i + 2] = 210;
-      } else if (y < 96) {
-        outData[i] = 65; outData[i + 1] = 65; outData[i + 2] = 65;
-      } else if (y < 122) {
-        outData[i] = 10; outData[i + 1] = 210; outData[i + 2] = 45;
-      } else if (y < 148) {
-        outData[i] = 255; outData[i + 1] = 130; outData[i + 2] = 165;
-      } else if (y < 196) {
-        outData[i] = 140; outData[i + 1] = 140; outData[i + 2] = 140;
-      } else if (y < 232) {
-        outData[i] = 255; outData[i + 1] = 225; outData[i + 2] = 0;
-      } else if (y < 250) {
-        outData[i] = 255; outData[i + 1] = 115; outData[i + 2] = 0;
-      } else {
-        outData[i] = 255; outData[i + 1] = 20; outData[i + 2] = 20;
-      }
+      const band = CHECK_COLORS.falseColor.find((x) => y < x.below);
+      [outData[i], outData[i + 1], outData[i + 2]] = band.rgb;
       outData[i + 3] = 255;
     }
   } else if (checkLayer === "saturation") {
@@ -200,7 +217,7 @@ export function renderCheckLayer(sourceData, checkLayer, ctx, width, height, zon
       const sat = max === 0 ? 0 : delta / max;
 
       if (sat > 0.85) {
-        outData[i] = 255; outData[i + 1] = 0; outData[i + 2] = 170;
+        [outData[i], outData[i + 1], outData[i + 2]] = CHECK_COLORS.satOver;
       } else if (sat > 0.65) {
         const t = (sat - 0.65) / 0.20;
         outData[i] = 255; outData[i + 1] = Math.round((1 - t) * 140); outData[i + 2] = 20;

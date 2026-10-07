@@ -457,6 +457,7 @@
     width: auto;
     height: auto;
     border: none;
+    border-radius: var(--radius);
     object-fit: contain;
     padding: calc(var(--space-d4) * 3);
     background: var(--color-surface-raised);
@@ -495,18 +496,6 @@
 
   .photo-mat img { display: none; }
 
-  @media (prefers-color-scheme: dark) {
-    .photo-mat {
-      padding: 0;
-      border-radius: var(--radius);
-      box-shadow: var(--shadow-raised), var(--shadow-lift);
-    }
-  }
-  :global([data-color-mode="dark"]) .photo-mat {
-    padding: 0;
-    border-radius: var(--radius);
-    box-shadow: var(--shadow-raised), var(--shadow-lift);
-  }
   .photo-mat.dimmed {
     opacity: 0.75;
   }

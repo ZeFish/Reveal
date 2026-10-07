@@ -192,7 +192,7 @@
     background: var(--color-border);
   }
   .pop-danger {
-    color: var(--color-red, #ff4444);
+    color: var(--color-red);
     cursor: pointer;
     text-align: center;
     padding: var(--space-d3) var(--space-d2);

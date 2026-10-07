@@ -229,6 +229,7 @@
     position: relative;
     z-index: 1;
     background: var(--canvas);
+    border-radius: var(--window-radius);
   }
 
   .marks-slot {

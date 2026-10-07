@@ -1,5 +1,5 @@
 <script>
-  import { renderCheckLayer } from "./developAnalysis.js";
+  import { renderCheckLayer, CHECK_COLORS, rgbCss } from "./developAnalysis.js";
   import { zoneColors } from "./themeColor.js";
 
   /**
@@ -78,21 +78,17 @@
   {:else}
     <div class="hud-legend">
         {#if effectiveCheckLayer === "clipping"}
-        <span class="legend-item red">● Highlights (&gt;98%)</span>
-        <span class="legend-item blue">● Shadows (&lt;2%)</span>
+        <span class="legend-item" style:color={rgbCss(CHECK_COLORS.clipHighlights)}>● Highlights (&gt;98%)</span>
+        <span class="legend-item" style:color={rgbCss(CHECK_COLORS.clipShadows)}>● Shadows (&lt;2%)</span>
         {:else if effectiveCheckLayer === "false_color"}
-        <span class="legend-item" style="color: #c084fc;">● Black (0–2%)</span>
-        <span class="legend-item" style="color: #60a5fa;">● Shadows</span>
-        <span class="legend-item" style="color: #22d3ee;">● Detail</span>
-        <span class="legend-item" style="color: #4ade80;">● Grey 18%</span>
-        <span class="legend-item" style="color: #f472b6;">● Skin</span>
-        <span class="legend-item" style="color: #facc15;">● Highlights</span>
-        <span class="legend-item" style="color: #ef4444;">● Clipped (100%)</span>
+        {#each CHECK_COLORS.falseColor.filter((band) => band.label) as band}
+        <span class="legend-item" style:color={rgbCss(band.rgb)}>● {band.label}</span>
+        {/each}
         {:else if effectiveCheckLayer === "saturation"}
-        <span class="legend-item" style="color: #94a3b8;">0% Neutral</span>
-        <span class="sat-gradient-bar"></span>
-        <span class="legend-item" style="color: #f97316;">100% Saturated</span>
-        <span class="legend-item" style="color: #f43f5e;">● Oversaturated (&gt;85%)</span>
+        <span class="legend-item" style="color: var(--color-muted);">0% Neutral</span>
+        <span class="sat-gradient-bar" style:background="linear-gradient(to right, rgb(60 66 78), rgb(180 160 40), {rgbCss(CHECK_COLORS.satStrong)}, {rgbCss(CHECK_COLORS.satOver)})"></span>
+        <span class="legend-item" style:color={rgbCss(CHECK_COLORS.satStrong)}>100% Saturated</span>
+        <span class="legend-item" style:color={rgbCss(CHECK_COLORS.satOver)}>● Oversaturated (&gt;85%)</span>
         {:else if effectiveCheckLayer === "hue"}
         <span class="legend-item" style="color: var(--color-foreground);">Normalized spectrum (L=50%, S=100%) — checks hue drift and continuity</span>
         {:else if effectiveCheckLayer === "solar"}
@@ -182,7 +178,6 @@
   .hud-pill {
     padding: 3px 8px;
     border-radius: calc(var(--radius) - 2px);
-    border: var(--stroke-width) solid transparent;
     background: transparent;
     color: var(--color-muted);
     font-size: 0.72rem;
@@ -231,13 +226,9 @@
     width: 60px;
     height: 6px;
     border-radius: 3px;
-    background: linear-gradient(to right, #475569, #38bdf8, #eab308, #ef4444);
     margin: 0 4px;
   }
 
-  .legend-item.red {
-    color: var(--color-red);
-  }
   .legend-item.blue {
     color: var(--color-blue);
   }

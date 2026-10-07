@@ -65,7 +65,7 @@
     height: 24px;
     font-size: 0.74rem;
     background: var(--color-surface);
-    border: var(--stroke-width) solid var(--color-border);
+    box-shadow: var(--shadow-border);
     border-radius: var(--radius);
     color: var(--color-foreground);
     padding: 0 var(--space-d3);

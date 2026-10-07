@@ -381,7 +381,7 @@
     padding: var(--space-d3);
     background: var(--color-surface);
     border-radius: var(--radius);
-    border: var(--stroke-width) solid var(--color-border);
+    box-shadow: var(--shadow-border);
   }
 
   .layer-row {
@@ -396,7 +396,7 @@
     height: 22px;
     font-size: 0.72rem;
     background: var(--color-surface-raised);
-    border: var(--stroke-width) solid var(--color-border);
+    box-shadow: var(--shadow-border);
     border-radius: var(--radius);
     color: var(--color-foreground);
     padding: 0 var(--space-d3);

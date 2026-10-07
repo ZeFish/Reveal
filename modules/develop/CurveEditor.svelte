@@ -294,7 +294,6 @@
     padding: 1px var(--space-d4);
     box-shadow: none;
     color: color-mix(in srgb, var(--color-foreground) 45%, transparent);
-    border-bottom: var(--stroke-width) solid transparent;
     cursor: pointer;
   }
   .curve-tab:hover {
@@ -302,7 +301,7 @@
   }
   .curve-tab.active {
     color: var(--tab-color);
-    border-bottom-color: var(--tab-color);
+    box-shadow: inset 0 calc(var(--stroke-width) * -1) 0 0 var(--tab-color);
   }
   .spacer {
     flex: 1;
@@ -331,14 +330,14 @@
        a squashed box makes every slope read steeper than it is. */
     aspect-ratio: 1;
     display: block;
-    background: color-mix(in srgb, var(--color-foreground) 5%, transparent);
-    border: var(--stroke-width) solid color-mix(in srgb, var(--color-foreground) 12%, transparent);
+    background: var(--color-fill-tertiary);
+    box-shadow: var(--shadow-border);
     border-radius: var(--radius-sm, 3px);
     touch-action: none;
     cursor: crosshair;
   }
   .grid {
-    stroke: color-mix(in srgb, var(--color-foreground) 8%, transparent);
+    stroke: var(--color-fill-secondary);
     stroke-width: 0.5;
     vector-effect: non-scaling-stroke;
   }

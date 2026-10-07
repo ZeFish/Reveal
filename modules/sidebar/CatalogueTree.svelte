@@ -659,7 +659,7 @@
   }
   .add-btn:hover {
     color: var(--color-foreground);
-    background: var(--color-surface);
+    background: var(--color-hover);
   }
   .indexing {
     display: inline-flex;
@@ -685,7 +685,7 @@
     border-radius: var(--radius-sm);
   }
   .dir-row:hover {
-    background: var(--color-surface);
+    background: var(--color-hover);
   }
   .dir-row.is-drop-target {
     background: var(--color-accent);
@@ -754,8 +754,8 @@
     display: flex;
   }
   .del-col-btn:hover {
-    color: var(--color-destructive, #ff453a);
-    background: var(--color-surface);
+    color: var(--color-destructive);
+    background: var(--color-hover);
   }
   .virtual-row {
     font-weight: 500;

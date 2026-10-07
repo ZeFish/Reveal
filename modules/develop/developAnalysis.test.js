@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createScopeAnalyzer, renderCheckLayer, WF_COLS, WF_LEVELS, VEC_SIZE } from "./developAnalysis.js";
+import { createScopeAnalyzer, renderCheckLayer, CHECK_COLORS, WF_COLS, WF_LEVELS, VEC_SIZE } from "./developAnalysis.js";
 
 describe("developAnalysis", () => {
   it("computes histogram and scopes correctly from synthetic pixel buffer", () => {
@@ -61,5 +61,26 @@ describe("developAnalysis", () => {
     expect([...paint("zone_midtones", theme).slice(8, 11)]).toEqual([4, 5, 6]);
     // without colours, the masks keep their old look
     expect([...paint("zone_shadows", undefined).slice(0, 3)]).toEqual([0, 130, 255]);
+  });
+});
+
+describe("check-layer palette", () => {
+  const paint = (layer, pixel) => {
+    const out = { data: new Uint8ClampedArray(4) };
+    const ctx = { createImageData: () => out, putImageData() {} };
+    renderCheckLayer({ data: new Uint8ClampedArray(pixel) }, layer, ctx, 1, 1);
+    return [...out.data];
+  };
+
+  it("paints clipping with the colours the legend and dots read", () => {
+    expect(paint("clipping", [255, 255, 255, 255]).slice(0, 3)).toEqual(CHECK_COLORS.clipHighlights);
+    expect(paint("clipping", [0, 0, 0, 255]).slice(0, 3)).toEqual(CHECK_COLORS.clipShadows);
+  });
+
+  it("paints every false-colour band with its palette entry", () => {
+    for (const band of CHECK_COLORS.falseColor) {
+      const y = band.below === Infinity ? 255 : band.below - 1;
+      expect(paint("false_color", [y, y, y, 255]).slice(0, 3)).toEqual(band.rgb);
+    }
   });
 });

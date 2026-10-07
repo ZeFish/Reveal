@@ -79,7 +79,7 @@
     align-items: center;
     justify-content: space-between;
     padding: var(--space) calc(var(--space-d4) * 5);
-    border-bottom: var(--stroke-width) solid var(--color-border);
+    box-shadow: var(--shadow-border-bottom);
   }
   .modal-header h3 {
     margin: 0;
@@ -114,7 +114,7 @@
   .queue-item {
     padding: calc(var(--space-d4) * 3);
     background: var(--color-surface-raised);
-    border: var(--stroke-width) solid var(--color-border);
+    box-shadow: var(--shadow-border);
     border-radius: var(--radius);
 
     display: flex;

@@ -125,7 +125,7 @@
     align-items: center;
     padding: var(--space-d4) var(--space-d2);
     margin-top: var(--space-d3);
-    border-top: var(--border);
+    box-shadow: var(--shadow-border-top);
     user-select: none;
     font-size: 11px;
     font-weight: 600;
@@ -159,7 +159,7 @@
     border-radius: var(--radius-sm);
   }
   .section-main:hover {
-    background: var(--color-surface);
+    background: var(--color-hover);
   }
   .section-name {
     text-transform: uppercase;
@@ -188,7 +188,7 @@
   }
   .add-btn:hover {
     color: var(--color-foreground);
-    background: var(--color-surface);
+    background: var(--color-hover);
   }
   :global(.spin) {
     animation: spin 1s linear infinite;
@@ -212,7 +212,7 @@
     border-radius: var(--radius-sm);
   }
   .dir-row:hover {
-    background: var(--color-surface);
+    background: var(--color-hover);
   }
   .disc {
     width: 12px;

@@ -253,8 +253,8 @@
   .confirm-note { margin-right: auto; }
   .apply-btn {
     background: var(--color-accent);
-    color: var(--color-on-accent, #fff);
-    border: 1px solid color-mix(in srgb, var(--color-accent) 60%, black);
+    color: var(--color-on-accent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 60%, black);
     border-radius: var(--radius-sm);
     padding: var(--space-d4) var(--space-d2);
     font-weight: 600;

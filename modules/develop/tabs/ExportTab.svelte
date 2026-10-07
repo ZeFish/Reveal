@@ -255,7 +255,7 @@
   .footer {
     flex-shrink: 0;
     padding: var(--space-d3) 0;
-    border-top: var(--border);
+    box-shadow: var(--shadow-border-top);
   }
   .panel-btn {
     display: block;

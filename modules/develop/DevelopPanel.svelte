@@ -255,21 +255,25 @@
   }
 
   .docked-panel-frame .panel {
-      padding:0;
+      padding:0 !important;
   }
 
   /* The accent follows the zone being worked on — the same colours that name the zones in
      the tabs and on the zone mask (blue shadows, green midtones, red highlights) — so sliders,
      toggles and the pressed buttons all say which layer they are editing. Global keeps the
-     theme's own accent. */
+     theme's own accent. The roles derived from the accent are computed where they are declared,
+     so a local accent has to re-declare them: the focus ring. */
   .panel[data-zone="shadows"] {
-    --color-accent: var(--color-blue, #3b82f6);
+    --color-accent: var(--color-blue);
+    --color-ring: oklch(from var(--color-accent) l c h / 0.5);
   }
   .panel[data-zone="midtones"] {
-    --color-accent: var(--color-green, #10b981);
+    --color-accent: var(--color-green);
+    --color-ring: oklch(from var(--color-accent) l c h / 0.5);
   }
   .panel[data-zone="highlights"] {
-    --color-accent: var(--color-red, #ef4444);
+    --color-accent: var(--color-red);
+    --color-ring: oklch(from var(--color-accent) l c h / 0.5);
   }
 
   .sticky-top {

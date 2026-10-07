@@ -1,4 +1,5 @@
 <script>
+  import { CHECK_COLORS, CHECK_SWATCH, rgbCss } from "../developAnalysis.js";
   import { Icon } from "@modules/core";
 
   /**
@@ -55,16 +56,16 @@
       {#if effectiveCheckLayer !== "none"}
         <span class="clip-dots">
           {#if effectiveCheckLayer === "clipping"}
-            <span class="dot red"></span>
-            <span class="dot blue"></span>
+            <span class="dot" style:background={rgbCss(CHECK_COLORS.clipHighlights)}></span>
+            <span class="dot" style:background={rgbCss(CHECK_COLORS.clipShadows)}></span>
           {:else if effectiveCheckLayer === "false_color"}
-            <span class="dot green"></span>
+            <span class="dot" style:background={rgbCss(CHECK_SWATCH.false_color)}></span>
           {:else if effectiveCheckLayer === "saturation"}
-            <span class="dot magenta"></span>
+            <span class="dot" style:background={rgbCss(CHECK_SWATCH.saturation)}></span>
           {:else if effectiveCheckLayer === "hue"}
-            <span class="dot cyan"></span>
+            <span class="dot" style:background={rgbCss(CHECK_SWATCH.hue)}></span>
           {:else if effectiveCheckLayer === "solar"}
-            <span class="dot white"></span>
+            <span class="dot" style:background={rgbCss(CHECK_SWATCH.solar)}></span>
           {/if}
         </span>
       {/if}
@@ -125,7 +126,7 @@
     color: var(--color-muted);
 
     &:hover {
-      background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
+      background: var(--color-hover);
       color: var(--color-foreground);
     }
     &.selected {
@@ -156,10 +157,4 @@
     height: 4px;
     border-radius: 50%;
   }
-  .dot.red { background: #ff3b30; }
-  .dot.blue { background: #007aff; }
-  .dot.green { background: #22c55e; }
-  .dot.magenta { background: #ec4899; }
-  .dot.cyan { background: #06b6d4; }
-  .dot.white { background: #e2e8f0; }
 </style>
