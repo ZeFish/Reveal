@@ -977,15 +977,15 @@
   }
 
   .zone-btn.zone-shadows.active {
-    color: var(--color-blue, #3b82f6);
+    color: var(--color-blue);
   }
 
   .zone-btn.zone-midtones.active {
-    color: var(--color-green, #10b981);
+    color: var(--color-green);
   }
 
   .zone-btn.zone-highlights.active {
-    color: var(--color-red, #ef4444);
+    color: var(--color-red);
   }
 
   .zone-dot {
@@ -1000,18 +1000,18 @@
   }
 
   .dot-shadows {
-    background-color: var(--color-blue, #3b82f6);
-    box-shadow: 0 0 3px var(--color-blue, #3b82f6);
+    background-color: var(--color-blue);
+    box-shadow: 0 0 3px var(--color-blue);
   }
 
   .dot-midtones {
-    background-color: var(--color-green, #10b981);
-    box-shadow: 0 0 3px var(--color-green, #10b981);
+    background-color: var(--color-green);
+    box-shadow: 0 0 3px var(--color-green);
   }
 
   .dot-highlights {
-    background-color: var(--color-red, #ef4444);
-    box-shadow: 0 0 3px var(--color-red, #ef4444);
+    background-color: var(--color-red);
+    box-shadow: 0 0 3px var(--color-red);
   }
 
   .zone-reset-row {

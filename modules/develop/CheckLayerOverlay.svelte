@@ -190,7 +190,7 @@
     transition: all var(--transition-fast);
 
     &:hover {
-      background: var(--color-surface);
+      background: var(--color-hover);
       color: var(--color-foreground);
     }
 
@@ -212,7 +212,7 @@
     font-size: 0.75rem;
 
     &:hover {
-      background: var(--color-surface);
+      background: var(--color-hover);
       color: var(--color-foreground);
     }
   }
