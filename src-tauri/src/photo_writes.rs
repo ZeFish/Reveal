@@ -296,14 +296,10 @@ pub(crate) struct AppDisk {
 
 impl Disk for AppDisk {
     fn save_recipe(&self, path: &str, recipe: &Recipe) -> Result<(), String> {
-        use tauri::Emitter;
         let result = crate::photo::Photo::new(path).save_recipe(recipe);
         if let Err(e) = &result {
             // reveal-io has already retried what a NAS recovers from: this one is lost, say so.
-            let _ = self.app.emit(
-                "app-error",
-                serde_json::json!({ "message": format!("Could not save development settings: {e}") }),
-            );
+            crate::app_error(&self.app, format!("Could not save development settings: {e}"));
         }
         result
     }
@@ -316,13 +312,9 @@ impl Disk for AppDisk {
     }
 
     fn set_rating(&self, path: &str, stars: u8) -> Result<(), String> {
-        use tauri::Emitter;
         let result = crate::photo::Photo::new(path).set_rating(stars);
         if let Err(e) = &result {
-            let _ = self.app.emit(
-                "app-error",
-                serde_json::json!({ "message": format!("Could not save the rating: {e}") }),
-            );
+            crate::app_error(&self.app, format!("Could not save the rating: {e}"));
         }
         result
     }

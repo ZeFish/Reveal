@@ -140,6 +140,18 @@ mod tests {
         assert!(!is_identity(&[[0.0, 0.2], [1.0, 1.0]]));
     }
 
+    /// The black and white points can sit inside the square: the curve holds their value beyond
+    /// them, which is what clips the blacks and the whites.
+    #[test]
+    fn end_points_moved_inward_clip_what_lies_beyond() {
+        let lut = build_lut(&[[0.3, 0.2], [0.7, 0.9]]).unwrap();
+        assert!((sample(&lut, 0.0) - 0.2).abs() < 1e-4);
+        assert!((sample(&lut, 0.29) - 0.2).abs() < 1e-3);
+        assert!((sample(&lut, 0.71) - 0.9).abs() < 1e-3);
+        assert!((sample(&lut, 1.0) - 0.9).abs() < 1e-4);
+        assert!(sample(&lut, 0.5) > 0.2 && sample(&lut, 0.5) < 0.9);
+    }
+
     #[test]
     fn identity_curve_maps_input_to_itself() {
         let lut = build_lut(&IDENTITY).unwrap();

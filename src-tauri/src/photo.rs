@@ -118,6 +118,26 @@ impl Photo {
         reveal_meta::read(&metadata).map_err(|e| e.to_string())
     }
 
+    /// The recipe a sidecar holds: the engine's settings as they were saved, or the default recipe
+    /// when it holds none or they cannot be read (a photo never developed develops as default).
+    pub(crate) fn recipe_in(sidecar: Option<&reveal_meta::Sidecar>) -> reveal_engine::Recipe {
+        sidecar
+            .and_then(|s| s.engine_settings.clone())
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default()
+    }
+
+    /// The photo's recipe, read the way every export and publication reads it (see [`Self::sidecar`]:
+    /// what is still owed to the photo is written first).
+    pub(crate) fn recipe(&self) -> Result<reveal_engine::Recipe, String> {
+        Ok(Self::recipe_in(self.sidecar()?.as_ref()))
+    }
+
+    /// The photo's caption, if it has one.
+    pub(crate) fn caption(&self) -> Result<Option<String>, String> {
+        Ok(self.sidecar()?.and_then(|s| s.description))
+    }
+
     /// Star rating, 0–5 (above that is clamped). Written at once: a rating is cheap and the person
     /// is looking at it.
     pub(crate) fn set_rating(&self, rating: u8) -> Result<(), String> {
@@ -257,6 +277,42 @@ mod tests {
         assert!(!preview.exists(), "the developed preview is gone");
         // And clearing again, with nothing left to clear, is not an error.
         photo.clear_development_now().unwrap();
+    }
+
+    #[test]
+    fn a_photo_never_developed_has_the_default_recipe_and_no_caption() {
+        let dir = tempfile::tempdir().unwrap();
+        let photo = photo_in(&dir, "IMG_0005.RAF");
+        assert_eq!(photo.recipe().unwrap().engine, reveal_engine::Recipe::default().engine);
+        assert_eq!(photo.caption().unwrap(), None);
+    }
+
+    #[test]
+    fn the_recipe_and_the_caption_are_what_was_saved() {
+        let dir = tempfile::tempdir().unwrap();
+        let photo = photo_in(&dir, "IMG_0006.RAF");
+        let recipe = reveal_engine::Recipe { engine: "rapid".to_string(), film_prep: 0.6, ..Default::default() };
+        photo.save_recipe(&recipe).unwrap();
+        photo
+            .update_metadata(|s| {
+                s.description = Some("the ceremony".to_string());
+                Ok(())
+            })
+            .unwrap();
+        let read = photo.recipe().unwrap();
+        assert_eq!(read.engine, "rapid");
+        assert!((read.film_prep - 0.6).abs() < 1e-6, "the settings come back whole");
+        assert_eq!(photo.caption().unwrap().as_deref(), Some("the ceremony"));
+    }
+
+    #[test]
+    fn settings_that_cannot_be_read_fall_back_to_the_default_recipe() {
+        let broken = reveal_meta::Sidecar {
+            engine_settings: Some(serde_json::json!({ "exposure_ev": "not a number" })),
+            ..Default::default()
+        };
+        assert_eq!(Photo::recipe_in(Some(&broken)).engine, reveal_engine::Recipe::default().engine);
+        assert_eq!(Photo::recipe_in(None).engine, reveal_engine::Recipe::default().engine);
     }
 
     /// A disk that really writes the sidecar, to watch the queue and the reads meet.

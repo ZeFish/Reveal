@@ -78,6 +78,24 @@ export function getNeutral(defaults, activeZone, id, index) {
 }
 
 /**
+ * The Temp slider runs -100..+100 around 5500 K; the number shown is the kelvin it means.
+ * @param {number} v
+ * @returns {number}
+ */
+export function temperatureToKelvin(v) {
+  return v <= 0 ? 5500 + v * 35 : 5500 + v * 45;
+}
+
+/**
+ * The slider value for a typed kelvin: the inverse of {@link temperatureToKelvin}.
+ * @param {number} kelvin
+ * @returns {number}
+ */
+export function kelvinToTemperature(kelvin) {
+  return kelvin <= 5500 ? (kelvin - 5500) / 35 : (kelvin - 5500) / 45;
+}
+
+/**
  * Formats a numeric slider value for display.
  * @param {string} id
  * @param {number | undefined | null} v
@@ -86,8 +104,7 @@ export function getNeutral(defaults, activeZone, id, index) {
 export function formatVal(id, v) {
   if (v === undefined || v === null) return "0";
   if (id === "temperature") {
-    const kelvin = v <= 0 ? 5500 + v * 35 : 5500 + v * 45;
-    return `${Math.round(kelvin)} K`;
+    return `${Math.round(temperatureToKelvin(v))} K`;
   }
   if (id === "exposure_ev" || id === "vignette_amount") {
     return (v > 0 ? "+" : "") + v.toFixed(2);

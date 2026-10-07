@@ -37,10 +37,7 @@ pub fn init(app: &tauri::AppHandle) -> Result<(), String> {
         cache_limit(&super::load_preferences(app.clone()))?,
         move |error| {
             eprintln!("Apple Photos cache: {error}");
-            let _ = handle.emit(
-                "app-error",
-                json!({"message": format!("Apple Photos cache: {error}")}),
-            );
+            crate::app_error(&handle, format!("Apple Photos cache: {error}"));
         },
     )?);
     let storage = Storage {

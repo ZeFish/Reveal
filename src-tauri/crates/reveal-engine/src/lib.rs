@@ -29,6 +29,8 @@ pub mod film_prep;
 pub mod traits;
 pub use traits::{EngineInfo, EngineRegistry, RenderEngine};
 
+mod encoding;
+pub use encoding::LutEncoding;
 mod lut;
 pub use lut::Cube;
 pub mod rapid;
@@ -149,9 +151,17 @@ pub struct Recipe {
     pub saturation: f32,
     pub temperature: f32,
     pub tint: f32,
-    /// Use LogC encoding instead of AgX tone mapping for cinematic look.
+    /// Old recipes only: the LogC switch that the encoding menu replaced. Read through
+    /// `Recipe::encoding`, never written again.
     #[serde(default)]
     pub use_logc: bool,
+    /// Shadows, midtones and highlights overlap the way Lightroom's luminosity ranges do
+    /// (see `rapid.rs::zone_weights`). Off: the three masks partition the tones.
+    #[serde(default)]
+    pub wide_zone_masks: bool,
+    /// The format the LUT stacks work in; see `encoding.rs`.
+    #[serde(default)]
+    pub lut_encoding: LutEncoding,
     #[serde(default = "default_agx_look")]
     pub agx_look: String,
     pub hsl_hue: Vec<f32>,
@@ -406,6 +416,17 @@ impl ZoneAdjustments {
     }
 }
 
+impl Recipe {
+    /// The format the LUT stacks work in. A recipe saved before the menu carries only the
+    /// LogC switch: it reads as LogC3.
+    pub fn encoding(&self) -> LutEncoding {
+        match (self.lut_encoding, self.use_logc) {
+            (LutEncoding::Display, true) => LutEncoding::LogC3,
+            (chosen, _) => chosen,
+        }
+    }
+}
+
 impl Default for Recipe {
     fn default() -> Self {
         Self {
@@ -448,6 +469,8 @@ impl Default for Recipe {
             temperature: 0.0,
             tint: 0.0,
             use_logc: false,
+            lut_encoding: LutEncoding::Display,
+            wide_zone_masks: false,
             agx_look: "base".to_string(),
             hsl_hue: vec![0.0; 8],
             hsl_sat: vec![0.0; 8],

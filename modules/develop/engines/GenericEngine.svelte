@@ -1,4 +1,5 @@
 <script>
+  import { LUT_ENCODINGS } from "./rapid/lutEncoding.js";
   import CollapsibleGroup from "./controls/CollapsibleGroup.svelte";
   import SliderRow from "./controls/SliderRow.svelte";
   import ToggleRow from "./controls/ToggleRow.svelte";
@@ -169,6 +170,7 @@
         { value: "bw", label: "Filmic B&W" },
       ];
     }
+    if (optionsType === "lut_encodings") return LUT_ENCODINGS;
     return [];
   }
 </script>

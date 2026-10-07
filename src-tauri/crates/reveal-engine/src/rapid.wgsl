@@ -69,9 +69,9 @@ struct Params {
     vignette_feather: f32,
 
     highlight_desat: f32,
-    use_logc: u32,
+    encoding: u32,
     agx_look: u32,
-    _pad1: u32,
+    wide_zone_masks: u32,
 
     // The photo's own black and white, in stops re 1.0 (rapid.rs::PhotoRange):
     // x,y for the global layer, z,w for the zones.
@@ -181,6 +181,9 @@ fn luma_709(c: vec3<f32>) -> f32 {
 fn zone_weights(c: vec3<f32>) -> vec3<f32> {
     let lum_linear = max(luma_of(c), 0.0);
     let lum_norm = min(sqrt(lum_linear), 1.0);
+    if (p.wide_zone_masks == 1u) {
+        return vec3<f32>(1.0 - lum_norm, 1.0 - abs(2.0 * lum_norm - 1.0), lum_norm);
+    }
     let shadow_w = clamp(1.0 - lum_norm * 2.0, 0.0, 1.0);
     let highlight_w = clamp((lum_norm - 0.5) * 2.0, 0.0, 1.0);
     let midtone_w = max(1.0 - shadow_w - highlight_w, 0.0);
@@ -438,6 +441,21 @@ fn logc3_encode(x: f32) -> f32 {
         return LOGC3_C * (log2(LOGC3_A * x + LOGC3_B) / log2(10.0)) + LOGC3_D;
     }
     return LOGC3_E * x + LOGC3_F;
+}
+
+/// encoding.rs::LutEncoding::encode for the formats that leave without the tone map
+/// (1 = LogC3, 2 = Cineon, 3 = Linear).
+fn encode_signal(encoding: u32, x_in: f32) -> f32 {
+    let x = max(x_in, 0.0);
+    if (encoding == 1u) {
+        return logc3_encode(x);
+    }
+    if (encoding == 2u) {
+        let offset = 0.0107925;
+        let code = 685.0 + 300.0 * (log2(x * (1.0 - offset) + offset) / log2(10.0));
+        return clamp(code / 1023.0, 0.0, 1.0);
+    }
+    return x;
 }
 
 /// curves.rs::sample — linear interpolation between LUT entries.
@@ -704,11 +722,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let c709 = max(prophoto_to_rec709(c), vec3<f32>(0.0));
 
     var outc: vec3<f32>;
-    if (p.use_logc == 1u) {
+    if (p.encoding != 0u) {
         outc = vec3<f32>(
-            logc3_encode(max(c709.r, 0.0)),
-            logc3_encode(max(c709.g, 0.0)),
-            logc3_encode(max(c709.b, 0.0)),
+            encode_signal(p.encoding, c709.r),
+            encode_signal(p.encoding, c709.g),
+            encode_signal(p.encoding, c709.b),
         );
     } else {
         var agx = max(agx_tonemap(c709), vec3<f32>(0.0));

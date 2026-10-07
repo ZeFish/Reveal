@@ -740,7 +740,7 @@ fn toggle_focus_mode(app: &tauri::AppHandle) {
         })
         .unwrap_or(false);
     if let Err(e) = apply_focus_mode(app, enabled) {
-        let _ = app.emit("app-error", serde_json::json!({ "message": e }));
+        app_error(app, e);
     }
     show_main_window(app);
 }
@@ -803,7 +803,7 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             "focus" => toggle_focus_mode(app),
             "appearance" => {
                 if let Err(e) = toggle_macos_appearance() {
-                    let _ = app.emit("app-error", serde_json::json!({ "message": e }));
+                    app_error(app, e);
                 }
             }
             "import-card" => {
@@ -1232,6 +1232,18 @@ where
     tauri::async_runtime::spawn_blocking(work)
         .await
         .map_err(|e| e.to_string())?
+}
+
+/// What the interface reads from an `app-error` event: `{ "message": … }`.
+pub(crate) fn app_error_payload(message: impl Into<String>) -> serde_json::Value {
+    serde_json::json!({ "message": message.into() })
+}
+
+/// Tell the interface something went wrong that nobody asked about: it shows the message as a
+/// notice. For failures with no caller to return the error to (a background write, a menu action,
+/// a deep link).
+pub(crate) fn app_error<R: tauri::Runtime>(emitter: &impl Emitter<R>, message: impl Into<String>) {
+    let _ = emitter.emit("app-error", app_error_payload(message));
 }
 
 struct IndexState(std::sync::Arc<reveal_index::Index>);
@@ -1674,19 +1686,16 @@ pub fn run() {
                             .find(|(k, _)| k == "state")
                             .map(|(_, v)| v.into_owned());
                         if !take_connect_nonce(&dl_app, given.as_deref()) {
-                            let _ = dl_app.emit(
-                                "app-error",
-                                serde_json::json!({ "message": "Garden connection ignored: it was not started from Reveal, or it expired. Use “Connect via browser” and try again." }),
+                            app_error(
+                                &dl_app,
+                                "Garden connection ignored: it was not started from Reveal, or it expired. Use “Connect via browser” and try again.",
                             );
                             continue;
                         }
                         let app_for_task = dl_app.clone();
                         tauri::async_runtime::spawn(async move {
                             if let Err(e) = sign_in_with_key(&app_for_task, &key).await {
-                                let _ = app_for_task.emit(
-                                    "app-error",
-                                    serde_json::json!({ "message": format!("connexion Garden: {e}") }),
-                                );
+                                app_error(&app_for_task, format!("Garden sign-in: {e}"));
                             }
                         });
                     }
@@ -2082,5 +2091,16 @@ mod frame_packing_tests {
         assert_eq!(a.len(), 32);
         assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
         assert_ne!(a, b);
+    }
+}
+
+#[cfg(test)]
+mod app_error_tests {
+    use super::app_error_payload;
+
+    #[test]
+    fn the_interface_reads_a_message_field() {
+        let payload = app_error_payload(format!("Garden sign-in: {}", "expired"));
+        assert_eq!(payload, serde_json::json!({ "message": "Garden sign-in: expired" }));
     }
 }

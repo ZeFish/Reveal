@@ -134,29 +134,11 @@ fn blend(rgb: [f32; 3], cube: &Cube, opacity: f32) -> [f32; 3] {
     ]
 }
 
-fn linear_to_srgb(x: f32) -> f32 {
-    let x = x.clamp(0.0, 1.0);
-    if x <= 0.0031308 {
-        x * 12.92
-    } else {
-        1.055 * x.powf(1.0 / 2.4) - 0.055
-    }
-}
-
-fn srgb_to_linear(x: f32) -> f32 {
-    let x = x.clamp(0.0, 1.0);
-    if x <= 0.04045 {
-        x / 12.92
-    } else {
-        ((x + 0.055) / 1.055).powf(2.4)
-    }
-}
-
 /// ProPhoto RGB (linear, D50) → sRGB/Rec.709 (linear, D65). Exact inverse of
 /// the pipeline's `SRGB_TO_PROPHOTO` (colour-science CAT02), reused from
-/// `rapid.rs`. The pre-LUT round-trip needs the *primaries* change as well as
-/// the EOTF — the old code applied `linear_to_srgb` straight to ProPhoto-linear
-/// values, which is a primaries mismatch that shifted midtones and hue.
+/// `rapid.rs`. The Pre-Lut needs the *primaries* change as well as the curve —
+/// applying a curve straight to ProPhoto-linear values is a primaries mismatch
+/// that shifts midtones and hue.
 const PROPHOTO_TO_SRGB: [[f32; 3]; 3] = [
     [2.0362741263, -0.7375868484, -0.2991716804],
     [-0.2256519640, 1.2230755666, 0.0027110556],
@@ -194,29 +176,28 @@ pub fn apply_stack_display(img: &mut ImageBuf, stack: &[(std::sync::Arc<Cube>, f
     });
 }
 
-/// Apply a stack of LUTs to a scene-linear **ProPhoto** buffer (the pipeline's
-/// working space). Most `.cube` LUTs are authored for display-encoded sRGB
-/// footage, so each sample round-trips ProPhoto-linear → sRGB-linear (primaries)
-/// → sRGB-EOTF → LUT → inverse EOTF → inverse primaries → ProPhoto-linear.
-/// Used for the "before" stack, a creative pre-grade ahead of the simulation.
-pub fn apply_stack_linear(img: &mut ImageBuf, stack: &[(std::sync::Arc<Cube>, f32)]) {
+/// Apply the Pre-Lut stack to a scene-linear **ProPhoto** buffer (the pipeline's working space).
+///
+/// Each sample goes to Rec.709 primaries, is encoded in the recipe's format, runs through the
+/// stack, and goes back to ProPhoto primaries. The *curve* is never undone: what the stack
+/// returns is taken as it is, and a stack that works in a log format ends with the conversion LUT
+/// the user chose to bring the signal back to linear. Only the primaries are bookkeeping, so a
+/// Linear stack that does nothing leaves the picture exactly as it was.
+pub fn apply_stack_encoded(
+    img: &mut ImageBuf,
+    stack: &[(std::sync::Arc<Cube>, f32)],
+    encoding: crate::LutEncoding,
+) {
     if stack.is_empty() {
         return;
     }
     img.par_pixels_mut().for_each(|px| {
-        // ProPhoto-linear → sRGB-linear (primaries), then sRGB-encode.
-        let (sr, sg, sb) = mul3(&PROPHOTO_TO_SRGB, px[0], px[1], px[2]);
-        let mut rgb = [linear_to_srgb(sr), linear_to_srgb(sg), linear_to_srgb(sb)];
+        let (r, g, b) = mul3(&PROPHOTO_TO_SRGB, px[0], px[1], px[2]);
+        let mut rgb = [encoding.encode(r), encoding.encode(g), encoding.encode(b)];
         for (cube, opacity) in stack {
             rgb = blend(rgb, cube, *opacity);
         }
-        // sRGB-decode, then sRGB-linear → ProPhoto-linear (inverse primaries).
-        let (lr, lg, lb) = (
-            srgb_to_linear(rgb[0]),
-            srgb_to_linear(rgb[1]),
-            srgb_to_linear(rgb[2]),
-        );
-        let (pr, pg, pb) = mul3(&SRGB_TO_PROPHOTO, lr, lg, lb);
+        let (pr, pg, pb) = mul3(&SRGB_TO_PROPHOTO, rgb[0], rgb[1], rgb[2]);
         px[0] = pr;
         px[1] = pg;
         px[2] = pb;

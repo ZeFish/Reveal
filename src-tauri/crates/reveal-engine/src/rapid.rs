@@ -32,9 +32,10 @@ impl RenderEngine for RapidEngine {
             ControlGroup {
                 label: "Input (LUT & Encoding)".to_string(),
                 controls: vec![
-                    EngineControl::Toggle {
-                        id: "use_logc".to_string(),
-                        label: "LogC (cinematic)".to_string(),
+                    EngineControl::Select {
+                        id: "lut_encoding".to_string(),
+                        label: "Encoding".to_string(),
+                        options_type: "lut_encodings".to_string(),
                     },
                     EngineControl::LutStack {
                         stage: "pre".to_string(),
@@ -116,6 +117,10 @@ impl RenderEngine for RapidEngine {
             ControlGroup {
                 label: "Tones".to_string(),
                 controls: vec![
+                    EngineControl::Toggle {
+                        id: "wide_zone_masks".to_string(),
+                        label: "Wide zone masks".to_string(),
+                    },
                     EngineControl::Slider {
                         id: "highlights".to_string(),
                         label: "Highlights".to_string(),
@@ -621,13 +626,23 @@ impl PhotoRange {
 }
 
 /// Shadow/midtone/highlight membership as a per-pixel luminance-weighted
-/// crossfade — a linear 3-way partition (the three weights always sum to
-/// exactly 1), not three independent gaussians. Shared by the 3-way color
-/// wheels and Zone Tone Shaping so "what counts as a shadow" is defined
-/// identically everywhere in this engine.
-fn zone_weights(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
+/// crossfade. Shared by the 3-way color wheels and Zone Tone Shaping so "what
+/// counts as a shadow" is defined identically everywhere in this engine.
+///
+/// The default masks are a linear 3-way partition (the three weights always sum
+/// to exactly 1): the shadows end where the midtones peak.
+///
+/// The wide masks overlap the way Lightroom's luminosity ranges do: shadows
+/// fade from 100 % at black through 50 % at the middle to 0 % at white,
+/// highlights the other way round, and the midtones are a tent that peaks at
+/// the middle. The three then sum to more than 1 around the middle, so a strong
+/// adjustment fades out slowly instead of ending abruptly mid-picture.
+fn zone_weights(r: f32, g: f32, b: f32, wide: bool) -> (f32, f32, f32) {
     let lum_linear = (luma(r, g, b)).max(0.0);
     let lum_norm = lum_linear.sqrt().min(1.0);
+    if wide {
+        return (1.0 - lum_norm, 1.0 - (2.0 * lum_norm - 1.0).abs(), lum_norm);
+    }
     let shadow_weight = (1.0 - lum_norm * 2.0).clamp(0.0, 1.0);
     let highlight_weight = ((lum_norm - 0.5) * 2.0).clamp(0.0, 1.0);
     let midtone_weight = (1.0 - shadow_weight - highlight_weight).max(0.0);
@@ -1554,7 +1569,7 @@ pub(crate) fn develop_rapid_with(
     let mut work_input = (*input).clone();
     let pre_luts = load_lut_stack(&recipe.rapid_pre_luts, luts_dir);
     if !pre_luts.is_empty() {
-        crate::lut::apply_stack_linear(&mut work_input, &pre_luts);
+        crate::lut::apply_stack_encoded(&mut work_input, &pre_luts, recipe.encoding());
     }
 
     // The global layer plus the three tonal zones. Only the layers that carry a
@@ -1648,7 +1663,7 @@ pub(crate) fn develop_rapid_with(
 
             // 6. 3-Way Color Wheels
             if has_color_wheels {
-                let (shadow_weight, midtone_weight, highlight_weight) = zone_weights(c[0], c[1], c[2]);
+                let (shadow_weight, midtone_weight, highlight_weight) = zone_weights(c[0], c[1], c[2], recipe.wide_zone_masks);
 
                 c[0] += shadows_tint[0] * shadow_weight * 0.2
                     + midtones_tint[0] * midtone_weight * 0.2
@@ -1672,7 +1687,7 @@ pub(crate) fn develop_rapid_with(
             // zone's own change never moves the mask of the next one.
             let mut zw = [0.0f32; 3];
             if any_zone {
-                let (ws, wm, wh) = zone_weights(c[0], c[1], c[2]);
+                let (ws, wm, wh) = zone_weights(c[0], c[1], c[2], recipe.wide_zone_masks);
                 zw = [ws, wm, wh];
                 for i in 0..3 {
                     if !zone_active[i] || zw[i] <= 0.0 {
@@ -1736,15 +1751,14 @@ pub(crate) fn develop_rapid_with(
                 + PROPHOTO_TO_REC709[2][2] * b)
                 .max(0.0);
 
-            if recipe.use_logc {
-                // Emit raw ARRI LogC3 — intended to feed a LogC-authored print LUT
-                // (e.g. Brim 2383). LogC is *supposed* to look flat/dark on its own;
-                // the print LUT supplies the display rendering. The previous
-                // srgb_encode(logc3_encode(...)) wrap double-mapped the signal and
-                // made logc + print-LUT render "too bright".
-                pixel[0] = logc3_encode(r_709.max(0.0));
-                pixel[1] = logc3_encode(g_709.max(0.0));
-                pixel[2] = logc3_encode(b_709.max(0.0));
+            let encoding = recipe.encoding();
+            if encoding != crate::LutEncoding::Display {
+                // The signal leaves in the chosen format, without the tone map: it feeds the
+                // Post-Lut stack (a print LUT built for Cineon or LogC3), and on its own it is
+                // supposed to look flat and dark.
+                pixel[0] = encoding.encode(r_709);
+                pixel[1] = encoding.encode(g_709);
+                pixel[2] = encoding.encode(b_709);
             } else {
                 let (mut agx_r, mut agx_g, mut agx_b) = agx_tonemap(r_709, g_709, b_709);
 
@@ -2167,24 +2181,6 @@ fn apply_silvergrain(pixels: &mut [f32], width: u32, height: u32, amount: f32, r
         }
     }
 }
-
-const LOGC3_CUT: f32 = 0.010591;
-const LOGC3_A: f32 = 5.555556;
-const LOGC3_B: f32 = 0.052272;
-const LOGC3_C: f32 = 0.247190;
-const LOGC3_D: f32 = 0.385537;
-const LOGC3_E: f32 = 5.367655;
-const LOGC3_F: f32 = 0.092809;
-
-#[inline]
-fn logc3_encode(x: f32) -> f32 {
-    if x > LOGC3_CUT {
-        LOGC3_C * (LOGC3_A * x + LOGC3_B).log10() + LOGC3_D
-    } else {
-        LOGC3_E * x + LOGC3_F
-    }
-}
-
 
 fn load_lut_stack(lut_layers: &[LutLayer], luts_dir: &Path) -> Vec<(Arc<Cube>, f32)> {
     lut_layers
@@ -2655,6 +2651,111 @@ mod tests {
         );
     }
 
+    /// The shader carries its own copy of the three formats that leave without the tone map;
+    /// each must agree with the CPU's.
+    #[test]
+    fn gpu_and_cpu_agree_on_every_output_format() {
+        if !crate::rapid_gpu::available() {
+            eprintln!("no GPU adapter — skipping GPU/CPU equivalence check");
+            return;
+        }
+        let (w, h) = (32usize, 24usize);
+        let mut data = Vec::with_capacity(w * h * 3);
+        for y in 0..h {
+            for x in 0..w {
+                data.push(0.002 + (x as f32 / w as f32).powi(2) * 3.0);
+                data.push(0.002 + (y as f32 / h as f32) * 0.8);
+                data.push(0.02 + (1.0 - x as f32 / w as f32) * 0.5);
+            }
+        }
+        let input = ImageBuf::from_data(w as u32, h as u32, data);
+        for encoding in [crate::LutEncoding::LogC3, crate::LutEncoding::Cineon, crate::LutEncoding::Linear] {
+            let mut recipe = rapid_recipe();
+            recipe.lut_encoding = encoding;
+            let cpu = develop_rapid_with(&input, &recipe, Path::new(""), false);
+            let gpu = develop_rapid_with(&input, &recipe, Path::new(""), true);
+            let worst = cpu.data.iter().zip(gpu.data.iter()).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
+            assert!(worst < 0.002, "{encoding:?}: GPU and CPU diverged by {worst}");
+        }
+    }
+
+    #[test]
+    fn a_recipe_from_before_the_menu_reads_its_logc_switch_as_logc3() {
+        let old: Recipe = serde_json::from_str(r#"{"use_logc": true}"#).unwrap();
+        assert_eq!(old.encoding(), crate::LutEncoding::LogC3);
+        let plain: Recipe = serde_json::from_str("{}").unwrap();
+        assert_eq!(plain.encoding(), crate::LutEncoding::Display);
+        let chosen: Recipe = serde_json::from_str(r#"{"use_logc": true, "lut_encoding": "cineon"}"#).unwrap();
+        assert_eq!(chosen.encoding(), crate::LutEncoding::Cineon);
+    }
+
+    /// The render leaves in the chosen format: the same signal, encoded by that format's curve.
+    #[test]
+    fn the_render_leaves_in_the_chosen_format() {
+        let mut recipe = rapid_recipe();
+        recipe.lut_encoding = crate::LutEncoding::Linear;
+        let linear = develop_px(&recipe, [0.18, 0.18, 0.18]);
+        for encoding in [crate::LutEncoding::LogC3, crate::LutEncoding::Cineon] {
+            recipe.lut_encoding = encoding;
+            let out = develop_px(&recipe, [0.18, 0.18, 0.18]);
+            for c in 0..3 {
+                assert!(
+                    (out[c] - encoding.encode(linear[c])).abs() < 1e-4,
+                    "{encoding:?} channel {c}: {} vs {}",
+                    out[c],
+                    encoding.encode(linear[c])
+                );
+            }
+        }
+    }
+
+    /// An identity `.cube` in a scratch folder, to put in a stack.
+    fn identity_lut_dir(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("reveal-lut-test-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut cube = String::from("LUT_3D_SIZE 2\n");
+        for b in 0..2 {
+            for g in 0..2 {
+                for r in 0..2 {
+                    cube.push_str(&format!("{r}.0 {g}.0 {b}.0\n"));
+                }
+            }
+        }
+        std::fs::write(dir.join("identity.cube"), cube).unwrap();
+        dir
+    }
+
+    /// Only the primaries are bookkeeping: a Linear stack that does nothing changes nothing.
+    /// In any other format the curve is not undone afterwards — the stack's output is taken as
+    /// it is, so the user's own conversion LUT is what brings the signal back.
+    #[test]
+    fn the_pre_lut_runs_in_the_chosen_format_and_undoes_nothing() {
+        let dir = identity_lut_dir("pre");
+        let input = ImageBuf::from_data(2, 1, vec![0.05, 0.1, 0.2, 0.4, 0.3, 0.1]);
+        let render = |encoding: crate::LutEncoding, with_lut: bool| {
+            let mut recipe = rapid_recipe();
+            recipe.lut_encoding = encoding;
+            if with_lut {
+                recipe.rapid_pre_luts = vec![LutLayer { name: "identity".to_string(), opacity: 1.0 }];
+            }
+            develop_rapid_with(&input, &recipe, &dir, false).data
+        };
+        let plain = render(crate::LutEncoding::Linear, false);
+        let through = render(crate::LutEncoding::Linear, true);
+        for (a, b) in plain.iter().zip(through.iter()) {
+            assert!((a - b).abs() < 2e-3, "a Linear identity stack moved the picture: {a} vs {b}");
+        }
+        // Display: the identity LUT returns the sRGB-encoded values, which are read as linear
+        // — brighter than the same picture without the stack.
+        let display_plain = render(crate::LutEncoding::Display, false);
+        let display_through = render(crate::LutEncoding::Display, true);
+        assert!(
+            display_through.iter().sum::<f32>() > display_plain.iter().sum::<f32>() * 1.05,
+            "the display curve must not be undone after the stack"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     /// Not a correctness test — the measurement that justifies the GPU path
     /// existing, kept so it can be re-run after any change to either path
     /// (adding a stage to the shader, say) rather than trusting that the
@@ -2809,7 +2910,7 @@ mod tests {
     #[test]
     fn test_zone_weights_partition_sums_to_one() {
         for luma in [0.0, 0.02, 0.09, 0.18, 0.4, 0.5, 0.6, 0.81, 1.0] {
-            let (s, m, h) = zone_weights(luma, luma, luma);
+            let (s, m, h) = zone_weights(luma, luma, luma, false);
             let total = s + m + h;
             assert!(
                 (total - 1.0).abs() < 1e-5,
@@ -2945,6 +3046,46 @@ mod tests {
         [out.data[0], out.data[1], out.data[2]]
     }
 
+    #[test]
+    fn the_wide_masks_overlap_like_lightroom_ranges() {
+        let at = |l: f32| zone_weights(l, l, l, true);
+        let near = |a: (f32, f32, f32), b: (f32, f32, f32)| {
+            (a.0 - b.0).abs() < 1e-5 && (a.1 - b.1).abs() < 1e-5 && (a.2 - b.2).abs() < 1e-5
+        };
+        assert!(near(at(0.0), (1.0, 0.0, 0.0)));
+        let (s, m, h) = at(0.25); // the middle of the tones: sqrt(0.25) = 0.5
+        assert!((s - 0.5).abs() < 1e-5 && (m - 1.0).abs() < 1e-5 && (h - 0.5).abs() < 1e-5);
+        assert!(near(at(1.0), (0.0, 0.0, 1.0)));
+    }
+
+    #[test]
+    fn gpu_and_cpu_agree_on_strong_zones_and_wide_masks() {
+        if !crate::rapid_gpu::available() {
+            eprintln!("no GPU adapter — skipping GPU/CPU equivalence check");
+            return;
+        }
+        let (w, h) = (48usize, 32usize);
+        let mut data = Vec::with_capacity(w * h * 3);
+        for y in 0..h {
+            for x in 0..w {
+                let t = x as f32 / w as f32;
+                data.extend([0.003 + t * t * 1.5, 0.003 + t * 0.9 + y as f32 / h as f32 * 0.1, 0.01 + (1.0 - t) * 0.4]);
+            }
+        }
+        let input = ImageBuf::from_data(w as u32, h as u32, data);
+        for wide in [false, true] {
+            let mut recipe = rapid_recipe();
+            recipe.wide_zone_masks = wide;
+            recipe.shadows_tint = [0.05, -0.02, 0.03];
+            recipe.zone_shadows = ZoneAdjustments { exposure_ev: 3.0, shadows: 60.0, ..ZoneAdjustments::default() };
+            recipe.zone_highlights = ZoneAdjustments { exposure_ev: -1.0, ..ZoneAdjustments::default() };
+            let cpu = develop_rapid_with(&input, &recipe, Path::new(""), false);
+            let gpu = develop_rapid_with(&input, &recipe, Path::new(""), true);
+            let worst = cpu.data.iter().zip(gpu.data.iter()).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
+            assert!(worst < 0.002, "wide={wide}: GPU and CPU diverged by {worst}");
+        }
+    }
+
     fn rapid_recipe() -> Recipe {
         let mut r = Recipe::default();
         r.engine = "rapid".to_string();
@@ -3006,7 +3147,7 @@ mod tests {
             (2, [0.01, 0.008, 0.006]), // highlights: a dark pixel
         ];
         for (zone, px) in outside {
-            let (ws, wm, wh) = zone_weights(px[0], px[1], px[2]);
+            let (ws, wm, wh) = zone_weights(px[0], px[1], px[2], false);
             assert_eq!([ws, wm, wh][zone], 0.0, "test pixel must be outside zone {zone}");
             let base = develop_px(&rapid_recipe(), px);
             for (name, set) in fields {
@@ -3057,7 +3198,7 @@ mod tests {
             (2, "curve_b", |z| z.curve_b = vec![[0.0, 0.0], [0.5, 0.2], [1.0, 1.0]], bright),
         ];
         for (zone, name, set, px) in cases {
-            let (ws, wm, wh) = zone_weights(px[0], px[1], px[2]);
+            let (ws, wm, wh) = zone_weights(px[0], px[1], px[2], false);
             assert!([ws, wm, wh][zone] > 0.3, "test pixel should sit in zone {zone}, weights {ws:.2}/{wm:.2}/{wh:.2}");
             let base = develop_px(&rapid_recipe(), px);
             let mut recipe = rapid_recipe();
@@ -3081,7 +3222,7 @@ mod tests {
     #[test]
     fn a_zone_slider_has_the_global_slider_meaning() {
         let px = [0.0005, 0.0004, 0.0003];
-        let (ws, ..) = zone_weights(px[0], px[1], px[2]);
+        let (ws, ..) = zone_weights(px[0], px[1], px[2], false);
         assert!(ws > 0.95, "the pixel should be nearly all shadow, weight {ws}");
 
         let base = develop_px(&rapid_recipe(), px);

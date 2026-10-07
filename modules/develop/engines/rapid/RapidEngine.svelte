@@ -1,8 +1,9 @@
 <script>
   import CollapsibleGroup from "../controls/CollapsibleGroup.svelte";
   import SliderRow from "../controls/SliderRow.svelte";
-  import ToggleRow from "../controls/ToggleRow.svelte";
+  import { LUT_ENCODINGS, lutEncodingOf } from "./lutEncoding.js";
   import SelectRow from "../controls/SelectRow.svelte";
+  import ToggleRow from "../controls/ToggleRow.svelte";
   import BandMixer from "../controls/BandMixer.svelte";
   import CurveEditor from "../../CurveEditor.svelte";
   import { Icon } from "@modules/core";
@@ -11,7 +12,10 @@
     peekActiveTarget,
     getNeutral,
     formatVal,
+    temperatureToKelvin,
+    kelvinToTemperature,
   } from "../engineContext.js";
+  import { parseTyped } from "../controls/sliderScale.js";
 
   /**
    * @typedef {Object} Props
@@ -316,11 +320,13 @@
   {#if !isZoneActiveMode}
   <!-- Input (LUT & Encoding) -->
   <CollapsibleGroup label="Input (LUT & Encoding)">
-      <ToggleRow
-        label="LogC (cinematic)"
-        checked={Boolean(recipe?.use_logc)}
-        onChange={(checked) => {
-          recipe.use_logc = checked;
+      <SelectRow
+        label="Encoding"
+        value={lutEncodingOf(recipe)}
+        options={LUT_ENCODINGS}
+        onChange={(val) => {
+          recipe.lut_encoding = val;
+          recipe.use_logc = false; // the menu replaces the old LogC switch
           edited();
         }}
       />
@@ -393,6 +399,8 @@
       value={getVal("exposure_ev")}
       min={-3}
       max={3}
+      hardMin={-10}
+      hardMax={10}
       step={0.05}
       neutral={getNeutral(defaults, activeZone, "exposure_ev")}
       formatter={(v) => formatVal("exposure_ev", v)}
@@ -590,6 +598,13 @@
       value={getVal("temperature")}
       min={-50}
       max={50}
+      hardMin={-100}
+      hardMax={100}
+      parse={(text) => {
+        const kelvin = parseTyped(text);
+        return kelvin === null ? null : kelvinToTemperature(kelvin);
+      }}
+      editText={(v) => String(Math.round(temperatureToKelvin(v)))}
       step={0.5}
       neutral={getNeutral(defaults, activeZone, "temperature")}
       formatter={(v) => formatVal("temperature", v)}
@@ -887,6 +902,14 @@
 
   <!-- Zone Reset action if in a zone -->
   {#if isZoneActiveMode}
+    <ToggleRow
+      label="Wide zone masks"
+      checked={Boolean(recipe?.wide_zone_masks)}
+      onChange={(checked) => {
+        recipe.wide_zone_masks = checked;
+        edited();
+      }}
+    />
     <div class="zone-reset-row">
       <button type="button" class="outline panel-btn half" onclick={resetCurrentZone}>
         Reset {activeZone === "shadows" ? "Shadows" : activeZone === "midtones" ? "Midtones" : "Highlights"}

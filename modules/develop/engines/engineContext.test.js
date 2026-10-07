@@ -5,6 +5,8 @@ import {
   fromDisplay,
   getNeutral,
   formatVal,
+  temperatureToKelvin,
+  kelvinToTemperature,
 } from "./engineContext.js";
 
 describe("engineContext", () => {
@@ -50,5 +52,20 @@ describe("engineContext", () => {
     expect(formatVal("film_format_mm", 35.4)).toBe("35 mm");
     expect(formatVal("development_time_min", 0)).toBe("Auto");
     expect(formatVal("development_time_min", 6.5)).toBe("6.5 min");
+  });
+});
+
+describe("temperature in kelvin", () => {
+  it("shows the kelvin the slider means", () => {
+    expect(formatVal("temperature", 0)).toBe("5500 K");
+    expect(formatVal("temperature", 10)).toBe("5950 K");
+    expect(formatVal("temperature", -10)).toBe("5150 K");
+  });
+
+  it("turns a typed kelvin back into the slider value", () => {
+    for (const v of [-100, -37.5, 0, 12, 50, 100]) {
+      expect(kelvinToTemperature(temperatureToKelvin(v))).toBeCloseTo(v, 6);
+    }
+    expect(kelvinToTemperature(6400)).toBeCloseTo(20, 6);
   });
 });

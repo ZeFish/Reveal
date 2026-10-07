@@ -100,11 +100,7 @@ pub(crate) async fn export_to_daily_note(
 
         let final_recipe = match recipe {
             Some(r) => r,
-            None => crate::photo::Photo::new(&path)
-                .sidecar()?
-                .and_then(|s| s.engine_settings)
-                .and_then(|v| serde_json::from_value(v).ok())
-                .unwrap_or_default(),
+            None => crate::photo::Photo::new(&path).recipe()?,
         };
 
         let (jpeg, _, _) = engine
@@ -127,9 +123,7 @@ pub(crate) async fn export_to_daily_note(
             chrono::Local::now()
         };
 
-        let caption = crate::photo::Photo::new(&path)
-            .sidecar()?
-            .and_then(|s| s.description);
+        let caption = crate::photo::Photo::new(&path).caption()?;
 
         let vault = vault_path(&app_handle);
         let prefs = load_preferences(app_handle);
@@ -179,11 +173,7 @@ pub(crate) async fn export_batch_to_daily_note(
             let attachment_filename = format!("{stem}.jpg");
             let out = std::path::Path::new(&dest_dir).join(&attachment_filename);
 
-            let recipe = crate::photo::Photo::new(path)
-                .sidecar()?
-                .and_then(|s| s.engine_settings)
-                .and_then(|v| serde_json::from_value(v).ok())
-                .unwrap_or_default();
+            let recipe = crate::photo::Photo::new(path).recipe()?;
 
             let (jpeg, _, _) = engine
                 .export_jpeg(&source, &recipe, long_edge, border_frac)
@@ -205,9 +195,7 @@ pub(crate) async fn export_batch_to_daily_note(
                 chrono::Local::now()
             };
 
-            let caption = crate::photo::Photo::new(path)
-                .sidecar()?
-                .and_then(|s| s.description);
+            let caption = crate::photo::Photo::new(path).caption()?;
 
             let np = daily.append_photos(&[attachment_filename], caption.as_deref(), capture_dt)?;
             last_note = np.to_string_lossy().into_owned();
@@ -339,11 +327,7 @@ pub(crate) fn export_batch(
             event_name,
             serde_json::json!({ "done": i, "total": total, "current": name }),
         );
-        let recipe = crate::photo::Photo::new(path)
-            .sidecar()?
-            .and_then(|s| s.engine_settings)
-            .and_then(|v| serde_json::from_value(v).ok())
-            .unwrap_or_default();
+        let recipe = crate::photo::Photo::new(path).recipe()?;
         let source = apple_photos::source(path)?;
         let (jpeg, _, _) = engine
             .export_jpeg(&source, &recipe, long_edge, border_frac)

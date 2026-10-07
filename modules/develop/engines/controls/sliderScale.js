@@ -63,3 +63,28 @@ export function fromPosition(position, min, max, neutral, step) {
   }
   return Math.min(max, Math.max(min, v));
 }
+
+/**
+ * What a typed value means. People type "+1.5", "1,5", "−0,3" (a typographic minus), or "6000 K":
+ * take the number, in the units the slider displays. Anything else is not a value.
+ * @param {string} text
+ * @returns {number | null}
+ */
+export function parseTyped(text) {
+  const cleaned = String(text).trim().replace(/−/g, "-").replace(",", ".");
+  const match = cleaned.match(/^[+-]?(\d+\.?\d*|\.\d+)/);
+  if (!match) return null;
+  const n = Number(match[0]);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * The text to edit: the value without units, with the decimals its step implies.
+ * @param {number} value
+ * @param {number} [step]
+ * @returns {string}
+ */
+export function editableText(value, step) {
+  const decimals = step && step > 0 ? Math.min(4, Math.max(0, -Math.floor(Math.log10(step)))) : 2;
+  return String(Number(value.toFixed(decimals)));
+}

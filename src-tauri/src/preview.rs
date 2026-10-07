@@ -745,14 +745,12 @@ pub(crate) fn write_preview_sidecar_bytes(
     // one under the wrong key, and nothing said so.
     if let Err(e) = write_sidecar_if_changed(&sidecar, jpeg) {
         eprintln!("preview sidecar write {path}: {e} (gave up)");
-        let _ = app.emit(
-            "app-error",
-            serde_json::json!({
-                "message": format!(
-                    "Could not save the preview of {} ({e}). The photo's settings are saved; its grid preview will update on the next develop.",
-                    source.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| path.to_string())
-                )
-            }),
+        crate::app_error(
+            app,
+            format!(
+                "Could not save the preview of {} ({e}). The photo's settings are saved; its grid preview will update on the next develop.",
+                source.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| path.to_string())
+            ),
         );
         return 0;
     }

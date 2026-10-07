@@ -467,11 +467,7 @@ pub(crate) async fn upload_photo_to_google_photos(
         }
 
         let source = crate::apple_photos::source(&path)?;
-        let recipe = crate::photo::Photo::new(&path)
-            .sidecar()?
-            .and_then(|s| s.engine_settings)
-            .and_then(|v| serde_json::from_value(v).ok())
-            .unwrap_or_default();
+        let recipe = crate::photo::Photo::new(&path).recipe()?;
 
         let edge = long_edge.unwrap_or(2048);
         let (jpeg, _, _) = engine

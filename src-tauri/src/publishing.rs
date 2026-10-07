@@ -251,13 +251,7 @@ pub(crate) async fn export_local_story(
                 )
                 .find(|p| p.exists())
                 .ok_or_else(|| format!("RAW not found for {stem}"))?;
-            let recipe = crate::photo::Photo::new(raw.to_string_lossy())
-                .sidecar()
-                .ok()
-                .flatten()
-                .and_then(|s| s.engine_settings)
-                .and_then(|v| serde_json::from_value(v).ok())
-                .unwrap_or_default();
+            let recipe = crate::photo::Photo::new(raw.to_string_lossy()).recipe().unwrap_or_default();
             let (jpeg, _, _) = engine
                 .export_jpeg(&raw, &recipe, long_edge, border_frac)
                 .map_err(|e| format!("develop {stem}: {e:#}"))?;
@@ -512,14 +506,10 @@ pub(crate) async fn publish_story(
                 )
                 .find(|p| p.exists());
 
-            let recipe = raw_opt.as_ref().and_then(|raw| {
-                crate::photo::Photo::new(raw.to_string_lossy())
-                    .sidecar()
-                    .ok()
-                    .flatten()
-                    .and_then(|s| s.engine_settings)
-                    .and_then(|v| serde_json::from_value(v).ok())
-            }).unwrap_or_default();
+            let recipe = raw_opt
+                .as_ref()
+                .and_then(|raw| crate::photo::Photo::new(raw.to_string_lossy()).recipe().ok())
+                .unwrap_or_default();
 
             if existing_jpeg.is_none() {
                 if let Some(raw) = &raw_opt {
@@ -621,11 +611,7 @@ pub(crate) async fn publish_photo(
 
         emit("developing");
         let sidecar = crate::photo::Photo::new(&path).sidecar()?;
-        let recipe = sidecar
-            .as_ref()
-            .and_then(|s| s.engine_settings.clone())
-            .and_then(|v| serde_json::from_value(v).ok())
-            .unwrap_or_default();
+        let recipe = crate::photo::Photo::recipe_in(sidecar.as_ref());
         let (jpeg, _, _) = engine
             .export_jpeg(&apple_photos::source(&path)?, &recipe, 2048, 0.0)
             .map_err(|e| format!("develop {stem}: {e:#}"))?;

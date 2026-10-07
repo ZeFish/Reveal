@@ -107,9 +107,9 @@ struct Params {
     vignette_feather: f32,
 
     highlight_desat: f32,
-    use_logc: u32,
+    encoding: u32,
     agx_look: u32,
-    _pad1: u32,
+    wide_zone_masks: u32,
 
     // black, white of the global layer, then black, white of the zones.
     range: [f32; 4],
@@ -324,9 +324,9 @@ fn run_inner(inputs: &Inputs, recipe: &Recipe) -> Option<ImageBuf> {
         vignette_roundness: recipe.vignette_roundness,
         vignette_feather: recipe.vignette_feather,
         highlight_desat: recipe.highlight_desat,
-        use_logc: u32::from(recipe.use_logc),
+        encoding: recipe.encoding().code(),
         agx_look,
-        _pad1: 0,
+        wide_zone_masks: u32::from(recipe.wide_zone_masks),
         range: [
             inputs.range.black,
             inputs.range.white,

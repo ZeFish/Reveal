@@ -67,6 +67,8 @@
       value={toDisplay("exposure_ev", getVal("exposure_ev"))}
       min={-3}
       max={3}
+      hardMin={-10}
+      hardMax={10}
       step={0.1}
       neutral={getNeutral(defaults, "global", "exposure_ev")}
       formatter={(v) => formatVal("exposure_ev", v)}
@@ -176,6 +178,8 @@
       value={toDisplay("print_exposure_ev", getVal("print_exposure_ev"))}
       min={-3}
       max={3}
+      hardMin={-10}
+      hardMax={10}
       step={0.1}
       neutral={getNeutral(defaults, "global", "print_exposure_ev")}
       formatter={(v) => formatVal("exposure_ev", v)}

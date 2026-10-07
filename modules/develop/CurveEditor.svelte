@@ -11,6 +11,7 @@
   // lie exactly where it matters most (steep segments, where Catmull-Rom
   // overshoots and a tone curve must not).
   import { Icon } from "@modules/core";
+  import { movePoint } from "./curvePoints.js";
 
   let {
     /** @type {{ id: string, label: string, channels: {id: string, label: string, color: string}[] }} */
@@ -165,16 +166,11 @@
   function onPointerMove(e) {
     if (dragIndex === null) return;
     const [x, y] = toCurveSpace(e);
-    const next = points.map((p) => [...p]);
-    const isFirst = dragIndex === 0;
-    const isLast = dragIndex === next.length - 1;
-    // The endpoints anchor the curve's domain — they move vertically only,
-    // so the curve always spans black-to-white and can't leave a gap the
-    // renderer would have to invent a value for.
-    next[dragIndex] = [isFirst ? 0 : isLast ? 1 : x, y];
-    commit(next, true);
-    // commit() re-sorts, so the dragged point may have changed index.
-    dragIndex = next.findIndex((p) => p[1] === y && (isFirst || isLast || p[0] === x));
+    // The end points are the black and white points: they move both ways, and the curve
+    // holds their value beyond them (see curvePoints.js).
+    const moved = movePoint(points, dragIndex, x, y);
+    commit(moved.points, true);
+    dragIndex = moved.index;
   }
 
   /** @param {PointerEvent} e */
@@ -189,7 +185,7 @@
   /** @param {number} i */
   function removePoint(i) {
     if (points.length <= 2) return;
-    if (i === 0 || i === points.length - 1) return; // endpoints anchor the domain
+    if (i === 0 || i === points.length - 1) return; // the black and white points stay
     commit(points.filter((_, k) => k !== i).map((p) => [...p]), false);
   }
 </script>

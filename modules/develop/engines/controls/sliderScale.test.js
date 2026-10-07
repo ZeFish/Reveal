@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toPosition, fromPosition } from "./sliderScale.js";
+import { toPosition, fromPosition, parseTyped, editableText } from "./sliderScale.js";
 
 describe("slider rail", () => {
   /** The bug as seen: saturation -1..0.5 put zero at two thirds of the rail. */
@@ -44,5 +44,36 @@ describe("slider rail", () => {
   it("snaps to the step without float drift", () => {
     expect(fromPosition(0.6, -0.5, 0.5, 0, 0.01)).toBe(0.1);
     expect(fromPosition(0.537, -40, 60, 0, 0.5)).toBe(4.5);
+  });
+});
+
+describe("parseTyped", () => {
+  it("reads a number the way people write it", () => {
+    expect(parseTyped("1.5")).toBe(1.5);
+    expect(parseTyped("+3")).toBe(3);
+    expect(parseTyped("1,5")).toBe(1.5);
+    expect(parseTyped("−0,3")).toBe(-0.3);
+    expect(parseTyped("  -2 ")).toBe(-2);
+    expect(parseTyped(".5")).toBe(0.5);
+  });
+
+  it("ignores the unit that follows", () => {
+    expect(parseTyped("6000 K")).toBe(6000);
+    expect(parseTyped("12%")).toBe(12);
+  });
+
+  it("refuses what is not a number", () => {
+    expect(parseTyped("")).toBeNull();
+    expect(parseTyped("abc")).toBeNull();
+    expect(parseTyped("--")).toBeNull();
+  });
+});
+
+describe("editableText", () => {
+  it("shows the decimals the step implies, without trailing zeros", () => {
+    expect(editableText(1.5, 0.05)).toBe("1.5");
+    expect(editableText(3, 0.05)).toBe("3");
+    expect(editableText(0.1 + 0.2, 0.01)).toBe("0.3");
+    expect(editableText(12.3456, 1)).toBe("12");
   });
 });
