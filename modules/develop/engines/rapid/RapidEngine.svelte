@@ -3,7 +3,6 @@
   import SliderRow from "../controls/SliderRow.svelte";
   import { LUT_ENCODINGS, lutEncodingOf } from "./lutEncoding.js";
   import SelectRow from "../controls/SelectRow.svelte";
-  import ToggleRow from "../controls/ToggleRow.svelte";
   import BandMixer from "../controls/BandMixer.svelte";
   import CurveEditor from "../../CurveEditor.svelte";
   import { Icon } from "@modules/core";
@@ -313,6 +312,30 @@
         {#if isZoneActive(recipe, "highlights")}<span class="zone-dot dot-highlights"></span>{/if}
       </button>
     </div>
+  {#if isZoneActiveMode}
+    <!-- One setting for the three zones, pinned with their tabs: the tone where the Shadows mask has fallen to nothing. -->
+    <SliderRow
+      label="Mask reach"
+      value={Number(recipe?.zone_reach ?? 50)}
+      min={50}
+      max={100}
+      step={1}
+      neutral={50}
+      formatter={(v) => `${Math.round(v)}%`}
+      onInput={(v) => {
+        recipe.zone_reach = v;
+        edited(true);
+      }}
+      onChange={(v) => {
+        recipe.zone_reach = v;
+        edited(false);
+      }}
+      onReset={() => {
+        recipe.zone_reach = 50;
+        edited(false);
+      }}
+    />
+  {/if}
   </div>
 
   <!-- Image-level: input encoding, LUT stacks and the AgX look stay global. A zone
@@ -902,14 +925,6 @@
 
   <!-- Zone Reset action if in a zone -->
   {#if isZoneActiveMode}
-    <ToggleRow
-      label="Wide zone masks"
-      checked={Boolean(recipe?.wide_zone_masks)}
-      onChange={(checked) => {
-        recipe.wide_zone_masks = checked;
-        edited();
-      }}
-    />
     <div class="zone-reset-row">
       <button type="button" class="outline panel-btn half" onclick={resetCurrentZone}>
         Reset {activeZone === "shadows" ? "Shadows" : activeZone === "midtones" ? "Midtones" : "Highlights"}
@@ -934,6 +949,7 @@
     z-index: 5;
     background: var(--color-surface-light-1);
     padding-top: var(--space-d3);
+    padding-bottom: var(--space-d3);
   }
 
   .zone-tabs-group {

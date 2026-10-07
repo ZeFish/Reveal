@@ -117,9 +117,13 @@ impl RenderEngine for RapidEngine {
             ControlGroup {
                 label: "Tones".to_string(),
                 controls: vec![
-                    EngineControl::Toggle {
-                        id: "wide_zone_masks".to_string(),
-                        label: "Wide zone masks".to_string(),
+                    EngineControl::Slider {
+                        id: "zone_reach".to_string(),
+                        label: "Mask reach".to_string(),
+                        min: 50.0,
+                        max: 100.0,
+                        step: 1.0,
+                        preset: false,
                     },
                     EngineControl::Slider {
                         id: "highlights".to_string(),
@@ -625,27 +629,33 @@ impl PhotoRange {
     }
 }
 
-/// Shadow/midtone/highlight membership as a per-pixel luminance-weighted
-/// crossfade. Shared by the 3-way color wheels and Zone Tone Shaping so "what
-/// counts as a shadow" is defined identically everywhere in this engine.
+/// Shadow/midtone/highlight membership as a per-pixel luminance-weighted crossfade. Shared by
+/// the 3-way color wheels and Zone Tone Shaping so "what counts as a shadow" is defined
+/// identically everywhere in this engine.
 ///
-/// The default masks are a linear 3-way partition (the three weights always sum
-/// to exactly 1): the shadows end where the midtones peak.
-///
-/// The wide masks overlap the way Lightroom's luminosity ranges do: shadows
-/// fade from 100 % at black through 50 % at the middle to 0 % at white,
-/// highlights the other way round, and the midtones are a tent that peaks at
-/// the middle. The three then sum to more than 1 around the middle, so a strong
-/// adjustment fades out slowly instead of ending abruptly mid-picture.
-fn zone_weights(r: f32, g: f32, b: f32, wide: bool) -> (f32, f32, f32) {
+/// `reach` (0.5..1) is the tone, as a fraction of the sqrt-luminance scale, where the Shadows
+/// mask has fallen to nothing; the Highlights mask begins at the mirror tone `1 - reach`, and the
+/// Midtones mask is a tent that peaks at the middle. At 0.5 the three masks partition the tones
+/// (their weights sum to exactly 1) and the shadows end where the midtones peak. Above it they
+/// overlap, so a strong adjustment fades out over a longer gradient, and `mask_tail` eases the end
+/// of the gradient so that a strong lift does not fold back on itself. The longer the reach, the
+/// further into the far tones the mask spills over.
+/// How the Shadows and Highlights masks die away. At reach 0.5 they are straight lines (the
+/// partition); from reach 0.75 up the fall-off is a square, which leaves the mask with no slope at
+/// its end and is what keeps a strong lift from folding back on itself there (a pure gain of up to
+/// about ×9, +3.2 EV, stays in order, against ×3 for a straight line). In between, the exponent
+/// glides from 1 to 2 so that no reach setting jumps.
+fn mask_tail(reach: f32) -> f32 {
+    (1.0 + 4.0 * (reach - 0.5)).clamp(1.0, 2.0)
+}
+
+fn zone_weights(r: f32, g: f32, b: f32, reach: f32) -> (f32, f32, f32) {
+    let reach = reach.clamp(0.5, 1.0);
     let lum_linear = (luma(r, g, b)).max(0.0);
-    let lum_norm = lum_linear.sqrt().min(1.0);
-    if wide {
-        return (1.0 - lum_norm, 1.0 - (2.0 * lum_norm - 1.0).abs(), lum_norm);
-    }
-    let shadow_weight = (1.0 - lum_norm * 2.0).clamp(0.0, 1.0);
-    let highlight_weight = ((lum_norm - 0.5) * 2.0).clamp(0.0, 1.0);
-    let midtone_weight = (1.0 - shadow_weight - highlight_weight).max(0.0);
+    let n = lum_linear.sqrt().min(1.0);
+    let shadow_weight = (1.0 - n / reach).clamp(0.0, 1.0).powf(mask_tail(reach));
+    let highlight_weight = ((n - (1.0 - reach)) / reach).clamp(0.0, 1.0).powf(mask_tail(reach));
+    let midtone_weight = (1.0 - (2.0 * n - 1.0).abs()).clamp(0.0, 1.0);
     (shadow_weight, midtone_weight, highlight_weight)
 }
 
@@ -1663,7 +1673,7 @@ pub(crate) fn develop_rapid_with(
 
             // 6. 3-Way Color Wheels
             if has_color_wheels {
-                let (shadow_weight, midtone_weight, highlight_weight) = zone_weights(c[0], c[1], c[2], recipe.wide_zone_masks);
+                let (shadow_weight, midtone_weight, highlight_weight) = zone_weights(c[0], c[1], c[2], recipe.zone_reach / 100.0);
 
                 c[0] += shadows_tint[0] * shadow_weight * 0.2
                     + midtones_tint[0] * midtone_weight * 0.2
@@ -1687,7 +1697,7 @@ pub(crate) fn develop_rapid_with(
             // zone's own change never moves the mask of the next one.
             let mut zw = [0.0f32; 3];
             if any_zone {
-                let (ws, wm, wh) = zone_weights(c[0], c[1], c[2], recipe.wide_zone_masks);
+                let (ws, wm, wh) = zone_weights(c[0], c[1], c[2], recipe.zone_reach / 100.0);
                 zw = [ws, wm, wh];
                 for i in 0..3 {
                     if !zone_active[i] || zw[i] <= 0.0 {
@@ -2910,7 +2920,7 @@ mod tests {
     #[test]
     fn test_zone_weights_partition_sums_to_one() {
         for luma in [0.0, 0.02, 0.09, 0.18, 0.4, 0.5, 0.6, 0.81, 1.0] {
-            let (s, m, h) = zone_weights(luma, luma, luma, false);
+            let (s, m, h) = zone_weights(luma, luma, luma, 0.5);
             let total = s + m + h;
             assert!(
                 (total - 1.0).abs() < 1e-5,
@@ -3046,20 +3056,67 @@ mod tests {
         [out.data[0], out.data[1], out.data[2]]
     }
 
+    /// Reach 50 is the partition the engine always had; more reach lets the masks overlap.
     #[test]
-    fn the_wide_masks_overlap_like_lightroom_ranges() {
-        let at = |l: f32| zone_weights(l, l, l, true);
-        let near = |a: (f32, f32, f32), b: (f32, f32, f32)| {
-            (a.0 - b.0).abs() < 1e-5 && (a.1 - b.1).abs() < 1e-5 && (a.2 - b.2).abs() < 1e-5
+    fn the_mask_reach_sets_where_each_mask_falls_to_nothing() {
+        let near = |a: f32, b: f32| (a - b).abs() < 1e-5;
+        let at = |l: f32, reach: f32| zone_weights(l, l, l, reach);
+        // The tone n = sqrt(L): 0.5 is L = 0.25.
+        let (s, m, h) = at(0.25, 0.5);
+        assert!(near(s, 0.0) && near(m, 1.0) && near(h, 0.0), "partition at the middle: {s} {m} {h}");
+        for n in [0.0f32, 0.1, 0.3, 0.45, 0.5, 0.7, 0.95, 1.0] {
+            let (s, m, h) = at(n * n, 0.5);
+            assert!(near(s + m + h, 1.0), "the partition sums to 1 at n={n}: {}", s + m + h);
+        }
+        // Reach 75: the Shadows mask is gone at 75 % of the tones, the Highlights mask starts at 25 %.
+        let (s, _, h) = at(0.75 * 0.75, 0.75);
+        assert!(near(s, 0.0) && h > 0.0);
+        let (s, _, h) = at(0.25 * 0.25, 0.75);
+        assert!(s > 0.0 && near(h, 0.0));
+        // Reach 100: each mask spans the whole range, with the eased (squared) tail.
+        let (s, m, h) = at(0.0, 1.0);
+        assert!(near(s, 1.0) && near(m, 0.0) && near(h, 0.0));
+        let (s, m, h) = at(0.25, 1.0);
+        assert!(near(s, 0.25) && near(m, 1.0) && near(h, 0.25), "{s} {m} {h}");
+        let (s, _, h) = at(1.0, 1.0);
+        assert!(near(s, 0.0) && near(h, 1.0));
+    }
+
+    /// What the screen shows of a grey ramp through the Shadows zone: the largest drop below an
+    /// earlier, dimmer pixel (0 when brighter always means brighter).
+    fn worst_inversion(recipe: &Recipe) -> f32 {
+        let (mut peak, mut worst) = (0.0f32, 0.0f32);
+        for i in 1..=300 {
+            let l = i as f32 / 300.0;
+            let shown = develop_px(recipe, [l, l, l])[1].min(1.0);
+            peak = peak.max(shown);
+            worst = worst.max(peak - shown);
+        }
+        worst
+    }
+
+    /// The reason the reach exists: with the default masks a strong lift in the shadows folds the
+    /// picture back on itself and a smooth sky grows contour lines. From reach 75 the tail of the
+    /// mask is eased and a lift of up to +3 EV keeps every tone in order.
+    #[test]
+    fn a_long_mask_reach_keeps_a_strong_lift_in_order() {
+        let inversion = |reach: f32, ev: f32| {
+            let mut recipe = rapid_recipe();
+            recipe.zone_reach = reach;
+            recipe.zone_shadows = ZoneAdjustments { exposure_ev: ev, ..ZoneAdjustments::default() };
+            worst_inversion(&recipe)
         };
-        assert!(near(at(0.0), (1.0, 0.0, 0.0)));
-        let (s, m, h) = at(0.25); // the middle of the tones: sqrt(0.25) = 0.5
-        assert!((s - 0.5).abs() < 1e-5 && (m - 1.0).abs() < 1e-5 && (h - 0.5).abs() < 1e-5);
-        assert!(near(at(1.0), (0.0, 0.0, 1.0)));
+        assert!(inversion(50.0, 3.0) > 0.05, "the default masks are expected to fold at +3 EV");
+        for reach in [75.0, 90.0, 100.0] {
+            for ev in [1.0, 2.0, 3.0] {
+                let worst = inversion(reach, ev);
+                assert!(worst < 0.004, "reach {reach}, +{ev} EV: a brighter tone came out {worst} darker");
+            }
+        }
     }
 
     #[test]
-    fn gpu_and_cpu_agree_on_strong_zones_and_wide_masks() {
+    fn gpu_and_cpu_agree_on_strong_zones_and_any_mask_reach() {
         if !crate::rapid_gpu::available() {
             eprintln!("no GPU adapter — skipping GPU/CPU equivalence check");
             return;
@@ -3073,16 +3130,16 @@ mod tests {
             }
         }
         let input = ImageBuf::from_data(w as u32, h as u32, data);
-        for wide in [false, true] {
+        for reach in [50.0, 75.0, 100.0] {
             let mut recipe = rapid_recipe();
-            recipe.wide_zone_masks = wide;
+            recipe.zone_reach = reach;
             recipe.shadows_tint = [0.05, -0.02, 0.03];
             recipe.zone_shadows = ZoneAdjustments { exposure_ev: 3.0, shadows: 60.0, ..ZoneAdjustments::default() };
             recipe.zone_highlights = ZoneAdjustments { exposure_ev: -1.0, ..ZoneAdjustments::default() };
             let cpu = develop_rapid_with(&input, &recipe, Path::new(""), false);
             let gpu = develop_rapid_with(&input, &recipe, Path::new(""), true);
             let worst = cpu.data.iter().zip(gpu.data.iter()).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
-            assert!(worst < 0.002, "wide={wide}: GPU and CPU diverged by {worst}");
+            assert!(worst < 0.002, "reach={reach}: GPU and CPU diverged by {worst}");
         }
     }
 
@@ -3147,7 +3204,7 @@ mod tests {
             (2, [0.01, 0.008, 0.006]), // highlights: a dark pixel
         ];
         for (zone, px) in outside {
-            let (ws, wm, wh) = zone_weights(px[0], px[1], px[2], false);
+            let (ws, wm, wh) = zone_weights(px[0], px[1], px[2], 0.5);
             assert_eq!([ws, wm, wh][zone], 0.0, "test pixel must be outside zone {zone}");
             let base = develop_px(&rapid_recipe(), px);
             for (name, set) in fields {
@@ -3198,7 +3255,7 @@ mod tests {
             (2, "curve_b", |z| z.curve_b = vec![[0.0, 0.0], [0.5, 0.2], [1.0, 1.0]], bright),
         ];
         for (zone, name, set, px) in cases {
-            let (ws, wm, wh) = zone_weights(px[0], px[1], px[2], false);
+            let (ws, wm, wh) = zone_weights(px[0], px[1], px[2], 0.5);
             assert!([ws, wm, wh][zone] > 0.3, "test pixel should sit in zone {zone}, weights {ws:.2}/{wm:.2}/{wh:.2}");
             let base = develop_px(&rapid_recipe(), px);
             let mut recipe = rapid_recipe();
@@ -3222,7 +3279,7 @@ mod tests {
     #[test]
     fn a_zone_slider_has_the_global_slider_meaning() {
         let px = [0.0005, 0.0004, 0.0003];
-        let (ws, ..) = zone_weights(px[0], px[1], px[2], false);
+        let (ws, ..) = zone_weights(px[0], px[1], px[2], 0.5);
         assert!(ws > 0.95, "the pixel should be nearly all shadow, weight {ws}");
 
         let base = develop_px(&rapid_recipe(), px);

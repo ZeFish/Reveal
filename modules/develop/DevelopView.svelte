@@ -59,6 +59,10 @@
     sourceOffline = false,
     /** @type {'shadows' | 'midtones' | 'highlights' | null} */
     zoneMask = $bindable(null),
+    /** Before / after: the photo as the camera shot it, laid over the developed one while shown. */
+    showBefore = false,
+    /** @type {string | null} */
+    beforeUrl = null,
   } = $props();
 
   let frameCap = $derived(
@@ -377,6 +381,18 @@
     </div>
   {/if}
 
+  {#if showBefore && beforeUrl && !imgFailed && !isCropping}
+    <img
+      class="photo-mat before-layer"
+      style="{matStyle} {stableStyle}"
+      src={beforeUrl}
+      alt=""
+      aria-hidden="true"
+      draggable="false"
+    />
+    <span class="before-chip" role="status">Before</span>
+  {/if}
+
   {#if effectiveCheckLayer !== "none" && !imgFailed}
     <CheckLayerOverlay
       {matStyle}
@@ -452,6 +468,29 @@
   }
   .photo-mat:active {
     position: static;
+  }
+
+  /* The photo as shot, exactly over the developed one: same box, nothing of its own. */
+  .photo-mat.before-layer {
+    position: absolute;
+    z-index: 6;
+    pointer-events: none;
+    background: transparent;
+  }
+  .before-chip {
+    position: absolute;
+    top: var(--space-d2);
+    left: var(--space-d2);
+    z-index: 7;
+    padding: 2px var(--space-d3);
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--color-background) 80%, transparent);
+    color: var(--color-foreground);
+    font-family: var(--font-monospace);
+    font-size: 0.62rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    pointer-events: none;
   }
 
   .photo-mat img { display: none; }

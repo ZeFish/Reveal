@@ -67,6 +67,8 @@ export const developState = $state({
   dockedActiveZone: "global",
   /** @type {'shadows' | 'midtones' | 'highlights' | null} */
   zoneMaskPreview: null,
+  /** Before / after: the photo as the camera shot it is laid over the developed one. */
+  showBefore: false,
   developPhotoPercent: typeof window !== "undefined" ? session.photoSize() : DEFAULT_PHOTO_SIZE,
   inflight: false,
   /** @type {number | null} */

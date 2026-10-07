@@ -71,7 +71,7 @@ struct Params {
     highlight_desat: f32,
     encoding: u32,
     agx_look: u32,
-    wide_zone_masks: u32,
+    zone_reach: f32,
 
     // The photo's own black and white, in stops re 1.0 (rapid.rs::PhotoRange):
     // x,y for the global layer, z,w for the zones.
@@ -179,14 +179,13 @@ fn luma_709(c: vec3<f32>) -> f32 {
 
 /// rapid.rs::zone_weights
 fn zone_weights(c: vec3<f32>) -> vec3<f32> {
+    let reach = clamp(p.zone_reach, 0.5, 1.0);
     let lum_linear = max(luma_of(c), 0.0);
-    let lum_norm = min(sqrt(lum_linear), 1.0);
-    if (p.wide_zone_masks == 1u) {
-        return vec3<f32>(1.0 - lum_norm, 1.0 - abs(2.0 * lum_norm - 1.0), lum_norm);
-    }
-    let shadow_w = clamp(1.0 - lum_norm * 2.0, 0.0, 1.0);
-    let highlight_w = clamp((lum_norm - 0.5) * 2.0, 0.0, 1.0);
-    let midtone_w = max(1.0 - shadow_w - highlight_w, 0.0);
+    let n = min(sqrt(lum_linear), 1.0);
+    let tail = clamp(1.0 + 4.0 * (reach - 0.5), 1.0, 2.0);
+    let shadow_w = pow(clamp(1.0 - n / reach, 0.0, 1.0), tail);
+    let highlight_w = pow(clamp((n - (1.0 - reach)) / reach, 0.0, 1.0), tail);
+    let midtone_w = clamp(1.0 - abs(2.0 * n - 1.0), 0.0, 1.0);
     return vec3<f32>(shadow_w, midtone_w, highlight_w);
 }
 

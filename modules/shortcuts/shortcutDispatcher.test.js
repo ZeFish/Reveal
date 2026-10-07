@@ -174,4 +174,26 @@ describe("shortcutDispatcher", () => {
     expect(switchMode).toHaveBeenCalledWith("dev", { openDevPanel: true });
     expect(setSpaceLook).toHaveBeenCalledWith(true);
   });
+
+  it("sends the before / after key to Develop, once per press", () => {
+    const compareDown = vi.fn();
+    for (const key of ["\\", "y", "Y"]) {
+      const e = makeEvent(key);
+      const handled = dispatchShortcut(/** @type {any} */ (e), makeState({ currentMode: "dev" }), { compareDown });
+      expect(handled).toBe(true);
+      expect(e.preventDefault).toHaveBeenCalled();
+    }
+    expect(compareDown).toHaveBeenCalledTimes(3);
+
+    const repeat = { ...makeEvent("\\"), repeat: true };
+    dispatchShortcut(/** @type {any} */ (repeat), makeState({ currentMode: "dev" }), { compareDown });
+    expect(compareDown).toHaveBeenCalledTimes(3);
+  });
+
+  it("leaves the before / after key alone in the grid and with a modifier", () => {
+    const compareDown = vi.fn();
+    dispatchShortcut(/** @type {any} */ (makeEvent("y")), makeState({ currentMode: "cull" }), { compareDown });
+    dispatchShortcut(/** @type {any} */ (makeEvent("y", { metaKey: true })), makeState({ currentMode: "dev" }), { compareDown });
+    expect(compareDown).not.toHaveBeenCalled();
+  });
 });

@@ -116,6 +116,7 @@ import {
   previewUrl,
   openingUrl,
 } from "../develop/photoLoader.js";
+import { createBeforeAfter } from "../develop/beforeAfter.js";
 import {
   storyState,
 } from "../story/storyState.svelte.js";
@@ -876,6 +877,15 @@ export function createAppController() {
     pasteSettings,
   } = devController;
 
+  // Before / after: the photo as shot, laid over the developed one (a tap switches, a hold peeks).
+  const beforeAfter = createBeforeAfter({ onChange: (showing) => { developState.showBefore = showing; } });
+  // Another photo, or out of Develop: back to the developed picture.
+  $effect(() => {
+    void photoPath;
+    void currentMode;
+    untrack(() => beforeAfter.reset());
+  });
+
   const keyboardCtrl = createKeyboardController({
     getState: () => ({
       currentMode,
@@ -921,6 +931,8 @@ export function createAppController() {
       copySettings,
       pasteSettings,
       setZoneMask: (mask) => { developState.zoneMaskPreview = mask; },
+      compareDown: () => beforeAfter.press(),
+      compareUp: () => beforeAfter.release(),
       setPhotoSize: (size) => {
         developState.developPhotoPercent = size;
         session.setPhotoSize(developState.developPhotoPercent);
@@ -950,7 +962,7 @@ export function createAppController() {
       setAnchor,
     },
   });
-  const { onKey } = keyboardCtrl;
+  const { onKey, onKeyUp } = keyboardCtrl;
 
   // Boot once. startAppLifecycle reads reactive state synchronously (currentMode,
   // preferences…); tracked, every mode switch re-ran the boot, which reset the
@@ -1020,6 +1032,9 @@ export function createAppController() {
     get currentScrollTop() { return currentScrollTop; },
     set currentScrollTop(v) { currentScrollTop = v; },
     get onKey() { return onKey; },
+    get onKeyUp() { return onKeyUp; },
+    /** The window lost focus: a key held for a before / after peek will never come up. */
+    onWindowBlur: () => beforeAfter.release(),
     isTauri,
     applePhotos,
     cancelApplePhotosTransfer,
@@ -1105,6 +1120,9 @@ export function createAppController() {
         inStory: photoPath ? storyState.storySet.has(stem(photoPath.split("/").pop() || "")) : false,
         onRate: (/** @type {number} */ n) => rate(n),
         onToggleStory: () => toggleStory(),
+        beforeUrl: photoPath ? previewUrl(photoPath, 0, true) : null,
+        onCompareDown: () => beforeAfter.press(),
+        onCompareUp: () => beforeAfter.release(),
         sourceOffline,
         installedEditors,
         zoomMode: modeCtrl.zoomMode,

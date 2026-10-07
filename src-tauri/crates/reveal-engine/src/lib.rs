@@ -155,10 +155,11 @@ pub struct Recipe {
     /// `Recipe::encoding`, never written again.
     #[serde(default)]
     pub use_logc: bool,
-    /// Shadows, midtones and highlights overlap the way Lightroom's luminosity ranges do
-    /// (see `rapid.rs::zone_weights`). Off: the three masks partition the tones.
-    #[serde(default)]
-    pub wide_zone_masks: bool,
+    /// The tone, in percent, where the Shadows mask has fallen to nothing (and the Highlights
+    /// mask begins): 50 splits the tones into three parts that never overlap, 100 stretches
+    /// each mask across the whole range. See `rapid.rs::zone_weights`.
+    #[serde(default = "default_zone_reach")]
+    pub zone_reach: f32,
     /// The format the LUT stacks work in; see `encoding.rs`.
     #[serde(default)]
     pub lut_encoding: LutEncoding,
@@ -264,6 +265,10 @@ fn default_crop_dim() -> f32 {
 
 fn default_crop_aspect() -> String {
     "original".to_string()
+}
+
+fn default_zone_reach() -> f32 {
+    50.0
 }
 
 fn default_agx_look() -> String {
@@ -470,7 +475,7 @@ impl Default for Recipe {
             tint: 0.0,
             use_logc: false,
             lut_encoding: LutEncoding::Display,
-            wide_zone_masks: false,
+            zone_reach: 50.0,
             agx_look: "base".to_string(),
             hsl_hue: vec![0.0; 8],
             hsl_sat: vec![0.0; 8],

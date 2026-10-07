@@ -9,10 +9,22 @@
    * @property {boolean} [readOnly]
    * @property {(n: number) => void} [onRate]
    * @property {() => void} [onToggleStory]
+   * @property {boolean} [comparing] the photo as shot is being shown
+   * @property {() => void} [onCompareDown] before / after: pressed (a tap switches, a hold peeks)
+   * @property {() => void} [onCompareUp] before / after: let go
    */
 
   /** @type {Props} */
-  let { rating = 0, inStory = false, readOnly = false, onRate = () => {}, onToggleStory = () => {} } = $props();
+  let {
+    rating = 0,
+    inStory = false,
+    readOnly = false,
+    onRate = () => {},
+    onToggleStory = () => {},
+    comparing = false,
+    onCompareDown = () => {},
+    onCompareUp = () => {},
+  } = $props();
 </script>
 
 <div class="marks hud" role="group" aria-label="Rating and quick collection">
@@ -49,6 +61,27 @@
       <path d="M6 3h12v18l-6-4.5L6 21z" />
     </svg>
   </button>
+  <span class="sep" aria-hidden="true"></span>
+  <!-- Before / after: a tap switches, a hold peeks and comes back on release (\ or Y). -->
+  <button
+    type="button"
+    class="compare-btn ghost"
+    class:on={comparing}
+    aria-pressed={comparing}
+    aria-label="Before / after"
+    title="Before / after: tap to switch, hold to peek (\ or Y)"
+    onpointerdown={(e) => { e.currentTarget.setPointerCapture?.(e.pointerId); onCompareDown(); }}
+    onpointerup={() => onCompareUp()}
+    onpointercancel={() => onCompareUp()}
+    onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); if (!e.repeat) onCompareDown(); } }}
+    onkeyup={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); onCompareUp(); } }}
+  >
+    <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M12 4v16" />
+      <path d="M3 4h9v16H3z" class="half" />
+    </svg>
+  </button>
 </div>
 
 <style>
@@ -82,7 +115,8 @@
     opacity: 0.4;
   }
   .star-btn svg,
-  .story-btn svg {
+  .story-btn svg,
+  .compare-btn svg {
     fill: none;
     stroke: currentColor;
     stroke-width: 1.5;
@@ -99,6 +133,14 @@
   }
   .story-btn.on svg {
     fill: var(--color-accent);
+  }
+  .compare-btn.on {
+    color: var(--color-accent);
+  }
+  .compare-btn .half {
+    fill: currentColor;
+    fill-opacity: 0.25;
+    stroke: none;
   }
   .sep {
     width: 1px;

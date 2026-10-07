@@ -27,6 +27,7 @@
         <div class="shortcut-row"><kbd>+</kbd> <span>Zoom in: photo size (Dev) / fewer photos (Grid)</span></div>
         <div class="shortcut-row"><kbd>−</kbd> <span>Zoom out: photo size (Dev) / more photos (Grid)</span></div>
         <div class="shortcut-row"><kbd>⌘</kbd> <kbd>0</kbd> <span>Reset photo size (Dev)</span></div>
+        <div class="shortcut-row"><kbd>\</kbd> / <kbd>y</kbd> <span>Before / after (Dev): tap to switch, hold to peek</span></div>
         <div class="shortcut-row"><kbd>⇧</kbd> <kbd>+</kbd> / <kbd>⇧</kbd> <kbd>−</kbd> <span>Grid margin (Grid)</span></div>
       </div>
       <div class="shortcut-group">

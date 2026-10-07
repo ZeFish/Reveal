@@ -18,7 +18,7 @@
   onDismiss={app.dismissApplePhotosTransfer}
 />
 
-<svelte:window onkeydown={app.onKey} />
+<svelte:window onkeydown={app.onKey} onkeyup={app.onKeyUp} onblur={app.onWindowBlur} />
 
 <WindowControls
   currentMode={app.currentMode}

@@ -57,6 +57,7 @@ export {
 } from "./photoLoader.js";
 
 export { createDevPanelMirror } from "./devPanelMirror.svelte.js";
+export { createBeforeAfter } from "./beforeAfter.js";
 
 export {
   createScopeAnalyzer,

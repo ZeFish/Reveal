@@ -24,6 +24,9 @@
    * @property {boolean} [inStory]
    * @property {(n: number) => void} [onRate]
    * @property {() => void} [onToggleStory]
+   * @property {string | null} [beforeUrl] the photo as the camera shot it
+   * @property {() => void} [onCompareDown] before / after: the button goes down
+   * @property {() => void} [onCompareUp] before / after: the button comes up
    * @property {boolean} sourceOffline
    * @property {any[]} installedEditors
    * @property {string} zoomMode
@@ -54,6 +57,9 @@
     inStory = false,
     onRate = () => {},
     onToggleStory = () => {},
+    beforeUrl = null,
+    onCompareDown = () => {},
+    onCompareUp = () => {},
     sourceOffline,
     installedEditors,
     zoomMode,
@@ -129,6 +135,8 @@
     {panning}
     developPhotoPercent={developState.developPhotoPercent}
     {sourceOffline}
+    showBefore={developState.showBefore}
+    {beforeUrl}
     {onPhotoPointerDown}
     {onPhotoPointerMove}
     {onPhotoPointerUp}
@@ -145,6 +153,9 @@
         readOnly={photoPath.startsWith("apple-photos://")}
         {onRate}
         {onToggleStory}
+        comparing={developState.showBefore}
+        {onCompareDown}
+        {onCompareUp}
       />
     </div>
   {/if}

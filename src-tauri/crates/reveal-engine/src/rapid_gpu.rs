@@ -109,7 +109,7 @@ struct Params {
     highlight_desat: f32,
     encoding: u32,
     agx_look: u32,
-    wide_zone_masks: u32,
+    zone_reach: f32,
 
     // black, white of the global layer, then black, white of the zones.
     range: [f32; 4],
@@ -326,7 +326,7 @@ fn run_inner(inputs: &Inputs, recipe: &Recipe) -> Option<ImageBuf> {
         highlight_desat: recipe.highlight_desat,
         encoding: recipe.encoding().code(),
         agx_look,
-        wide_zone_masks: u32::from(recipe.wide_zone_masks),
+        zone_reach: recipe.zone_reach.clamp(50.0, 100.0) / 100.0,
         range: [
             inputs.range.black,
             inputs.range.white,

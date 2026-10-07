@@ -64,6 +64,7 @@ export function shouldIgnoreKeystroke(e) {
  * @property {() => void} [toggleLayout]
  * @property {(mask: "highlights" | "shadows" | "midtones" | null) => void} [setZoneMask]
  * @property {() => void} [toggleStory]
+ * @property {() => void} [compareDown]
  * @property {() => void} [toggleShortcuts]
  * @property {() => void} [exportSelection]
  * @property {() => void} [copySettings]
@@ -79,6 +80,15 @@ export function shouldIgnoreKeystroke(e) {
  * @property {(rating: number) => void} [rate]
  * @property {(path: string) => void} [toggleSelected]
  */
+
+/**
+ * The before / after key: backslash, as in Lightroom, or Y (backslash is a chord on some keyboards).
+ * @param {{ key: string }} e
+ * @returns {boolean}
+ */
+export function isCompareKey(e) {
+  return e.key === "\\" || e.key.toLowerCase() === "y";
+}
 
 /**
  * Dispatches a keyboard event based on current application mode and state.
@@ -159,6 +169,14 @@ export function dispatchShortcut(e, state, actions) {
   }
   if (e.key === "b") {
     actions.toggleSidebar?.();
+    e.preventDefault();
+    return true;
+  }
+
+  // \ or Y — before / after in Develop (Lightroom's keys): a tap switches, a hold peeks and
+  // comes back on release. The release is handled by `isCompareKey` on keyup.
+  if (isCompareKey(e) && state.currentMode === "dev" && !e.metaKey && !e.ctrlKey) {
+    if (!e.repeat) actions.compareDown?.();
     e.preventDefault();
     return true;
   }

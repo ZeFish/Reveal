@@ -5,7 +5,7 @@
  * space look, preview filter toggle), navigation, and selection manipulation.
  */
 
-import { dispatchShortcut } from "./shortcutDispatcher.js";
+import { dispatchShortcut, isCompareKey } from "./shortcutDispatcher.js";
 
 /**
  * Creates a bound keyboard shortcut controller.
@@ -43,6 +43,8 @@ import { dispatchShortcut } from "./shortcutDispatcher.js";
  *     toggleAppearance: () => void,
  *     toggleLayout: () => void,
  *     toggleStory: () => void,
+ *     compareDown?: () => void,
+ *     compareUp?: () => void,
  *     toggleShortcuts: () => void,
  *     toggleDevPanel: () => void,
  *     cycleZoom: (reverse?: boolean) => void,
@@ -139,6 +141,7 @@ export function createKeyboardController(deps) {
       toggleLayout: () => actions.toggleLayout(),
       setZoneMask: (mask) => actions.setZoneMask(mask),
       toggleStory: () => actions.toggleStory(),
+      compareDown: () => actions.compareDown?.(),
       toggleShortcuts: () => actions.toggleShortcuts(),
       exportSelection: () => actions.exportSelection(),
       copySettings: () => actions.copySettings(),
@@ -176,8 +179,17 @@ export function createKeyboardController(deps) {
     });
   }
 
+  /**
+   * A key comes up. Only the before / after key cares: letting go ends a hold.
+   * @param {KeyboardEvent} e
+   */
+  function onKeyUp(e) {
+    if (isCompareKey(e)) actions.compareUp?.();
+  }
+
   return {
     onKey,
+    onKeyUp,
     applyWorkflowResult,
   };
 }
