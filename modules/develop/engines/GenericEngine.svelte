@@ -395,7 +395,7 @@
     min-width: 0;
     height: 22px;
     font-size: 0.72rem;
-    background: var(--color-surface-light-1);
+    background: var(--color-surface-raised);
     border: var(--stroke-width) solid var(--color-border);
     border-radius: var(--radius);
     color: var(--color-foreground);

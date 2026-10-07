@@ -309,7 +309,7 @@
     --mat: 6px;
     padding: var(--mat);
     padding:0;
-    background: var(--color-surface-light-1);
+    background: var(--color-surface-raised);
     border-radius: max(1px, var(--radius));
     /* The quiet print-on-a-table depth. */
     box-shadow: var(--shadow);
@@ -385,7 +385,7 @@
     color: var(--color-shadow);
   }
   .matte:not(.loaded) {
-    background: var(--color-surface-dark-1);
+    background: var(--color-surface-sunken);
     box-shadow: var(--shadow-inset);
   }
 

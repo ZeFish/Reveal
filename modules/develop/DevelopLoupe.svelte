@@ -60,7 +60,7 @@
     z-index: 50;
     border: 2px solid rgba(255, 255, 255, 0.85);
     box-shadow: var(--shadow-hover);
-    background: var(--color-surface-light-1);
+    background: var(--color-surface-raised);
   }
   .loupe canvas {
     width: 100%;

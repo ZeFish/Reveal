@@ -64,7 +64,7 @@
     right: 1rem;
     bottom: 1rem;
     z-index: 10000;
-    background: var(--color-surface-dark-1);
+    background: var(--color-surface-sunken);
     border-radius: var(--radius-lg);
     width: min(90vw, 380px);
     max-height: min(60vh, 420px);
@@ -113,7 +113,7 @@
   }
   .queue-item {
     padding: calc(var(--space-d4) * 3);
-    background: var(--color-surface-light-1);
+    background: var(--color-surface-raised);
     border: var(--stroke-width) solid var(--color-border);
     border-radius: var(--radius);
 

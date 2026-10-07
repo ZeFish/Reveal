@@ -156,6 +156,10 @@
         comparing={developState.showBefore}
         {onCompareDown}
         {onCompareUp}
+        checkLayer={developState.checkLayer !== "none" ? developState.checkLayer : developState.showClipping ? "clipping" : "none"}
+        onToggleCheckLayer={() => devController.toggleCheckLayer()}
+        showCaption={developState.showCaption}
+        onToggleCaption={devController.dockedToggleCaptionOverlay}
       />
     </div>
   {/if}
@@ -191,12 +195,6 @@
           developState.developPhotoPercent = percent;
           session.setPhotoSize(percent);
         }}
-        showClipping={developState.showClipping}
-        checkLayer={developState.checkLayer}
-        onSelectCheckLayer={devController.toggleCheckLayer}
-        toggleClipping={devController.dockedToggleClipping}
-        showCaption={developState.showCaption}
-        toggleCaptionOverlay={devController.dockedToggleCaptionOverlay}
         edited={devController.dockedEdited}
         resetOne={devController.resetOne}
         addLutLayer={devController.addLutLayer}

@@ -76,6 +76,30 @@
       </span>
     </div>
   {:else}
+    <div class="hud-legend">
+        {#if effectiveCheckLayer === "clipping"}
+        <span class="legend-item red">● Highlights (&gt;98%)</span>
+        <span class="legend-item blue">● Shadows (&lt;2%)</span>
+        {:else if effectiveCheckLayer === "false_color"}
+        <span class="legend-item" style="color: #c084fc;">● Black (0–2%)</span>
+        <span class="legend-item" style="color: #60a5fa;">● Shadows</span>
+        <span class="legend-item" style="color: #22d3ee;">● Detail</span>
+        <span class="legend-item" style="color: #4ade80;">● Grey 18%</span>
+        <span class="legend-item" style="color: #f472b6;">● Skin</span>
+        <span class="legend-item" style="color: #facc15;">● Highlights</span>
+        <span class="legend-item" style="color: #ef4444;">● Clipped (100%)</span>
+        {:else if effectiveCheckLayer === "saturation"}
+        <span class="legend-item" style="color: #94a3b8;">0% Neutral</span>
+        <span class="sat-gradient-bar"></span>
+        <span class="legend-item" style="color: #f97316;">100% Saturated</span>
+        <span class="legend-item" style="color: #f43f5e;">● Oversaturated (&gt;85%)</span>
+        {:else if effectiveCheckLayer === "hue"}
+        <span class="legend-item" style="color: var(--color-foreground);">Normalized spectrum (L=50%, S=100%) — checks hue drift and continuity</span>
+        {:else if effectiveCheckLayer === "solar"}
+        <span class="legend-item" style="color: var(--color-foreground);">Solarization iso-lines — spots dust, flat areas and micro-contrast</span>
+        {/if}
+    </div>
+
     <div class="hud-modes">
       <span class="hud-title">CHECK LAYER</span>
       <button
@@ -103,37 +127,15 @@
         class:active={effectiveCheckLayer === "solar"}
         onclick={() => onSelectCheckLayer("solar")}
       >Solarize</button>
-      <button
+      <!--button
         class="hud-close"
         onclick={() => onSelectCheckLayer("none")}
         title="Close the check layer"
         aria-label="Close"
-      >✕</button>
+      >✕</button-->
     </div>
 
-    <div class="hud-legend">
-      {#if effectiveCheckLayer === "clipping"}
-        <span class="legend-item red">● Highlights (&gt;98%)</span>
-        <span class="legend-item blue">● Shadows (&lt;2%)</span>
-      {:else if effectiveCheckLayer === "false_color"}
-        <span class="legend-item" style="color: #c084fc;">● Black (0–2%)</span>
-        <span class="legend-item" style="color: #60a5fa;">● Shadows</span>
-        <span class="legend-item" style="color: #22d3ee;">● Detail</span>
-        <span class="legend-item" style="color: #4ade80;">● Grey 18%</span>
-        <span class="legend-item" style="color: #f472b6;">● Skin</span>
-        <span class="legend-item" style="color: #facc15;">● Highlights</span>
-        <span class="legend-item" style="color: #ef4444;">● Clipped (100%)</span>
-      {:else if effectiveCheckLayer === "saturation"}
-        <span class="legend-item" style="color: #94a3b8;">0% Neutral</span>
-        <span class="sat-gradient-bar"></span>
-        <span class="legend-item" style="color: #f97316;">100% Saturated</span>
-        <span class="legend-item" style="color: #f43f5e;">● Oversaturated (&gt;85%)</span>
-      {:else if effectiveCheckLayer === "hue"}
-        <span class="legend-item" style="color: var(--color-foreground);">Normalized spectrum (L=50%, S=100%) — checks hue drift and continuity</span>
-      {:else if effectiveCheckLayer === "solar"}
-        <span class="legend-item" style="color: var(--color-foreground);">Solarization iso-lines — spots dust, flat areas and micro-contrast</span>
-      {/if}
-    </div>
+
   {/if}
 </div>
 
@@ -146,7 +148,8 @@
 
   .check-layer-hud {
     position: absolute;
-    bottom: 24px;
+    /* Above the toolbar (stars, before/after, check layer, caption) that sits at the bottom. */
+    bottom: 56px;
     left: 50%;
     transform: translateX(-50%);
     z-index: 10;
@@ -156,13 +159,9 @@
     gap: var(--space-d3);
     padding: var(--space-d3) var(--space-d2);
     border-radius: var(--radius);
-    background: color-mix(in srgb, var(--color-background) 88%, transparent);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: var(--stroke-width) solid var(--color-border);
-    box-shadow: var(--shadow-raised);
+    background: var(--color-surface);
+    box-shadow: var(--shadow);
     pointer-events: auto;
-    font-size: 0.72rem;
   }
 
   .hud-modes {
@@ -203,6 +202,7 @@
   }
 
   .hud-close {
+      display:none;
     padding: 3px 6px;
     border-radius: calc(var(--radius) - 2px);
     border: none;
@@ -218,11 +218,13 @@
   }
 
   .hud-legend {
+
     display: flex;
     align-items: center;
     gap: var(--space-d2);
     font-size: 0.68rem;
     font-family: var(--font-monospace);
+    display:none;
   }
 
   .sat-gradient-bar {

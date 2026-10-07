@@ -187,7 +187,7 @@
     bottom: 0;
     z-index: 5;
     padding: var(--space-d3) 0;
-    background: var(--color-surface-light-1);
+    background: var(--color-surface-raised);
     border-top: var(--border);
   }
 </style>

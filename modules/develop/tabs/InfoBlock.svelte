@@ -320,7 +320,7 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-d5);
-    background: var(--color-surface-light-2);
+    background: var(--color-surface-overlay);
     border-radius: var(--radius-lg);
     padding: var(--space-d8) var(--space-d4) var(--space-d8) var(--space-d2);
   }

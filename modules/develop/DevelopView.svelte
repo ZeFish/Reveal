@@ -459,7 +459,7 @@
     border: none;
     object-fit: contain;
     padding: calc(var(--space-d4) * 3);
-    background: var(--color-surface-light-1);
+    background: var(--color-surface-raised);
     box-shadow: var(--shadow), var(--shadow-glow);
     transition: all var(--transition-fast);
     -webkit-user-drag: none;

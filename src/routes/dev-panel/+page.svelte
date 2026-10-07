@@ -10,7 +10,7 @@
 
 <style>
   :global(body) {
-    background-color: var(--color-surface-light-1);
+    background-color: var(--color-surface-raised);
     color: var(--color-foreground);
     margin: 0;
     padding: 0;

@@ -179,7 +179,7 @@ button {
    reads as a bar, not a setting. A slimmer rail and a proportionate thumb. */
 input[type="range"] {
   height: var(--space-d4);
-  background: var(--color-surface-dark-1);
+  background: var(--color-surface-sunken);
 
   &::-webkit-slider-thumb {
     width: var(--space-d2);

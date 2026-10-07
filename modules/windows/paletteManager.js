@@ -92,7 +92,10 @@ export async function syncPaletteWindow(spec, index, {
           x: pos?.x,
           y: pos?.y,
           resizable: true,
-          parent: getCurrentWindow(),
+          // No `parent`: on macOS a parent makes the panel a CHILD window, which follows the
+          // main window wherever it is dragged. The panel is placed beside the main window
+          // (see computePalettePosition) and then belongs to the person, who may want the two
+          // apart, on two screens.
           titleBarStyle: "overlay",
           hiddenTitle: true,
         });

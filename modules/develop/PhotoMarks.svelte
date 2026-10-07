@@ -1,4 +1,6 @@
 <script>
+  import { Icon } from "@modules/core";
+
   // The photo's stars and its place in the quick collection, shown while developing — the
   // same two marks the grid cell carries, here also clickable. Both answer at once; the
   // write to disk follows (see `rate` and `toggleStoryWithPath`).
@@ -12,6 +14,10 @@
    * @property {boolean} [comparing] the photo as shot is being shown
    * @property {() => void} [onCompareDown] before / after: pressed (a tap switches, a hold peeks)
    * @property {() => void} [onCompareUp] before / after: let go
+   * @property {string} [checkLayer] the check layer on screen ("none" when there is none)
+   * @property {() => void} [onToggleCheckLayer]
+   * @property {boolean} [showCaption] the caption is shown under the photo
+   * @property {() => void} [onToggleCaption]
    */
 
   /** @type {Props} */
@@ -24,7 +30,20 @@
     comparing = false,
     onCompareDown = () => {},
     onCompareUp = () => {},
+    checkLayer = "none",
+    onToggleCheckLayer = () => {},
+    showCaption = false,
+    onToggleCaption = () => {},
   } = $props();
+
+  const CHECK_LAYER_NAMES = {
+    clipping: "Clipping",
+    false_color: "False Color",
+    saturation: "Saturation",
+    hue: "Hue",
+    solar: "Solarize",
+  };
+  let checkLayerName = $derived(/** @type {Record<string, string>} */ (CHECK_LAYER_NAMES)[checkLayer] ?? "Off");
 </script>
 
 <div class="marks hud" role="group" aria-label="Rating and quick collection">
@@ -82,6 +101,31 @@
       <path d="M3 4h9v16H3z" class="half" />
     </svg>
   </button>
+  <span class="sep" aria-hidden="true"></span>
+  <!-- Check layer: a tap turns it on or off; its modes are in the bar that opens above. -->
+  <button
+    type="button"
+    class="tool-btn ghost"
+    class:on={checkLayer !== "none"}
+    aria-pressed={checkLayer !== "none"}
+    aria-label="Check layer"
+    title={`Check layer (${checkLayerName}): clipping, false colour, saturation, hue`}
+    onclick={() => onToggleCheckLayer()}
+  >
+    <Icon name="circle-half" size="var(--icon-sm)" />
+    {#if checkLayer !== "none"}<span class="clip-indicator {checkLayer}"></span>{/if}
+  </button>
+  <button
+    type="button"
+    class="tool-btn ghost"
+    class:on={showCaption}
+    aria-pressed={showCaption}
+    aria-label="Caption"
+    title="Show the caption under the photo"
+    onclick={() => onToggleCaption()}
+  >
+    <Icon name="subtitles" size="var(--icon-sm)" />
+  </button>
 </div>
 
 <style>
@@ -133,6 +177,28 @@
   }
   .story-btn.on svg {
     fill: var(--color-accent);
+  }
+  .tool-btn {
+    position: relative;
+  }
+  .tool-btn.on,
+  .compare-btn.on {
+    color: var(--color-accent);
+  }
+  .clip-indicator {
+    position: absolute;
+    bottom: 2px;
+    right: 2px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--color-accent);
+
+    &.clipping { background: #ef4444; }
+    &.false_color { background: #22c55e; }
+    &.saturation { background: #ec4899; }
+    &.hue { background: #06b6d4; }
+    &.solar { background: #e2e8f0; }
   }
   .compare-btn.on {
     color: var(--color-accent);

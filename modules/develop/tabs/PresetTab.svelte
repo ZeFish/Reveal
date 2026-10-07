@@ -352,7 +352,7 @@
     gap: var(--space-d3);
   }
   .count-badge {
-    background: var(--color-surface-light-2);
+    background: var(--color-surface-overlay);
     padding: var(--stroke-width) var(--space-d3);
     border-radius: var(--radius-lg);
   }
@@ -467,7 +467,7 @@
     background: linear-gradient(
       100deg,
       var(--color-surface) 30%,
-      var(--color-surface-light-2) 50%,
+      var(--color-surface-overlay) 50%,
       var(--color-surface) 70%
     );
     background-size: 200% 100%;

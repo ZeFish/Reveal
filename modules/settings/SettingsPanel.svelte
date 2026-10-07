@@ -336,7 +336,7 @@
     gap: var(--space-d8);
     margin: 0;
     padding: 0 var(--space-d2) var(--space-d2);
-    background: var(--color-surface-light-1);
+    background: var(--color-surface-raised);
     border-right: var(--border);
     overflow-y: auto;
   }

@@ -37,6 +37,7 @@ mod preset;
 mod story;
 mod fd_limit;
 mod photo; // a photo: its identity, where it lives, what can be done to it
+mod panel_sync; // the detached develop panel follows the main window away and back
 mod photo_writes; // what is owed to a photo's files, and when (debounced, flushed on exit) // how many files the app may hold open
 mod thumb; // the `reveal://thumb` handler: request, cache, ladder of sources
 mod thumb_queue; // who decodes a grid thumbnail next
@@ -1658,6 +1659,7 @@ pub fn run() {
             apple_photos::init(app.handle())?;
             setup_main_menu(app).map_err(|e| e.to_string())?;
             setup_tray(app).map_err(|e| e.to_string())?;
+            panel_sync::start(app.handle().clone());
 
             // The browser sign-in flow (standard.garden/connect/reveal) hands a
             // freshly-minted key back via `reveal://garden-callback?key=...` —

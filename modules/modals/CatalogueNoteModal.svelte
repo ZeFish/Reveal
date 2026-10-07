@@ -45,7 +45,7 @@
     align-items: center;
     padding: var(--space) calc(var(--space-d4) * 6);
     border-bottom: var(--stroke-width) solid var(--color-border);
-    background: var(--color-surface-dark-1);
+    background: var(--color-surface-sunken);
   }
   .modal-header h3 {
     margin: 0;
@@ -84,7 +84,7 @@
     gap: var(--space);
     padding: var(--space) calc(var(--space-d4) * 6);
     border-top: var(--stroke-width) solid var(--color-border);
-    background: var(--color-surface-dark-1);
+    background: var(--color-surface-sunken);
   }
   .modal-footer button {
     padding: calc(var(--space-d4) * 2) calc(var(--space-d4) * 5);

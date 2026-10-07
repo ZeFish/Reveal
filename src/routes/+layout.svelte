@@ -50,8 +50,9 @@
 <style>
   :global(:root) {
     --window-controls-offset-sidebar: 66px;
-    /* The photo canvas: unified with the global ground. */
-    --canvas: var(--color-background);
+    /* The photo canvas: the stage, a neutral backdrop darker than the ground so
+       the picture carries the contrast, not the chrome. */
+    --canvas: var(--color-stage);
     --window-controls-offset-content: 86px;
   }
 </style>
