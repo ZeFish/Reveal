@@ -17,7 +17,7 @@
 </script>
 
 <div class="frow" class:disabled>
-  <span class="din frow-label" title={label}>{label}</span>
+  <span class="din frow-label">{label}</span>
   <span class="spacer"></span>
   <span class="val toggle-wrap">
     <input
@@ -46,19 +46,31 @@
     cursor: not-allowed;
   }
   .frow-label {
-    width: 6.2rem;
+    width: 7.0rem;
     flex-shrink: 0;
     font-size: 0.76rem;
     color: var(--color-foreground);
     text-align: left;
     white-space: nowrap;
+    overflow: hidden;
     text-overflow: ellipsis;
+    font-family: var(--font-interface);
+    transition: color var(--transition-fast);
+  }
+  .frow:has(input[type="checkbox"][role="switch"]:hover) .frow-label {
+    color: var(--color-accent);
   }
   .spacer {
     flex: 1;
   }
   .toggle-wrap {
+    width: 3.2rem;
+    flex-shrink: 0;
     display: inline-flex;
     justify-content: flex-end;
+    align-items: center;
+  }
+  .toggle-wrap input[type="checkbox"][role="switch"] {
+    margin: 0;
   }
 </style>

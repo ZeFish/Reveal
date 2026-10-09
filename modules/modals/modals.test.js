@@ -46,17 +46,34 @@ describe("modules/modals/modalState", () => {
     expect(modalState.catalogOpen).toBe(false);
   });
 
+  it("handles adjustDate visibility and frames", () => {
+    expect(modalState.adjustDateOpen).toBe(false);
+    expect(modalState.adjustDateFrames).toEqual([]);
+
+    const sampleFrames = [{ path: "/photos/DSCF3086.RAF", capture_at: 1854694400 }];
+    modalState.openAdjustDate(sampleFrames);
+    expect(modalState.adjustDateOpen).toBe(true);
+    expect(modalState.adjustDateFrames).toEqual(sampleFrames);
+
+    modalState.closeAdjustDate();
+    expect(modalState.adjustDateOpen).toBe(false);
+    expect(modalState.adjustDateFrames).toEqual([]);
+  });
+
   it("resets all modal state", () => {
     modalState.openShortcuts();
     modalState.setWhatsNew({ version: "1.0", notes: "notes" });
     modalState.openCatalog();
     modalState.setCatalogContent("sample");
+    modalState.openAdjustDate([{ path: "/test.jpg" }]);
 
     modalState.reset();
     expect(modalState.shortcutsOpen).toBe(false);
     expect(modalState.whatsNew).toBe(null);
     expect(modalState.catalogOpen).toBe(false);
     expect(modalState.catalogContent).toBe("");
+    expect(modalState.adjustDateOpen).toBe(false);
+    expect(modalState.adjustDateFrames).toEqual([]);
   });
 });
 

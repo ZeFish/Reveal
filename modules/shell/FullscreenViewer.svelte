@@ -20,8 +20,6 @@
     sourceOffline = false,
     onExit = () => {},
   } = $props();
-
-  const stars = (/** @type {number | null | undefined} */ n) => "★".repeat(Math.max(0, Math.min(5, n || 0)));
 </script>
 
 {#if fullscreen && photo}
@@ -39,9 +37,6 @@
       {developPhotoPercent}
       {sourceOffline}
     />
-    {#if photo.rating}
-      <span class="fullscreen-rating">{stars(photo.rating)}</span>
-    {/if}
   </div>
 {/if}
 
@@ -58,22 +53,19 @@
     position: fixed;
     inset: 0;
     z-index: 1000;
+    width: 100vw;
+    height: 100vh;
     display: flex;
-    align-items: center;
-    justify-content: center;
+    align-items: stretch;
+    justify-content: stretch;
     cursor: zoom-out;
     background: var(--color-background);
     animation: fullscreen-fade-in var(--transition-fast) ease-out;
   }
-  .fullscreen-rating {
-    position: absolute;
-    bottom: var(--space);
-    left: 50%;
-    transform: translateX(-50%);
-    color: var(--color-accent);
-    font-size: 14px;
-    letter-spacing: 2px;
-    pointer-events: none;
-    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  .fullscreen-photo :global(main) {
+    width: 100%;
+    height: 100%;
+    max-width: 100vw;
+    max-height: 100vh;
   }
 </style>

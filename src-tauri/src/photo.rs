@@ -147,6 +147,15 @@ impl Photo {
         })
     }
 
+    /// Capture timestamp in seconds since Unix epoch. Stored in sidecar so it survives
+    /// fresh rescans and index rebuilds.
+    pub(crate) fn set_capture_at(&self, timestamp: i64) -> Result<(), String> {
+        self.update_metadata(|sidecar| {
+            sidecar.capture_at = Some(timestamp);
+            Ok(())
+        })
+    }
+
     /// Write the recipe into the photo's sidecar: the engine, and the engine's settings as they
     /// are. Done at once; edits that can wait go through [`crate::photo_writes`].
     pub(crate) fn save_recipe(&self, recipe: &reveal_engine::Recipe) -> Result<(), String> {

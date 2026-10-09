@@ -4,6 +4,7 @@
   import AlertDialog from "@stnd/ui/AlertDialog.svelte";
   import { removeLibraryNote } from "./libraryState.svelte.js";
   import { untrack } from "svelte";
+  import { listen } from "@tauri-apps/api/event";
 
   /**
    * @typedef {Object} Props
@@ -42,16 +43,22 @@
     untrack(() => {
       loadLibraries();
     });
+    const unlisten = listen("libraries-changed", () => {
+      loadLibraries();
+    });
+    return () => {
+      unlisten.then((fn) => fn()).catch(() => {});
+    };
   });
 
   async function addLibrary() {
     libBusy = true;
     try {
       await onAddLibrary();
-      await loadLibraries();
     } catch (e) {
       libError = `Could not add that folder: ${e}`;
     } finally {
+      await loadLibraries();
       libBusy = false;
     }
   }
@@ -62,10 +69,10 @@
     libError = "";
     try {
       await onRescanLibrary(path);
-      await loadLibraries();
     } catch (e) {
       libError = `Reindex failed: ${e}`;
     } finally {
+      await loadLibraries();
       libBusy = false;
     }
   }
@@ -78,10 +85,10 @@
     libError = "";
     try {
       await onRemoveLibrary(lib.path);
-      await loadLibraries();
     } catch (e) {
       libError = `Could not remove that library: ${e}`;
     } finally {
+      await loadLibraries();
       libBusy = false;
     }
   }

@@ -751,19 +751,21 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             agx = agx * (1.0 - desat_w) + vec3<f32>(avg_c) * desat_w;
         }
 
-        // Tone curves last, on display-referred 0..1 (see rapid.rs): the global
-        // layer's, then each zone's, blended in by the zone weight.
-        if (p.adj[0].curve_mask != 0u) { agx = apply_curves(agx, p.adj[0], 0u); }
-        for (var i = 0u; i < 3u; i = i + 1u) {
-            let a = p.adj[i + 1u];
-            if (((p.zone_mask >> i) & 1u) != 0u && zw[i] > 0.0 && a.curve_mask != 0u) {
-                let curved = apply_curves(agx, a, i + 1u);
-                agx = agx + (curved - agx) * zw[i];
-            }
-        }
-
-        outc = clamp(agx, vec3<f32>(0.0), vec3<f32>(1.0));
+        outc = agx;
     }
+
+    // Tone curves: on 0..1 values (display-referred or log-encoded).
+    // The global layer's, then each zone's, blended in by the zone weight.
+    if (p.adj[0].curve_mask != 0u) { outc = apply_curves(outc, p.adj[0], 0u); }
+    for (var i = 0u; i < 3u; i = i + 1u) {
+        let a = p.adj[i + 1u];
+        if (((p.zone_mask >> i) & 1u) != 0u && zw[i] > 0.0 && a.curve_mask != 0u) {
+            let curved = apply_curves(outc, a, i + 1u);
+            outc = outc + (curved - outc) * zw[i];
+        }
+    }
+
+    outc = clamp(outc, vec3<f32>(0.0), vec3<f32>(1.0));
 
     out_data[idx] = outc.r;
     out_data[idx + 1u] = outc.g;

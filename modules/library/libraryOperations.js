@@ -27,7 +27,7 @@ export async function indexRoot({ invoke, notify, refreshDirs, openDir, state, l
   if (!path) return;
   if (state) state.scanning = true;
   try {
-    await invoke("scan_root", { path });
+    await invoke("add_catalog_root", { path });
     await refreshDirs();
     if (library?.dirs?.length && openDir) {
       openDir(library.dirs[library.dirs.length - 1].dir);

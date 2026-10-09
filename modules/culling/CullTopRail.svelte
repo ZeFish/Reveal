@@ -187,9 +187,13 @@
       <button class="ghost icon small" onclick={onToggleAppearance} title="Toggle system light / dark mode (l)">
         <Icon name="circle-half" size="var(--icon-md)" />
       </button>
-      <button class="wordmark" onclick={onShowShortcuts} title="Keyboard shortcuts">
-        {curDir && curDir !== rootDir ? (dirLabel(curDir) ?? "").toUpperCase() : "REVEAL"}
-      </button>
+      <!-- The folder's name is not written across the bar (the photos want the room): it is
+           the tooltip, and the title bar of the window says it too. -->
+      <button
+        class="wordmark"
+        onclick={onShowShortcuts}
+        title={curDir && curDir !== rootDir ? `${dirLabel(curDir) ?? ""} — keyboard shortcuts` : "Keyboard shortcuts"}
+      >REVEAL</button>
     </div>
   {/if}
 

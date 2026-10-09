@@ -41,7 +41,7 @@
 <style>
   .lib-section {
     flex-shrink: 0;
-    padding-block: var(--space-d2);
+    padding: var(--space-d2) var(--sb-pad);
     display: flex;
     flex-direction: column;
     gap: var(--space-d3);

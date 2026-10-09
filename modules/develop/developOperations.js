@@ -457,7 +457,7 @@ export async function copySettings(state, source, { photoPath, invoke, notify })
  *   advanceProgress?: () => number,
  *   invoke: (cmd: string, args?: any) => Promise<any>,
  *   freshPreviewVersion?: (path: string) => Promise<number>,
- *   refreshFrames?: () => void,
+ *   refreshFrames?: (mutated?: any) => void,
  *   scheduleRender?: (px: number) => void,
  *   sendDevStateToPanel?: () => void,
  *   notify?: (msg: string, ms?: number) => void,
@@ -562,7 +562,7 @@ export async function applyRecipeToFrames({
       }
     };
     await Promise.all(Array.from({ length: Math.min(WORKERS, targetFrames.length) }, worker));
-    if (refreshFrames) refreshFrames();
+    if (refreshFrames) refreshFrames(targetFrames);
     if (failed && notify) {
       notify(`Could not apply settings to ${failed} photo${failed === 1 ? "" : "s"}: ${firstError}`);
     } else if (notify) {

@@ -153,22 +153,26 @@ export function createKeyboardController(deps) {
       setCols: (n) => actions.setCols(n),
       setMarginScale: (m) => actions.setMarginScale(m),
       updateRecipe: (newRecipe) => actions.updateRecipe(newRecipe),
+      // `state` is a snapshot taken when the key came in: its `sel` is where the focus WAS. Every
+      // line below works on `nextSel`, the place it is going to. (It used to read `state.sel`
+      // after moving the focus, so the selection and the photo opened in Develop trailed the
+      // focus by one, and two quick arrows could land a photo behind.)
       navigate: (nextSel, { shiftKey, metaKey }) => {
         actions.focusAt(state.view, nextSel);
         if (shiftKey) {
-          actions.selectRange(state.view, state.selectionAnchor, state.sel);
+          actions.selectRange(state.view, state.selectionAnchor, nextSel);
         } else if (metaKey) {
           // macOS/Windows pattern: Cmd/Ctrl + Arrow moves cursor without changing selection
         } else {
-          actions.selectOnly(state.view, state.sel);
+          actions.selectOnly(state.view, nextSel);
         }
         if (state.fullscreen) {
-          actions.prepareFullscreenFrame(state.view[state.sel]?.path);
-        } else if (state.currentMode === "dev" && state.view[state.sel]) {
-          actions.openPhoto(state.view[state.sel]?.path);
+          actions.prepareFullscreenFrame(state.view[nextSel]?.path);
+        } else if (state.currentMode === "dev" && state.view[nextSel]) {
+          actions.openPhoto(state.view[nextSel]?.path);
         }
         if (typeof document !== "undefined") {
-          document.querySelector(`[data-idx="${state.sel}"]`)?.scrollIntoView({ block: "nearest" });
+          document.querySelector(`[data-idx="${nextSel}"]`)?.scrollIntoView({ block: "nearest" });
         }
       },
       rate: (n) => actions.rate(n),

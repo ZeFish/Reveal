@@ -48,7 +48,7 @@
 
 <FullscreenViewer
   fullscreen={app.fullscreenState.active}
-  photo={app.view[app.sel]}
+  photo={app.currentPhoto}
   fullscreenUrl={app.fullscreenState.url}
   developPhotoPercent={app.developState.developPhotoPercent}
   sourceOffline={app.sourceOffline}

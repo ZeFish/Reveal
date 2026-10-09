@@ -62,7 +62,7 @@ describe("libraryOperations", () => {
   it("indexRoot picks folder and refreshes dirs", async () => {
     const invoke = vi.fn().mockImplementation(async (cmd) => {
       if (cmd === "pick_folder") return "/nas/new_root";
-      if (cmd === "scan_root") return true;
+      if (cmd === "add_catalog_root") return true;
       return null;
     });
     const refreshDirsMock = vi.fn().mockResolvedValue(true);
@@ -78,7 +78,7 @@ describe("libraryOperations", () => {
     });
 
     expect(invoke).toHaveBeenCalledWith("pick_folder");
-    expect(invoke).toHaveBeenCalledWith("scan_root", { path: "/nas/new_root" });
+    expect(invoke).toHaveBeenCalledWith("add_catalog_root", { path: "/nas/new_root" });
     expect(refreshDirsMock).toHaveBeenCalled();
     expect(openDirMock).toHaveBeenCalledWith("/nas/new_root");
     expect(state.scanning).toBe(false);

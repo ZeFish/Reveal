@@ -173,6 +173,11 @@ fn every_rapid_control_changes_the_render() {
             let on = with(&base, "grain_amount", serde_json::json!(0.5));
             let changed = with(&on, &label, serde_json::to_value(&recipe).unwrap()[&label].clone());
             (changed, engine.render(&input, &on, &luts).unwrap())
+        } else if label == "zone_reach" {
+            let mut on = base.clone();
+            on.zone_shadows.exposure_ev = 1.0;
+            let changed = with(&on, &label, serde_json::to_value(&recipe).unwrap()[&label].clone());
+            (changed, engine.render(&input, &on, &luts).unwrap())
         } else {
             (recipe, reference.clone_buf())
         };

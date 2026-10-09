@@ -570,6 +570,7 @@ export function createAppController() {
     getCurrentMode: () => currentMode,
     getPhotoPath: () => photoPath,
     getImgUrl: () => imgUrl,
+    getRecipe: () => (currentMode === "dev" ? developState.recipe : null),
     previewUrl,
     getView: () => view,
     getSel: () => sel,
@@ -1034,6 +1035,12 @@ export function createAppController() {
     get currentMode() { return currentMode; },
     get view() { return view; },
     get sel() { return sel; },
+    get currentPhoto() {
+      if (currentMode === "dev" && photoPath) {
+        return library.frames.find((f) => f.path === photoPath) || { path: photoPath, name: picked || photoPath.split("/").pop() };
+      }
+      return view[sel];
+    },
     get photoPath() { return photoPath; },
     get developState() { return developState; },
     get sourceOffline() { return sourceOffline; },

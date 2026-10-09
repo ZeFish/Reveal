@@ -13,3 +13,4 @@ export { default as RenderQueueModal } from "./RenderQueueModal.svelte";
 export { default as NotificationStack } from "./NotificationStack.svelte";
 export { default as Toast } from "./Toast.svelte";
 export { default as TaskIndicator } from "./TaskIndicator.svelte";
+export { default as AdjustDateModal } from "./AdjustDateModal.svelte";

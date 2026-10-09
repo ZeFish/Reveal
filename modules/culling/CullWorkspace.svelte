@@ -129,6 +129,21 @@
 
   /** @param {string} name */
   const stem = (name) => name.replace(/\.[^.]+$/, "");
+
+  function handleAdjustDate() {
+    const targetFrame = photoMenuCtrl.photoMenu?.frame;
+    photoMenuCtrl.closePhotoMenu();
+    if (!targetFrame) return;
+    const isSelected = selection.paths.has(targetFrame.path);
+    let framesToAdjust = [];
+    if (isSelected && selection.paths.size > 1) {
+      const others = view.filter((f) => selection.paths.has(f.path) && f.path !== targetFrame.path);
+      framesToAdjust = [targetFrame, ...others];
+    } else {
+      framesToAdjust = [targetFrame];
+    }
+    modalState.openAdjustDate(framesToAdjust);
+  }
 </script>
 
 <div
@@ -213,7 +228,7 @@
         {@render sidebarPanel(true, sidebarCtrl.closePeek)}
       </div>
     {/if}
-    <div class="content" role="presentation" onmousedown={onStartWindowDrag}>
+    <div class="content" class:over={!previewFilter} role="presentation" onmousedown={onStartWindowDrag}>
       <CullTopRail
         {sidebarVisible}
         onToggleSidebar={sidebarCtrl.toggleSidebar}
@@ -312,6 +327,7 @@
       />
     {:else}
       <CullView
+        underRail
         {view}
         loading={library.loading}
         {sel}
@@ -366,6 +382,7 @@
     onOpenPhoto={(/** @type {string} */ p) => openPhoto(p)}
     onOpenPreview={(/** @type {string} */ p) => openPhotoPreview(p)}
     onRevealInFinder={(/** @type {string} */ p) => revealPhotoInFinder(p)}
+    onAdjustDate={handleAdjustDate}
     onOpenInEditor={(/** @type {string} */ p, /** @type {string} */ app) => openPhotoInEditor(p, app)}
     onCopyImage={(/** @type {string} */ p) => copyImageToClipboard(p)}
     onCopySettings={copySettings}
@@ -388,6 +405,7 @@
     position: relative;
     z-index: 1;
     overflow: hidden;
+    background: var(--color-stage);
   }
   .cull > .body {
     flex: 1;
@@ -424,5 +442,32 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
+    position: relative;
+  }
+  /* The top bar floats over the photos instead of cutting the window in two: the grid runs the
+     full height and scrolls under it. Its background is a blurred, translucent veil that fades
+     out at the bottom, so there is no edge where the photos stop. (The story view keeps the bar
+     in the flow: it is text, and text under a bar is unreadable.) */
+  .content.over :global(.rail) {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+  }
+  .content.over :global(.rail)::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 -14px 0;
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--color-stage) 80%, transparent) 55%,
+      transparent
+    );
+    -webkit-backdrop-filter: blur(14px) saturate(1.15);
+    backdrop-filter: blur(14px) saturate(1.15);
+    -webkit-mask-image: linear-gradient(to bottom, currentColor 62%, transparent);
+    mask-image: linear-gradient(to bottom, currentColor 62%, transparent);
   }
 </style>

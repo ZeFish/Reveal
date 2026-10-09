@@ -289,6 +289,22 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
+
+    /* The sidebar's one grid. Every row — All Library, the collections, a catalogue's header, a
+       folder at any depth, Library, the account — is laid on the same columns, so a name, a
+       count and a button sit at the same x from the top of the panel to the bottom:
+         [ gutter | lead | name ................ | count | gutter ]
+       `lead` carries the disclosure arrow or the icon. The count goes to the far right, so counts
+       line up on their own. What is rare takes no column: the story dot sits in the left gutter
+       (one rail of dots), and the + / refresh button replaces the count while the row is hovered. */
+    --sb-pad: var(--space-d2);
+    --sb-lead: 14px;
+    --sb-indent: 10px;
+  }
+  /* A focus ring drawn outside a row is clipped by the scrolling tree on the sides and overlaps
+     the rows above and below; inside it stays where the row is. */
+  nav :global(:focus-visible) {
+    outline-offset: -2px;
   }
   nav.floating {
     height: min(480px, calc(100vh - 60px));

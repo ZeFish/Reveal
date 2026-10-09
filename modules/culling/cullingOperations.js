@@ -44,8 +44,9 @@ export async function rate(view, n) {
   // Optimistic: the stars change on screen now; the sidecar write (a NAS round trip per
   // photo) follows. A failure puts the old rating back and says so.
   const before = targets.map((frame) => frame.rating);
+  const targetPaths = new Set(targets.map((frame) => frame.path));
   for (const frame of targets) frame.rating = n;
-  refreshFrames();
+  refreshFrames(targetPaths);
   /** @type {any[]} */
   const unsaved = [];
   for (const [i, frame] of targets.entries()) {
@@ -58,7 +59,7 @@ export async function rate(view, n) {
   }
   if (unsaved.length) {
     hold(`Could not save photo rating: ${unsaved[0]}`);
-    refreshFrames();
+    refreshFrames(targetPaths);
   }
 }
 

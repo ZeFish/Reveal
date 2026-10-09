@@ -28,6 +28,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Sidecar {
     pub rating: Option<u8>,
+    pub capture_at: Option<i64>,
     pub description: Option<String>,
     pub tags: Vec<String>,
     /// Engine id, e.g. "spektrafilm-rs".
@@ -130,7 +131,7 @@ fn parse(xml: &str) -> Sidecar {
                     // skip
                 } else if let Some(parent) = path.last().map(String::as_str) {
                     match parent {
-                        "Rating" | "DevelopEngine" | "EngineSettings" => {
+                        "Rating" | "DevelopEngine" | "EngineSettings" | "CaptureAt" => {
                             apply_scalar(&mut out, parent, &text)
                         }
                         "li" => {
@@ -172,6 +173,7 @@ fn description_attributes(
 fn apply_scalar(out: &mut Sidecar, key: &str, val: &str) {
     match key {
         "Rating" => out.rating = val.trim().parse::<f32>().ok().map(|r| r.max(0.0) as u8),
+        "CaptureAt" => out.capture_at = val.trim().parse::<i64>().ok(),
         "DevelopEngine" => out.engine = Some(val.to_string()),
         "EngineSettings" => out.engine_settings = serde_json::from_str(val).ok(),
         _ => {}
@@ -192,6 +194,9 @@ fn props(s: &Sidecar) -> String {
         if r > 0 {
             props.push_str(&format!("\n      <xmp:Rating>{r}</xmp:Rating>"));
         }
+    }
+    if let Some(ts) = s.capture_at {
+        props.push_str(&format!("\n      <reveal:CaptureAt>{ts}</reveal:CaptureAt>"));
     }
     if let Some(d) = s.description.as_deref().filter(|d| !d.is_empty()) {
         props.push_str(&format!(
@@ -251,11 +256,11 @@ const NS_XMP: &[u8] = b"http://ns.adobe.com/xap/1.0/";
 const NS_DC: &[u8] = b"http://purl.org/dc/elements/1.1/";
 const NS_REVEAL: &[u8] = b"https://reveal.photos/ns/1.0/";
 
-/// Whether (namespace, local name) is one of the five properties Reveal owns.
+/// Whether (namespace, local name) is one of the properties Reveal owns.
 fn is_ours(ns: &[u8], local: &[u8]) -> bool {
     (ns == NS_XMP && local == b"Rating")
         || (ns == NS_DC && (local == b"description" || local == b"subject"))
-        || (ns == NS_REVEAL && (local == b"DevelopEngine" || local == b"EngineSettings"))
+        || (ns == NS_REVEAL && (local == b"DevelopEngine" || local == b"EngineSettings" || local == b"CaptureAt"))
 }
 
 fn bound_to(ns: &quick_xml::name::ResolveResult<'_>, uri: &[u8]) -> bool {
@@ -430,6 +435,7 @@ mod tests {
     fn roundtrip() {
         let s = Sidecar {
             rating: Some(3),
+            capture_at: Some(1791545900),
             description: Some("a café & <two>".into()),
             tags: vec!["family".into(), "café".into()],
             engine: Some("spektrafilm-rs".into()),
@@ -502,6 +508,7 @@ mod tests {
     fn ours() -> Sidecar {
         Sidecar {
             rating: Some(4),
+            capture_at: None,
             description: Some("the last light".into()),
             tags: vec!["family".into()],
             engine: Some("spektra".into()),

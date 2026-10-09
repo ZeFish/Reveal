@@ -29,6 +29,7 @@
    * @property {() => void} [onPublishStory]
    * @property {() => void} [onOpenGardenUrl]
    * @property {(p: string) => void} [onDevelopToVault]
+   * @property {() => void} [onAdjustDate]
    */
 
   /** @type {Props} */
@@ -44,6 +45,7 @@
     onOpenPhoto = (/** @type {string} */ p) => {},
     onOpenPreview = (/** @type {string} */ p) => {},
     onRevealInFinder = (/** @type {string} */ p) => {},
+    onAdjustDate = () => {},
     onOpenInEditor = (/** @type {string} */ p, /** @type {string} */ app) => {},
     onCopyImage = (/** @type {string} */ p) => {},
     onCopySettings = () => {},
@@ -67,6 +69,7 @@
     <Item label="Develop" shortcut="d" onclick={() => onOpenPhoto(photoMenu.frame.path)} />
     <Item label="Preview (Quick Look)" shortcut="Space" onclick={() => onOpenPreview(photoMenu.frame.path)} />
     <Item label="Show in Finder" disabled={photoMenu.frame.path.startsWith("apple-photos://")} onclick={() => onRevealInFinder(photoMenu.frame.path)} />
+    <Item label="Adjust date and time…" disabled={photoMenu.frame.path.startsWith("apple-photos://")} onclick={onAdjustDate} />
     {#if installedEditors.length && !photoMenu.frame.path.startsWith("apple-photos://")}
       <Separator />
       <Label label="Open with" />

@@ -5,6 +5,7 @@
   /**
    * @typedef {Object} Props
    * @property {string} [matStyle]
+   * @property {string} [stableStyle]
    * @property {string} [effectiveCheckLayer]
    * @property {'shadows' | 'midtones' | 'highlights' | null} [zoneMask]
    * @property {() => { width: number, height: number, data: ImageData } | null} getSourcePixelData
@@ -16,6 +17,7 @@
   /** @type {Props} */
   let {
     matStyle = "",
+    stableStyle = "",
     effectiveCheckLayer = "none",
     zoneMask = null,
     getSourcePixelData,
@@ -50,7 +52,7 @@
 <canvas
   bind:this={clipCanvasEl}
   class="photo-mat clip-overlay"
-  style={matStyle}
+  style="{matStyle} {stableStyle}"
 ></canvas>
 
 <div class="check-layer-hud hud">
@@ -137,9 +139,22 @@
 
 <style>
   .clip-overlay {
+    display: block;
+    box-sizing: border-box;
     position: absolute;
+    max-width: 90%;
+    max-height: 90%;
+    width: auto;
+    height: auto;
+    border: none;
+    --mat-pad: calc(var(--space-d4) * 3);
+    border-radius: calc(var(--radius) + var(--mat-pad));
+    object-fit: contain;
+    padding: var(--mat-pad);
+    background: transparent;
     pointer-events: none;
     z-index: 5;
+    transition: all var(--transition-fast);
   }
 
   .check-layer-hud {

@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window and floating HUDs",
-  "windows": ["main", "develop-panel", "import-panel", "settings-panel"],
+  "windows": ["main", "develop-panel", "import-panel", "settings-panel", "log-window"],
   "permissions": [
     "core:default",
     "core:window:allow-close",
@@ -13,6 +13,7 @@
     "core:window:allow-set-position",
     "core:window:allow-set-focus",
     "core:window:allow-set-size",
+    "core:window:allow-set-fullscreen",
     "core:window:allow-destroy",
     "core:window:allow-start-dragging",
     "core:webview:allow-create-webview-window",

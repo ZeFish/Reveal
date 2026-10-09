@@ -58,9 +58,6 @@
     onclick={() => onOpen()}
     oncontextmenu={(event) => onContextMenu(event)}
   >
-    {#if source?.icon}
-      <Icon name={source.icon} size="var(--icon-sm)" class="source-icon" />
-    {/if}
     <span class="section-name">{name}</span>
   </button>
   <span class="dir-spacer"></span>
@@ -82,11 +79,11 @@
 
 <style>
   .section {
+    position: relative;
     display: flex;
     align-items: center;
-    padding-block: var(--space-d4);
+    padding: var(--space-d4) var(--sb-pad);
     margin-top: var(--space-d3);
-    box-shadow: var(--shadow-border-top);
     user-select: none;
     font-size: 11px;
     font-weight: 600;
@@ -97,7 +94,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 14px;
+    flex: 0 0 var(--sb-lead);
+    width: var(--sb-lead);
     height: 14px;
   }
   .cat-disc .disc {
@@ -127,15 +125,11 @@
     letter-spacing: 0.05em;
     color: var(--color-muted);
   }
-  :global(.source-icon) {
-    margin-right: var(--space-d4);
-    opacity: 0.7;
-    vertical-align: middle;
-  }
+
   /* The name already takes the free space (flex: 1 above). A second flex: 1 here split it in
      two and cut the name short — "FFP-P…" with room to spare. */
   .dir-spacer {
-    flex: 0 0 0;
+    display: none;
   }
   .section-main {
     min-width: 0;
@@ -144,7 +138,8 @@
     font-variant-numeric: tabular-nums;
     color: var(--color-muted);
     font-size: 10px;
-    margin-right: var(--space-d4);
+    flex: 0 0 auto;
+    text-align: right;
   }
   .add-btn {
     all: unset;
@@ -152,14 +147,31 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 14px;
+    position: absolute;
+    right: var(--sb-pad, var(--space-d2));
+    top: 50%;
+    transform: translateY(-50%);
+    width: 16px;
     height: 14px;
+    opacity: 0;
     border-radius: var(--radius-sm);
     color: var(--color-muted);
   }
   .add-btn:hover {
     color: var(--color-foreground);
     background: var(--color-hover);
+  }
+  /* Reindex / connect replaces the count at the far right while the row is hovered, and stays
+     while it works (the spinner is the only thing to see then). */
+  .section:hover .add-btn,
+  .section:focus-within .add-btn,
+  .add-btn[aria-busy="true"] {
+    opacity: 1;
+  }
+  .section:hover .dir-count,
+  .section:focus-within .dir-count,
+  .section:has(.add-btn[aria-busy="true"]) .dir-count {
+    opacity: 0;
   }
   :global(.spin) {
     animation: spin 1s linear infinite;

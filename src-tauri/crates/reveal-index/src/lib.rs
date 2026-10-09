@@ -317,8 +317,21 @@ impl Index {
     /// Drop a catalogue root and prune every frame beneath it — removing a
     /// library forgets its photos from the index (the files are untouched).
     pub fn remove_root(&self, path: &str) -> Result<usize, IndexError> {
+        let norm_target = normal_form(path);
         let conn = self.conn.lock().unwrap();
+        // Find every root in the DB whose normal_form matches normal_form(path)
+        let matching_roots: Vec<String> = {
+            let mut stmt = conn.prepare("SELECT path FROM roots")?;
+            let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+            rows.flatten()
+                .filter(|r| normal_form(r) == norm_target)
+                .collect()
+        };
+        for r in &matching_roots {
+            conn.execute("DELETE FROM roots WHERE path=?1", [r])?;
+        }
         conn.execute("DELETE FROM roots WHERE path=?1", [path])?;
+
         // Only the photos no remaining root still covers. Roots can nest —
         // "Capture" lived inside "ffp-production" — and deleting everything
         // under the removed path threw away rows the parent still owned:
@@ -327,17 +340,30 @@ impl Index {
         //
         // Prefixes compared with `substr`, not LIKE: `_` and `%` are
         // wildcards to LIKE and perfectly ordinary in a folder name.
-        let n = conn.execute(
-            "DELETE FROM frames
-             WHERE (path = ?1 OR substr(path, 1, length(?1) + 1) = ?1 || '/')
-               AND NOT EXISTS (
-                 SELECT 1 FROM roots r
-                 WHERE frames.path = r.path
-                    OR substr(frames.path, 1, length(r.path) + 1) = r.path || '/'
-               )",
-            [path],
-        )?;
-        Ok(n)
+        let mut to_prune = matching_roots;
+        if !to_prune.iter().any(|p| p == path) {
+            to_prune.push(path.to_string());
+        }
+        let norm_str = norm_target.to_string();
+        if !to_prune.iter().any(|p| p == &norm_str) {
+            to_prune.push(norm_str);
+        }
+
+        let mut total_deleted = 0;
+        for p in to_prune {
+            let n = conn.execute(
+                "DELETE FROM frames
+                 WHERE (path = ?1 OR substr(path, 1, length(?1) + 1) = ?1 || '/')
+                   AND NOT EXISTS (
+                     SELECT 1 FROM roots r
+                     WHERE frames.path = r.path
+                        OR substr(frames.path, 1, length(r.path) + 1) = r.path || '/'
+                   )",
+                [&p],
+            )?;
+            total_deleted += n;
+        }
+        Ok(total_deleted)
     }
 
     /// One registered library, with enough to manage it without opening it.
@@ -626,19 +652,16 @@ impl Index {
                 rows = to_read
                     .into_par_iter()
                     .map(|(path, dir, name, mtime)| {
-                        let has_sidecar = xmps.contains(&format!("{}.xmp", name.to_lowercase()));
-                        let rating = if has_sidecar {
-                            reveal_meta::read(Path::new(&path))
-                                .ok()
-                                .flatten()
-                                .and_then(|s| s.rating)
-                                .unwrap_or(0)
+                        let sidecar = if xmps.contains(&format!("{}.xmp", name.to_lowercase())) {
+                            reveal_meta::read(Path::new(&path)).ok().flatten()
                         } else {
-                            0
+                            None
                         };
+                        let rating = sidecar.as_ref().and_then(|s| s.rating).unwrap_or(0);
                         // One header open for both — two would double the
                         // round trips over a six-figure library for nothing.
-                        let (captured, w, h) = reveal_decode::capture_header(Path::new(&path));
+                        let (captured_raw, w, h) = reveal_decode::capture_header(Path::new(&path));
+                        let captured = sidecar.as_ref().and_then(|s| s.capture_at).or(captured_raw);
                         (path, dir, name, mtime, rating, captured, w, h)
                     })
                     .collect();
@@ -871,6 +894,28 @@ impl Index {
             "UPDATE frames SET rating=?2 WHERE path=?1",
             rusqlite::params![path, rating],
         )?;
+        Ok(())
+    }
+
+    pub fn set_capture_at(&self, path: &str, capture_at: i64) -> Result<(), IndexError> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE frames SET capture_at=?2 WHERE path=?1",
+            rusqlite::params![path, capture_at],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_capture_dates(&self, updates: &[(&str, i64)]) -> Result<(), IndexError> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        for (path, capture_at) in updates {
+            tx.execute(
+                "UPDATE frames SET capture_at=?2 WHERE path=?1",
+                rusqlite::params![path, capture_at],
+            )?;
+        }
+        tx.commit()?;
         Ok(())
     }
 }
@@ -1364,6 +1409,20 @@ mod root_tests {
         let _ = std::fs::remove_file(&db);
     }
 
+    #[test]
+    fn removing_a_root_with_firmlink_or_trailing_slash_removes_it() {
+        let (index, db) = temp_index("firmlink-remove");
+        index.add_root("/Volumes/FFP-SSD-2").unwrap();
+        put(&index, "/Volumes/FFP-SSD-2/photo.RAF");
+        assert_eq!(index.roots().unwrap(), vec!["/Volumes/FFP-SSD-2".to_string()]);
+
+        // Removing with /System/Volumes/Data prefix and trailing slash
+        assert_eq!(index.remove_root("/System/Volumes/Data/Volumes/FFP-SSD-2/").unwrap(), 1);
+        assert!(index.roots().unwrap().is_empty());
+        assert_eq!(count(&index), 0);
+        let _ = std::fs::remove_file(&db);
+    }
+
     // ---- libraries do not nest ---------------------------------------------
 
     #[test]
@@ -1441,6 +1500,25 @@ mod root_tests {
             vec!["/nas/ffp".to_string(), "/nas/elsewhere".to_string()]
         );
         assert_eq!(count(&reopened), 3, "no photo was touched");
+        let _ = std::fs::remove_file(&db);
+    }
+
+    #[test]
+    fn set_capture_date_updates_stored_timestamp() {
+        let (index, db) = temp_index("set-capture-date");
+        index.add_root("/test").unwrap();
+        put(&index, "/test/a.RAF");
+        put(&index, "/test/b.RAF");
+
+        index.set_capture_at("/test/a.RAF", 1791545900).unwrap();
+        index.set_capture_dates(&[("/test/b.RAF", 1791545950)]).unwrap();
+
+        let frames = index.frames("/test", 0).unwrap();
+        let a = frames.iter().find(|f| f.path == "/test/a.RAF").unwrap();
+        let b = frames.iter().find(|f| f.path == "/test/b.RAF").unwrap();
+        assert_eq!(a.capture_at, Some(1791545900));
+        assert_eq!(b.capture_at, Some(1791545950));
+
         let _ = std::fs::remove_file(&db);
     }
 }

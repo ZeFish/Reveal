@@ -516,6 +516,7 @@ pub(crate) async fn developed_preview_jpeg(
     // render it wants is a new one.
 
     let engine = state.0.clone();
+    let thumbs = app.state::<crate::thumb_queue::ThumbQueueState>().0.clone();
     // Clone for the blocking closure so the FULL path survives the move — the
     // sidecar funnel below needs it. Passing only the filename here wrote
     // `DSCF….preview.jpg` into the process CWD (the repo root during dev)
@@ -523,7 +524,9 @@ pub(crate) async fn developed_preview_jpeg(
     let path_owned = path.to_string();
     let recipe_owned = recipe.clone();
     let engine_for_publish = engine.clone();
+    let thumbs_for_render = thumbs.clone();
     let out = tauri::async_runtime::spawn_blocking(move || {
+        let _wire = thumbs_for_render.foreground(&path_owned);
         let source = apple_photos::source(&path_owned)?;
         engine.develop_jpeg(&source, &recipe_owned, max_px).map_err(|e| format!("{e:#}"))
     })
@@ -542,6 +545,7 @@ pub(crate) async fn developed_preview_jpeg(
     if durable {
         let generation = next_publish_generation(path);
         let (app, path, recipe, jpeg) = (app.clone(), path.to_string(), recipe.clone(), out.jpeg.clone());
+        let thumbs_for_publish = thumbs.clone();
         tauri::async_runtime::spawn(async move {
             if !still_wanted_after_quiet(&path, generation).await {
                 return;
@@ -552,7 +556,9 @@ pub(crate) async fn developed_preview_jpeg(
             // the person left Develop from the Crop tab.
             let bytes = if !recipe.apply_crop {
                 let (engine, path, recipe) = (engine_for_publish, path.clone(), recipe.clone());
+                let thumbs_crop = thumbs_for_publish.clone();
                 let cropped = tauri::async_runtime::spawn_blocking(move || {
+                    let _wire = thumbs_crop.foreground(&path);
                     let source = apple_photos::source(&path)?;
                     let mut cropped = recipe;
                     cropped.apply_crop = true;

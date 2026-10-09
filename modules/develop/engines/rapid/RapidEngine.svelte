@@ -357,48 +357,43 @@
     <!-- Pre-LUT stack -->
     <div class="lut-stack-section">
       <div class="frow sub-bar">
-        <span class="lut-subhead">Pre-Lut</span>
+        <span class="din frow-label">Pre-Lut</span>
         <span class="spacer"></span>
-        <button type="button" class="outline small add-lut-btn" onclick={() => onAddLut("pre")}>+ LUT</button>
+        <button type="button" class="ghost small add-lut-btn" onclick={() => onAddLut("pre")}>+ LUT</button>
       </div>
       {#each lutListFor("pre") as layer, idx}
-        <div class="lut-layer-card">
-          <div class="frow layer-row">
-            <select
-              class="panel-select lut-file-pick"
-              value={layer.name}
-              onchange={(e) => onSetLutFile("pre", idx, e.currentTarget.value)}
-            >
-              <option value="">(None)</option>
-              {#each luts as name}
-                <option value={name}>{name}</option>
-              {/each}
-            </select>
-            <button
-              type="button"
-              class="ghost icon-btn remove-lut-btn"
-              onclick={() => onRemoveLut("pre", idx)}
-              title="Remove this LUT layer"
-            >
-              <Icon name="x" size="var(--icon-sm)" />
-            </button>
-          </div>
-          {#if layer.name}
-            <div class="frow opacity-row">
-              <span class="din opacity-label">Opacity</span>
-              <span class="spacer"></span>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={layer.opacity}
-                style="--slider-value: {layer.opacity * 100}%"
-                oninput={(e) => onUpdateLutOpacity("pre", idx, parseFloat(e.currentTarget.value))}
-              />
-              <span class="val mono">{Math.round(layer.opacity * 100)}%</span>
-            </div>
-          {/if}
+        <div class="frow lut-row">
+          <select
+            class="panel-select lut-file-pick"
+            value={layer.name}
+            title={layer.name || "Select a LUT"}
+            onchange={(e) => onSetLutFile("pre", idx, e.currentTarget.value)}
+          >
+            <option value="">(None)</option>
+            {#each luts as name}
+              <option value={name}>{name}</option>
+            {/each}
+          </select>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value={layer.opacity}
+            style="--slider-value: {layer.opacity * 100}%"
+            title={`Opacity: ${Math.round(layer.opacity * 100)}%`}
+            oninput={(e) => onUpdateLutOpacity("pre", idx, parseFloat(e.currentTarget.value))}
+          />
+          <button
+            type="button"
+            class="remove-lut-btn"
+            onclick={() => onRemoveLut("pre", idx)}
+            title={`Opacity: ${Math.round(layer.opacity * 100)}% — click to remove`}
+            aria-label="Remove LUT"
+          >
+            <span class="lut-val mono">{Math.round(layer.opacity * 100)}%</span>
+            <span class="lut-del"><Icon name="x" size="var(--icon-sm)" /></span>
+          </button>
         </div>
       {/each}
     </div>
@@ -418,7 +413,50 @@
   {/if}
 
   <!-- Exposure & Contrast -->
-  <CollapsibleGroup label="Exposure & Contrast">
+  <CollapsibleGroup label="Base">
+      <SliderRow
+        label="Temp"
+        value={getVal("temperature")}
+        min={-50}
+        max={50}
+        hardMin={-100}
+        hardMax={100}
+        parse={(text) => {
+          const kelvin = parseTyped(text);
+          return kelvin === null ? null : kelvinToTemperature(kelvin);
+        }}
+        editText={(v) => String(Math.round(temperatureToKelvin(v)))}
+        step={0.5}
+        neutral={getNeutral(defaults, activeZone, "temperature")}
+        formatter={(v) => formatVal("temperature", v)}
+        onInput={(v) => {
+          setVal("temperature", v);
+          edited(true);
+        }}
+        onChange={(v) => {
+          setVal("temperature", v);
+          edited(false);
+        }}
+        onReset={() => handleReset("temperature")}
+      />
+      <SliderRow
+        label="Tint"
+        value={getVal("tint")}
+        min={-50}
+        max={50}
+        step={0.5}
+        neutral={getNeutral(defaults, activeZone, "tint")}
+        formatter={(v) => formatVal("tint", v)}
+        onInput={(v) => {
+          setVal("tint", v);
+          edited(true);
+        }}
+        onChange={(v) => {
+          setVal("tint", v);
+          edited(false);
+        }}
+        onReset={() => handleReset("tint")}
+      />
     <SliderRow
       label="Exposure"
       value={getVal("exposure_ev")}
@@ -511,6 +549,30 @@
       }}
       onReset={() => handleReset("vibrance")}
     />
+
+  </CollapsibleGroup>
+
+
+  <!-- Detail -->
+  <CollapsibleGroup label="Tones">
+      <SliderRow
+        label="Whites"
+        value={getVal("whites")}
+        min={-100}
+        max={100}
+        step={1}
+        neutral={getNeutral(defaults, activeZone, "whites")}
+        formatter={(v) => formatVal("whites", v)}
+        onInput={(v) => {
+          setVal("whites", v);
+          edited(true);
+        }}
+        onChange={(v) => {
+          setVal("whites", v);
+          edited(false);
+        }}
+        onReset={() => handleReset("whites")}
+      />
     <SliderRow
       label="Highlights"
       value={getVal("highlights")}
@@ -547,24 +609,7 @@
       }}
       onReset={() => handleReset("shadows")}
     />
-    <SliderRow
-      label="Whites"
-      value={getVal("whites")}
-      min={-100}
-      max={100}
-      step={1}
-      neutral={getNeutral(defaults, activeZone, "whites")}
-      formatter={(v) => formatVal("whites", v)}
-      onInput={(v) => {
-        setVal("whites", v);
-        edited(true);
-      }}
-      onChange={(v) => {
-        setVal("whites", v);
-        edited(false);
-      }}
-      onReset={() => handleReset("whites")}
-    />
+
     <SliderRow
       label="Blacks"
       value={getVal("blacks")}
@@ -585,99 +630,9 @@
     />
   </CollapsibleGroup>
 
-  <!-- Tone Curves -->
-  <CollapsibleGroup label="Tone Curves">
-    {#if CURVE_CONTROL}
-    {#if activeZone === "shadows"}
-      <CurveEditor
-        control={CURVE_CONTROL}
-        bind:recipe={recipe.zone_shadows}
-        {edited}
-      />
-    {:else if activeZone === "midtones"}
-      <CurveEditor
-        control={CURVE_CONTROL}
-        bind:recipe={recipe.zone_midtones}
-        {edited}
-      />
-    {:else if activeZone === "highlights"}
-      <CurveEditor
-        control={CURVE_CONTROL}
-        bind:recipe={recipe.zone_highlights}
-        {edited}
-      />
-    {:else}
-      <CurveEditor
-        control={CURVE_CONTROL}
-        bind:recipe
-        {edited}
-      />
-    {/if}
-    {/if}
-  </CollapsibleGroup>
-
-  <!-- Color -->
-  <CollapsibleGroup label="Color">
-    <SliderRow
-      label="Temp"
-      value={getVal("temperature")}
-      min={-50}
-      max={50}
-      hardMin={-100}
-      hardMax={100}
-      parse={(text) => {
-        const kelvin = parseTyped(text);
-        return kelvin === null ? null : kelvinToTemperature(kelvin);
-      }}
-      editText={(v) => String(Math.round(temperatureToKelvin(v)))}
-      step={0.5}
-      neutral={getNeutral(defaults, activeZone, "temperature")}
-      formatter={(v) => formatVal("temperature", v)}
-      onInput={(v) => {
-        setVal("temperature", v);
-        edited(true);
-      }}
-      onChange={(v) => {
-        setVal("temperature", v);
-        edited(false);
-      }}
-      onReset={() => handleReset("temperature")}
-    />
-    <SliderRow
-      label="Tint"
-      value={getVal("tint")}
-      min={-50}
-      max={50}
-      step={0.5}
-      neutral={getNeutral(defaults, activeZone, "tint")}
-      formatter={(v) => formatVal("tint", v)}
-      onInput={(v) => {
-        setVal("tint", v);
-        edited(true);
-      }}
-      onChange={(v) => {
-        setVal("tint", v);
-        edited(false);
-      }}
-      onReset={() => handleReset("tint")}
-    />
-
-    <!-- Multi-band Mixer -->
-    <BandMixer
-      label="Color Bands"
-      bands={COLOR_BANDS}
-      channels={BAND_CHANNELS}
-      readField={readBandField}
-      writeField={writeBandField}
-      resetField={(f) => handleReset(f.id, f.index)}
-      neutralOf={(id, idx) => getNeutral(defaults, activeZone, id, idx)}
-      formatVal={formatVal}
-      {edited}
-    />
-  </CollapsibleGroup>
 
   <!-- Detail -->
-  <CollapsibleGroup label="Detail">
+  <CollapsibleGroup label="Details">
     <SliderRow
       label="Clarity"
       value={getVal("clarity")}
@@ -734,58 +689,58 @@
       />
   </CollapsibleGroup>
 
-  {#if !isZoneActiveMode}
-  <!-- Output (Post-LUT) -->
-  <CollapsibleGroup label="Output (Post-LUT)">
-    <div class="lut-stack-section">
-      <div class="frow sub-bar">
-        <span class="lut-subhead">Post-Lut</span>
-        <span class="spacer"></span>
-        <button type="button" class="outline small add-lut-btn" onclick={() => onAddLut("post")}>+ LUT</button>
-      </div>
-      {#each lutListFor("post") as layer, idx}
-        <div class="lut-layer-card">
-          <div class="frow layer-row">
-            <select
-              class="panel-select lut-file-pick"
-              value={layer.name}
-              onchange={(e) => onSetLutFile("post", idx, e.currentTarget.value)}
-            >
-              <option value="">(None)</option>
-              {#each luts as name}
-                <option value={name}>{name}</option>
-              {/each}
-            </select>
-            <button
-              type="button"
-              class="ghost icon-btn remove-lut-btn"
-              onclick={() => onRemoveLut("post", idx)}
-              title="Remove this LUT layer"
-            >
-              <Icon name="x" size="var(--icon-sm)" />
-            </button>
-          </div>
-          {#if layer.name}
-            <div class="frow opacity-row">
-              <span class="din opacity-label">Opacity</span>
-              <span class="spacer"></span>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={layer.opacity}
-                style="--slider-value: {layer.opacity * 100}%"
-                oninput={(e) => onUpdateLutOpacity("post", idx, parseFloat(e.currentTarget.value))}
-              />
-              <span class="val mono">{Math.round(layer.opacity * 100)}%</span>
-            </div>
-          {/if}
-        </div>
-      {/each}
-    </div>
+
+  <!-- Tone Curves -->
+  <CollapsibleGroup label="Curves">
+    {#if CURVE_CONTROL}
+    {#if activeZone === "shadows"}
+      <CurveEditor
+        control={CURVE_CONTROL}
+        bind:recipe={recipe.zone_shadows}
+        {edited}
+      />
+    {:else if activeZone === "midtones"}
+      <CurveEditor
+        control={CURVE_CONTROL}
+        bind:recipe={recipe.zone_midtones}
+        {edited}
+      />
+    {:else if activeZone === "highlights"}
+      <CurveEditor
+        control={CURVE_CONTROL}
+        bind:recipe={recipe.zone_highlights}
+        {edited}
+      />
+    {:else}
+      <CurveEditor
+        control={CURVE_CONTROL}
+        bind:recipe
+        {edited}
+      />
+    {/if}
+    {/if}
   </CollapsibleGroup>
-  {/if}
+
+
+  <!-- Color -->
+  <CollapsibleGroup label="Colors">
+
+
+    <!-- Multi-band Mixer -->
+    <BandMixer
+      label="Color Bands"
+      bands={COLOR_BANDS}
+      channels={BAND_CHANNELS}
+      readField={readBandField}
+      writeField={writeBandField}
+      resetField={(f) => handleReset(f.id, f.index)}
+      neutralOf={(id, idx) => getNeutral(defaults, activeZone, id, idx)}
+      formatVal={formatVal}
+      {edited}
+    />
+  </CollapsibleGroup>
+
+
 
   <!-- Digital Effects (Global only) -->
   {#if !isZoneActiveMode}
@@ -870,8 +825,8 @@
         label="Grain Amount"
         value={getVal("grain_amount")}
         min={0}
-        max={100}
-        step={1}
+        max={1}
+        step={0.01}
         neutral={getNeutral(defaults, activeZone, "grain_amount")}
         formatter={(v) => formatVal("grain_amount", v)}
         onInput={(v) => {
@@ -889,8 +844,8 @@
         subParam
         value={getVal("grain_roughness")}
         min={0}
-        max={100}
-        step={1}
+        max={1}
+        step={0.01}
         neutral={getNeutral(defaults, activeZone, "grain_roughness")}
         formatter={(v) => formatVal("grain_roughness", v)}
         onInput={(v) => {
@@ -923,6 +878,55 @@
         onReset={() => handleReset("highlight_desat")}
       />
     </CollapsibleGroup>
+  {/if}
+
+
+  {#if !isZoneActiveMode}
+  <!-- Output (Post-LUT) -->
+  <CollapsibleGroup label="Output (Post-LUT)">
+    <div class="lut-stack-section">
+      <div class="frow sub-bar">
+        <span class="din frow-label">Post-Lut</span>
+        <span class="spacer"></span>
+        <button type="button" class="ghost small add-lut-btn" onclick={() => onAddLut("post")}>+ LUT</button>
+      </div>
+      {#each lutListFor("post") as layer, idx}
+        <div class="frow lut-row">
+          <select
+            class="panel-select lut-file-pick"
+            value={layer.name}
+            title={layer.name || "Select a LUT"}
+            onchange={(e) => onSetLutFile("post", idx, e.currentTarget.value)}
+          >
+            <option value="">(None)</option>
+            {#each luts as name}
+              <option value={name}>{name}</option>
+            {/each}
+          </select>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value={layer.opacity}
+            style="--slider-value: {layer.opacity * 100}%"
+            title={`Opacity: ${Math.round(layer.opacity * 100)}%`}
+            oninput={(e) => onUpdateLutOpacity("post", idx, parseFloat(e.currentTarget.value))}
+          />
+          <button
+            type="button"
+            class="remove-lut-btn"
+            onclick={() => onRemoveLut("post", idx)}
+            title={`Opacity: ${Math.round(layer.opacity * 100)}% — click to remove`}
+            aria-label="Remove LUT"
+          >
+            <span class="lut-val mono">{Math.round(layer.opacity * 100)}%</span>
+            <span class="lut-del"><Icon name="x" size="var(--icon-sm)" /></span>
+          </button>
+        </div>
+      {/each}
+    </div>
+  </CollapsibleGroup>
   {/if}
 
   <!-- Zone Reset action if in a zone -->
@@ -1040,12 +1044,19 @@
     display: flex;
     align-items: center;
     gap: var(--space-d3);
+    min-height: 22px;
   }
 
-  .lut-subhead {
-    font-size: 0.72rem;
-    font-family: var(--font-monospace);
-    color: var(--color-muted);
+  .frow-label {
+    width: 7.0rem;
+    flex-shrink: 0;
+    font-size: 0.76rem;
+    color: var(--color-foreground);
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-family: var(--font-interface);
   }
 
   .spacer {
@@ -1054,64 +1065,103 @@
 
   .add-lut-btn {
     font-size: 0.68rem;
-    padding: 2px 6px;
-    height: 20px;
-  }
-
-  .lut-layer-card {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-d4);
-    padding: var(--space-d3);
-    background: var(--color-surface);
+    padding: 1px 6px;
+    height: 18px;
+    line-height: 16px;
+    color: var(--color-muted);
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    cursor: pointer;
     border-radius: var(--radius);
-    box-shadow: var(--shadow-border);
+    transition: color var(--transition-fast), background-color var(--transition-fast);
+  }
+  .add-lut-btn:hover {
+    color: var(--color-foreground);
+    background-color: var(--color-hover);
   }
 
-  .layer-row {
+  .lut-row {
     display: flex;
     align-items: center;
     gap: var(--space-d3);
+    min-height: 22px;
   }
 
   .lut-file-pick {
-    flex: 1;
-    min-width: 0;
+    width: 7.0rem;
+    flex-shrink: 0;
     height: 22px;
     font-size: 0.72rem;
-    background: var(--color-surface-raised);
-    box-shadow: var(--shadow-border);
+    background: var(--color-surface);
+    box-shadow: none;
     border-radius: var(--radius);
     color: var(--color-foreground);
-    padding: 0 var(--space-d3);
-  }
-
-  .remove-lut-btn {
-    padding: 2px;
-    height: 20px;
-    width: 20px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    padding: 0 var(--space-d2);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
     cursor: pointer;
   }
 
-  .opacity-row {
-    display: flex;
+  .lut-row input[type="range"] {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .remove-lut-btn {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 3.2rem;
+    flex-shrink: 0;
+    height: 22px;
+    padding: 0 2px !important;
+    margin: 0 !important;
+    display: inline-flex;
     align-items: center;
-    gap: var(--space-d3);
-  }
-
-  .opacity-label {
-    width: 4rem;
+    justify-content: flex-end;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-family: inherit;
     font-size: 0.72rem;
     color: var(--color-muted);
   }
 
-  .val {
-    width: 2.8rem;
+  .lut-val {
+    font-size: 0.72rem;
+    color: var(--color-muted);
     text-align: right;
-    font-size: 0.72rem;
+    line-height: 1;
+  }
+
+  .lut-del {
+    display: none;
+    align-items: center;
+    justify-content: center;
     color: var(--color-muted);
+    transition: color var(--transition-fast);
+  }
+
+  .lut-row:hover .lut-val {
+    display: none;
+  }
+
+  .lut-row:hover .lut-del {
+    display: inline-flex;
+  }
+
+  .lut-row:has(input[type="range"]:active) .lut-val {
+    display: inline-block !important;
+  }
+
+  .lut-row:has(input[type="range"]:active) .lut-del {
+    display: none !important;
+  }
+
+  .remove-lut-btn:hover .lut-del {
+    color: var(--color-accent);
   }
 </style>

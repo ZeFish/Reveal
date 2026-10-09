@@ -18,6 +18,7 @@ export const fullscreenState = $state({
  * @param {string} [options.currentMode]
  * @param {string | null} [options.photoPath]
  * @param {string | null} [options.imgUrl]
+ * @param {any} [options.recipe]
  * @param {(path: string, version: number) => string} options.previewUrl
  * @param {() => string | undefined} [options.getCurrentFramePath]
  */
@@ -26,6 +27,7 @@ export async function prepareFullscreenFrame(path, {
   currentMode = "cull",
   photoPath = null,
   imgUrl = null,
+  recipe = null,
   previewUrl,
   getCurrentFramePath,
 }) {
@@ -41,11 +43,16 @@ export async function prepareFullscreenFrame(path, {
   if (currentMode === "dev" && photoPath === path && imgUrl?.startsWith("blob:")) return;
 
   try {
-    const sidecar = /** @type {any} */ (await invoke("load_sidecar", { path }));
-    if (!sidecar?.engine_settings) return;
+    let settings = recipe;
+    if (!settings) {
+      const sidecar = /** @type {any} */ (await invoke("load_sidecar", { path }));
+      settings = sidecar?.engine_settings;
+    }
+    if (!settings) return;
+
     const bytes = /** @type {any} */ (await invoke("develop_preview", {
       path,
-      recipe: sidecar.engine_settings,
+      recipe: settings,
       maxPx: 2560,
     }));
     if (!fullscreenState.active || request !== fullscreenState.requestId || getCurrentFramePath?.() !== path) return;

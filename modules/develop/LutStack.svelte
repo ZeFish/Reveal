@@ -1,4 +1,6 @@
 <script>
+  import { Icon } from "@modules/core";
+
   // One LUT stack (pre- OR post-engine) — extracted from EngineRunner so it can
   // live in the dedicated LUT palette. Rapid uses `rapid_pre_luts` /
   // `rapid_post_luts`; deprecated global keys are still read and migrated for
@@ -73,46 +75,47 @@
 
   <div class="lut-stack-section">
     <div class="frow sub-bar">
-      <span class="lut-subhead">
+      <span class="din frow-label">
         {stage === "pre" ? "Pre-Lut" : "Post-Lut"}
       </span>
       <span class="spacer"></span>
-      <button class="outline small add-lut-btn" onclick={addLayer}>+ LUT</button>
+      <button class="ghost small add-lut-btn" onclick={addLayer}>+ LUT</button>
     </div>
 
     {#each layers as layer, idx}
-      <div class="lut-layer-card">
-        <div class="frow layer-row">
-          <select class="lut-file-pick" value={layer.name} onchange={(e) => setFile(idx, e.currentTarget.value)}>
-            <option value="">(None)</option>
-            {#each luts as name}
-              <option value={name}>{name}</option>
-            {/each}
-          </select>
-          <button
-            class="ghost icon-btn remove-lut-btn"
-            onclick={() => removeLayer(idx)}
-            title="Remove this LUT layer"
-          >
-            ×
-          </button>
-        </div>
-        {#if layer.name}
-          <div class="frow opacity-row">
-            <span class="din opacity-label">Opacity</span>
-            <span class="spacer"></span>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value={layer.opacity}
-              style="--slider-value: {layer.opacity * 100}%"
-              oninput={(e) => updateOpacity(idx, parseFloat(e.currentTarget.value))}
-            />
-            <span class="val">{Math.round(layer.opacity * 100)}%</span>
-          </div>
-        {/if}
+      <div class="frow lut-row">
+        <select
+          class="panel-select lut-file-pick"
+          value={layer.name}
+          title={layer.name || "Select a LUT"}
+          onchange={(e) => setFile(idx, e.currentTarget.value)}
+        >
+          <option value="">(None)</option>
+          {#each luts as opt}
+            {@const val = typeof opt === "string" ? opt : opt.name}
+            <option value={val}>{val}</option>
+          {/each}
+        </select>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value={layer.opacity}
+          style="--slider-value: {layer.opacity * 100}%"
+          title={`Opacity: ${Math.round(layer.opacity * 100)}%`}
+          oninput={(e) => updateOpacity(idx, parseFloat(e.currentTarget.value))}
+        />
+        <button
+          type="button"
+          class="remove-lut-btn"
+          onclick={() => removeLayer(idx)}
+          title={`Opacity: ${Math.round(layer.opacity * 100)}% — click to remove`}
+          aria-label="Remove LUT"
+        >
+          <span class="lut-val mono">{Math.round(layer.opacity * 100)}%</span>
+          <span class="lut-del"><Icon name="x" size="var(--icon-sm)" /></span>
+        </button>
       </div>
     {/each}
 </div>
@@ -121,54 +124,122 @@
   .lut-stack-section {
     display: flex;
     flex-direction: column;
-    gap: calc(var(--space-d4) * 2);
+    gap: var(--space-d4);
   }
   .frow {
     display: flex;
     align-items: center;
-    gap: var(--space-d2);
-    min-height: 16px;
+    gap: var(--space-d3);
+    min-height: 22px;
   }
   .sub-bar {
-    gap: var(--space-d2);
+    display: flex;
+    align-items: center;
+    gap: var(--space-d3);
+    min-height: 22px;
+  }
+  .frow-label {
+    width: 7.0rem;
+    flex-shrink: 0;
+    font-size: 0.76rem;
+    color: var(--color-foreground);
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-family: var(--font-interface);
   }
   .spacer {
     flex: 1;
   }
-  .lut-subhead {
-    opacity: 0.85;
-  }
-  .lut-layer-card {
-    background: var(--color-surface);
-    box-shadow: var(--shadow-border);
+  .add-lut-btn {
+    font-size: 0.68rem;
+    padding: 1px 6px;
+    height: 18px;
+    line-height: 16px;
+    color: var(--color-muted);
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    cursor: pointer;
     border-radius: var(--radius);
-    padding: calc(var(--space-d4) * 2);
+    transition: color var(--transition-fast), background-color var(--transition-fast);
+  }
+  .add-lut-btn:hover {
+    color: var(--color-foreground);
+    background-color: var(--color-hover);
+  }
+  .lut-row {
     display: flex;
-    flex-direction: column;
-    gap: calc(var(--space-d4) * 2);
-  }
-  .layer-row {
-    gap: calc(var(--space-d4) * 2);
-  }
-  .din {
-    opacity: 0.7;
-  }
-  .val {
-    min-width: 30px;
-    text-align: right;
-    opacity: 0.8;
-    font-variant-numeric: tabular-nums;
+    align-items: center;
+    gap: var(--space-d3);
+    min-height: 22px;
   }
   .lut-file-pick {
-    flex: 1;
-    padding: var(--space-d8) var(--space-d3);
+    width: 7.0rem;
+    flex-shrink: 0;
+    height: 22px;
+    font-size: 0.72rem;
+    background: var(--color-surface);
+    box-shadow: none;
+    border-radius: var(--radius);
+    color: var(--color-foreground);
+    padding: 0 var(--space-d2);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+    cursor: pointer;
   }
-  input[type="range"] {
+  .lut-row input[type="range"] {
     flex: 1;
     min-width: 0;
   }
-  .icon-btn,
-  .add-lut-btn {
-    padding: var(--space-d8) var(--space-d3);
+  .remove-lut-btn {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 3.2rem;
+    flex-shrink: 0;
+    height: 22px;
+    padding: 0 2px !important;
+    margin: 0 !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.72rem;
+    color: var(--color-muted);
+  }
+  .lut-val {
+    font-size: 0.72rem;
+    color: var(--color-muted);
+    text-align: right;
+    line-height: 1;
+  }
+  .lut-del {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-muted);
+    transition: color var(--transition-fast);
+  }
+  .lut-row:hover .lut-val {
+    display: none;
+  }
+  .lut-row:hover .lut-del {
+    display: inline-flex;
+  }
+  .lut-row:has(input[type="range"]:active) .lut-val {
+    display: inline-block !important;
+  }
+  .lut-row:has(input[type="range"]:active) .lut-del {
+    display: none !important;
+  }
+  .remove-lut-btn:hover .lut-del {
+    color: var(--color-accent);
   }
 </style>

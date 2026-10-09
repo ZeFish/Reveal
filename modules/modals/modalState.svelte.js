@@ -21,6 +21,10 @@ const state = $state({
   catalogOpen: false,
   /** @type {string} */
   catalogContent: "",
+  /** @type {boolean} */
+  adjustDateOpen: false,
+  /** @type {any[]} */
+  adjustDateFrames: [],
 });
 
 export const modalState = {
@@ -47,6 +51,18 @@ export const modalState = {
   },
   set catalogContent(val) {
     state.catalogContent = typeof val === "string" ? val : "";
+  },
+  get adjustDateOpen() {
+    return state.adjustDateOpen;
+  },
+  set adjustDateOpen(val) {
+    state.adjustDateOpen = !!val;
+  },
+  get adjustDateFrames() {
+    return state.adjustDateFrames;
+  },
+  set adjustDateFrames(val) {
+    state.adjustDateFrames = Array.isArray(val) ? val : [];
   },
 
   openShortcuts() {
@@ -76,10 +92,21 @@ export const modalState = {
     state.catalogContent = content ?? "";
   },
 
+  openAdjustDate(/** @type {any[]} */ frames) {
+    state.adjustDateFrames = Array.isArray(frames) ? frames : [frames].filter(Boolean);
+    state.adjustDateOpen = true;
+  },
+  closeAdjustDate() {
+    state.adjustDateOpen = false;
+    state.adjustDateFrames = [];
+  },
+
   reset() {
     state.shortcutsOpen = false;
     state.whatsNew = null;
     state.catalogOpen = false;
     state.catalogContent = "";
+    state.adjustDateOpen = false;
+    state.adjustDateFrames = [];
   },
 };

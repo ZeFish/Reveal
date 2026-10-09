@@ -118,7 +118,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-d2);
-    padding-block-start: var(--space-d2);
+    padding: var(--space-d2) var(--sb-pad) 0;
   }
   .account-id {
     cursor: pointer;

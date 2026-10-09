@@ -3,6 +3,7 @@ import { DEFAULT_PHOTO_SIZE } from "@modules/core";
 import { listen, emit } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "@modules/core";
+import { setupWindowPresence } from "../shell/surfaceController.js";
 
 /** @typedef {{ name: string, label: string }} FilmOrPaper */
 /** @typedef {{ id: string, label: string, control_groups?: any[] }} EngineInfo */
@@ -251,33 +252,10 @@ export function createDevPanelMirror() {
       .then((d) => (defaults = /** @type {any} */ (d)))
       .catch(() => {});
 
-    let pointerInside = false;
-    /** @param {boolean} inside */
-    const setPresence = (inside) => {
-      pointerInside = inside;
-      invoke("set_focus_window_presence", { windowId: "dev-panel", inside }).catch(() => {});
-    };
-    const onFocus = () => {
-      if (pointerInside) setPresence(true);
-    };
-    const onBlur = () => {
-      pointerInside = false;
-      setPresence(false);
-    };
-    const onPointerEnter = () => setPresence(true);
-    const onPointerLeave = () => {
-      pointerInside = false;
-      setPresence(false);
-    };
-    const onPointerMove = () => {
-      if (!pointerInside) setPresence(true);
-    };
-    window.addEventListener("pointerenter", onPointerEnter);
-    window.addEventListener("pointerleave", onPointerLeave);
-    window.addEventListener("pointermove", onPointerMove);
-    document.addEventListener("mouseleave", onPointerLeave);
-    window.addEventListener("focus", onFocus);
-    window.addEventListener("blur", onBlur);
+    const cleanupPresence = setupWindowPresence({
+      invoke,
+      windowId: "dev-panel",
+    });
 
     const FORWARD_KEYS = new Set([
       "g", "s", "d", "z", "Escape", " ", "r", "f", "q",
@@ -307,14 +285,8 @@ export function createDevPanelMirror() {
       /** @type {(fn: any) => void} */
       const callUnlisten = (fn) => fn();
       unlisten.then(callUnlisten);
-      window.removeEventListener("pointerenter", onPointerEnter);
-      window.removeEventListener("pointerleave", onPointerLeave);
-      window.removeEventListener("pointermove", onPointerMove);
-      document.removeEventListener("mouseleave", onPointerLeave);
-      window.removeEventListener("focus", onFocus);
-      window.removeEventListener("blur", onBlur);
+      cleanupPresence();
       window.removeEventListener("keydown", forwardKey);
-      setPresence(false);
     };
   });
 

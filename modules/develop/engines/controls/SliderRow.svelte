@@ -78,15 +78,21 @@
 </script>
 
 <div class="frow" class:sub-param={subParam} class:disabled>
-  <button
-    type="button"
+  <span
+    role="button"
+    tabindex="0"
     class="din frow-label reset-label"
     aria-label={`Reset ${label} to default`}
     title={`${label} — double-click or press Enter/Space to reset`}
-    {disabled}
     onclick={(e) => { if (e.detail === 0) onReset(); }}
     ondblclick={onReset}
-  >{label}</button>
+    onkeydown={(e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        onReset();
+      }
+    }}
+  >{label}</span>
 
   <input
     type="range"
@@ -144,25 +150,44 @@
     padding-left: var(--space-d2);
     box-shadow: inset var(--stroke-width-lg) 0 0 0 var(--color-border);
   }
+  .frow.sub-param .frow-label {
+    width: calc(7.0rem - var(--space-d2));
+  }
   .frow-label {
-    width: 6.2rem;
+    width: 7.0rem;
     flex-shrink: 0;
     font-size: 0.76rem;
     color: var(--color-foreground);
     text-align: left;
     white-space: nowrap;
+    overflow: hidden;
     text-overflow: ellipsis;
+    font-family: var(--font-interface);
   }
   .reset-label {
-    background: none;
+    display: inline-block;
+    text-align: left;
+    background: transparent;
     border: none;
     padding: 0;
+    margin: 0;
     cursor: pointer;
-    font-family: inherit;
+    user-select: none;
+    -webkit-user-select: none;
+    font-weight: normal;
+    line-height: inherit;
     transition: color var(--transition-fast);
   }
   .reset-label:hover {
     color: var(--color-accent);
+  }
+  .frow:has(input[type="range"]:hover) .reset-label,
+  .frow:has(input[type="range"]:active) .reset-label {
+    color: var(--color-accent);
+  }
+  .frow:has(input[type="range"]:hover) .val,
+  .frow:has(input[type="range"]:active) .val {
+    color: var(--color-foreground);
   }
   input[type="range"] {
     flex: 1;

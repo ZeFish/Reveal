@@ -1,5 +1,6 @@
 #![cfg(target_os = "macos")]
 
+use block::ConcreteBlock;
 use core_graphics::geometry::{CGPoint, CGRect, CGSize};
 use objc::{class, msg_send, sel, sel_impl};
 use objc::runtime::{Object, YES};
@@ -78,6 +79,7 @@ pub fn show_below(ns_window: *mut Object) -> Result<(), String> {
         let is_visible: bool = msg_send![panel, isVisible];
         if is_visible {
             let _: () = msg_send![panel, orderWindow: NS_WINDOW_BELOW relativeTo: window_number];
+            animate_alpha(panel, 1.0, 0.25);
         } else {
             let _: () = msg_send![panel, setAlphaValue: 0.0f64];
             let _: () = msg_send![panel, orderWindow: NS_WINDOW_BELOW relativeTo: window_number];
@@ -98,8 +100,30 @@ pub fn hide() {
         if !is_visible {
             return;
         }
-        animate_alpha(panel, 0.0, 0.2);
-        let _: () = msg_send![panel, orderOut: null_mut::<Object>()];
+
+        let panel_ptr = panel as usize;
+        let changes = ConcreteBlock::new(move |context: *mut Object| {
+            let _: () = msg_send![context, setDuration: 0.25f64];
+            let animator: *mut Object = msg_send![panel_ptr as *mut Object, animator];
+            let _: () = msg_send![animator, setAlphaValue: 0.0f64];
+        });
+        let changes = changes.copy();
+
+        let completion = ConcreteBlock::new(move || {
+            let p = panel_ptr as *mut Object;
+            if !p.is_null() {
+                let alpha: f64 = msg_send![p, alphaValue];
+                if alpha <= 0.01 {
+                    let _: () = msg_send![p, orderOut: null_mut::<Object>()];
+                }
+            }
+        });
+        let completion = completion.copy();
+
+        let _: () = msg_send![class!(NSAnimationContext),
+            runAnimationGroup: &*changes
+            completionHandler: &*completion
+        ];
     }
 }
 

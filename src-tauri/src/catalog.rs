@@ -109,6 +109,40 @@ pub(crate) async fn set_rating(
     index.0.set_rating(&path, rating).map_err(|e| e.to_string())
 }
 
+#[derive(Clone, serde::Deserialize)]
+pub(crate) struct CaptureDateUpdate {
+    pub path: String,
+    pub capture_at: i64,
+}
+
+/// Adjust capture date and time for one or more photos.
+/// Updates the local SQLite index immediately, and writes the corrected
+/// timestamp to each photo's XMP sidecar for durability.
+#[tauri::command]
+pub(crate) async fn adjust_capture_date(
+    index: tauri::State<'_, IndexState>,
+    updates: Vec<CaptureDateUpdate>,
+) -> Result<(), String> {
+    let idx = index.0.clone();
+    let updates_clone = updates.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let refs: Vec<(&str, i64)> = updates_clone
+            .iter()
+            .map(|u| (u.path.as_str(), u.capture_at))
+            .collect();
+        idx.set_capture_dates(&refs)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+
+    for update in updates {
+        let photo = crate::photo::Photo::new(update.path);
+        let _ = photo.set_capture_at(update.capture_at);
+    }
+    Ok(())
+}
+
 /// Index (or re-index) the archive root. Synchronous — returns the stats.
 #[tauri::command]
 pub(crate) async fn scan_root(
@@ -521,6 +555,7 @@ pub(crate) async fn add_catalog_root(
     // Libraries do not nest: refuse before registering anything.
     index.0.check_can_add_root(&path).map_err(|e| e.to_string())?;
     index.0.add_root(&path).map_err(|e| e.to_string())?;
+    let _ = app.emit("libraries-changed", ());
     // `scan_root` re-registers (idempotent) and walks the tree.
     scan_root(app, index, path).await
 }
@@ -591,10 +626,13 @@ pub(crate) async fn catalog_roots(
 /// files on disk are untouched — this only removes the library from the index.
 #[tauri::command]
 pub(crate) fn remove_catalog_root(
+    app: tauri::AppHandle,
     index: tauri::State<'_, IndexState>,
     path: String,
 ) -> Result<usize, String> {
-    index.0.remove_root(&path).map_err(|e| e.to_string())
+    let n = index.0.remove_root(&path).map_err(|e| e.to_string())?;
+    let _ = app.emit("libraries-changed", ());
+    Ok(n)
 }
 
 /// Frames of one indexed folder, filtered by minimum rating.

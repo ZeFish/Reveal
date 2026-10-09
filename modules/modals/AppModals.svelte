@@ -7,10 +7,11 @@
   import { UpdateCard, WhatsNewModal } from "@modules/updates";
   import TidyPlanDialog from "../tidy/TidyPlanDialog.svelte";
   import CatalogueNoteModal from "./CatalogueNoteModal.svelte";
-  import { activity, setQueueOpen } from "@modules/core";
+  import AdjustDateModal from "./AdjustDateModal.svelte";
+  import { activity, setQueueOpen, notify, hold } from "@modules/core";
   import { cancelExportQueue as opCancelExportQueue } from "@modules/export";
   import { tidyState } from "@modules/tidy";
-  import { library } from "@modules/library";
+  import { library, patchFrames } from "@modules/library";
   import { invoke } from "@tauri-apps/api/core";
   import { modalState } from "./modalState.svelte.js";
   import { saveCatalogNote as opSaveCatalogNote } from "./modalOperations.js";
@@ -117,4 +118,21 @@
   content={currentCatalogContent}
   onSave={handleSaveCatalog}
   onClose={handleCloseCatalog}
+/>
+
+<AdjustDateModal
+  open={modalState.adjustDateOpen}
+  frames={modalState.adjustDateFrames}
+  onClose={() => modalState.closeAdjustDate()}
+  onAdjust={async (updates) => {
+    try {
+      await invoke("adjust_capture_date", { updates });
+      for (const u of updates) {
+        patchFrames(u.path, { capture_at: u.capture_at });
+      }
+      notify(`Adjusted date for ${updates.length} photo${updates.length > 1 ? "s" : ""}`, 3000);
+    } catch (err) {
+      hold(`Failed to adjust date: ${err}`);
+    }
+  }}
 />

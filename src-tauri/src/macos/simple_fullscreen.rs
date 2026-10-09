@@ -1,4 +1,5 @@
 #![cfg(target_os = "macos")]
+#![allow(dead_code)]
 
 // Lightroom-style borderless fullscreen: hide the menu bar and Dock and let the
 // window cover the whole display in place — no Spaces animation, no new Space.
@@ -17,6 +18,7 @@ use std::sync::Mutex;
 const NS_APP_PRESENTATION_DEFAULT: u64 = 0;
 const NS_APP_PRESENTATION_HIDE_DOCK: u64 = 1 << 1;
 const NS_APP_PRESENTATION_HIDE_MENU_BAR: u64 = 1 << 3;
+const NS_APP_PRESENTATION_FULL_SCREEN: u64 = 1 << 10;
 
 static SAVED_FRAME: Mutex<Option<CGRect>> = Mutex::new(None);
 static SAVED_SHADOW: Mutex<Option<bool>> = Mutex::new(None);
@@ -29,7 +31,9 @@ pub fn enter(ns_window: *mut Object) -> Result<(), String> {
         if app.is_null() {
             return Err("NSApplication unavailable".into());
         }
-        let opts = NS_APP_PRESENTATION_HIDE_DOCK | NS_APP_PRESENTATION_HIDE_MENU_BAR;
+        let opts = NS_APP_PRESENTATION_HIDE_DOCK
+            | NS_APP_PRESENTATION_HIDE_MENU_BAR
+            | NS_APP_PRESENTATION_FULL_SCREEN;
         let _: () = msg_send![app, setPresentationOptions: opts];
 
         if !ns_window.is_null() {

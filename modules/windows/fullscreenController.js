@@ -17,6 +17,7 @@ import {
  *   getCurrentMode: () => string,
  *   getPhotoPath: () => string | null,
  *   getImgUrl: () => string | null,
+ *   getRecipe?: () => any,
  *   previewUrl: (path: string, version: number) => string,
  *   getView: () => any[],
  *   getSel: () => number,
@@ -30,6 +31,7 @@ export function createFullscreenController(deps) {
     getCurrentMode,
     getPhotoPath,
     getImgUrl,
+    getRecipe,
     previewUrl,
     getView,
     getSel,
@@ -46,8 +48,12 @@ export function createFullscreenController(deps) {
       currentMode: getCurrentMode ? getCurrentMode() : "cull",
       photoPath: getPhotoPath ? getPhotoPath() : null,
       imgUrl: getImgUrl ? getImgUrl() : null,
+      recipe: getRecipe ? getRecipe() : null,
       previewUrl,
       getCurrentFramePath: () => {
+        const mode = getCurrentMode ? getCurrentMode() : "cull";
+        const photoPath = getPhotoPath ? getPhotoPath() : null;
+        if (mode === "dev" && photoPath) return photoPath;
         const view = getView ? getView() : [];
         const sel = getSel ? getSel() : 0;
         return view[sel]?.path;
@@ -56,9 +62,14 @@ export function createFullscreenController(deps) {
   }
 
   function enterFullscreen() {
+    const mode = getCurrentMode ? getCurrentMode() : "cull";
+    const photoPath = getPhotoPath ? getPhotoPath() : null;
+    const frames = getLibraryFrames ? getLibraryFrames() : [];
     const view = getView ? getView() : [];
     const sel = getSel ? getSel() : 0;
-    const frame = view[sel];
+    const frame = (mode === "dev" && photoPath)
+      ? (frames.find((item) => item.path === photoPath) || { path: photoPath, name: photoPath.split("/").pop() })
+      : view[sel];
     if (!frame) return;
     return opEnterFullscreen({
       frame,

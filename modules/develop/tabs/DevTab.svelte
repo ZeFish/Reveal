@@ -69,9 +69,6 @@
   </div>
 
   <div class="pane-scroll">
-    {#if loading && developEngine}
-      <p class="loading-note" role="status">Loading the photo — the controls wake up when it is ready.</p>
-    {/if}
     <div class="engine-scope" class:inactive={!developEngine} inert={loading && !!developEngine}>
       {#if activeEngine}
         <EngineRunner
@@ -130,20 +127,15 @@
     gap: calc(var(--space-d4) * 3);
   }
 
+  :global(.group-controls .scopes) {
+      margin-bottom: var(--space-d2);
+  }
+
 
   .sec-body {
     display: flex;
     flex-direction: column;
     gap: 0;
-  }
-
-
-  /* While the photo loads the zone is `inert`: the framework dims it and blocks it, no rule here. */
-  .loading-note {
-    margin: 0;
-    padding: var(--space-d4) var(--space-d2) 0;
-    color: var(--color-muted);
-    font-size: 0.72rem;
   }
 
   /* Segmented control for the engine switch */

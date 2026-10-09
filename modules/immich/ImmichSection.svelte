@@ -121,11 +121,11 @@
 
 <style>
   .section {
+    position: relative;
     display: flex;
     align-items: center;
-    padding: var(--space-d4) var(--space-d2);
+    padding: var(--space-d4) var(--sb-pad, var(--space-d2));
     margin-top: var(--space-d3);
-    box-shadow: var(--shadow-border-top);
     user-select: none;
     font-size: 11px;
     font-weight: 600;
@@ -136,7 +136,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 14px;
+    flex: 0 0 var(--sb-lead, 14px);
+    width: var(--sb-lead, 14px);
     height: 14px;
   }
   .cat-disc .disc {
@@ -167,13 +168,14 @@
     color: var(--color-muted);
   }
   .dir-spacer {
-    flex: 1;
+    display: none;
   }
   .dir-count {
     font-variant-numeric: tabular-nums;
     color: var(--color-muted);
     font-size: 10px;
-    margin-right: var(--space-d4);
+    flex: 0 0 auto;
+    text-align: right;
   }
   .add-btn {
     all: unset;
@@ -181,14 +183,31 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 14px;
+    position: absolute;
+    right: var(--sb-pad, var(--space-d2));
+    top: 50%;
+    transform: translateY(-50%);
+    width: 16px;
     height: 14px;
+    opacity: 0;
     border-radius: var(--radius-sm);
     color: var(--color-muted);
   }
   .add-btn:hover {
     color: var(--color-foreground);
     background: var(--color-hover);
+  }
+  /* Reindex / connect replaces the count at the far right while the row is hovered, and stays
+     while it works (the spinner is the only thing to see then). */
+  .section:hover .add-btn,
+  .section:focus-within .add-btn,
+  .add-btn[aria-busy="true"] {
+    opacity: 1;
+  }
+  .section:hover .dir-count,
+  .section:focus-within .dir-count,
+  .section:has(.add-btn[aria-busy="true"]) .dir-count {
+    opacity: 0;
   }
   :global(.spin) {
     animation: spin 1s linear infinite;

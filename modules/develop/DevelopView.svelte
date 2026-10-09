@@ -133,6 +133,15 @@
   let flipH = $derived(recipe?.flip_h ? -1 : 1);
   let flipV = $derived(recipe?.flip_v ? -1 : 1);
   let isCropping = $derived(showCropOverlay);
+
+  // How the picture sits in its mat. The mat's box is sized for the photo but carries padding
+  // (and some engines size a box with padding by the content only), so the picture's own box is
+  // a few pixels off the photo's ratio: `contain` left a band of mat above and below (or at the
+  // sides) and the photo's corners stopped short of the frame's curve. In the frame view the
+  // picture covers its box instead: the crop is the width of that band, a pixel or two in a
+  // thousand, and the corners are the frame's own. Mid-crop it stays `contain`: there every
+  // edge of the picture has to be seen where it really is.
+  let pictureFit = $derived(objectFit === "contain" && zoomMode === "frame" && !isCropping ? "cover" : objectFit);
   let rotate = $derived(isCropping ? (recipe?.crop_angle || 0) : 0);
 
   // Right to left, as the engine does it: the picture is turned (straighten), then mirrored.
@@ -147,7 +156,7 @@
   let cropViewTransition = $state("");
 
   let matStyle = $derived(
-    `${frameCap} ${cropAspect ? `aspect-ratio: ${cropAspect};` : ""} object-fit: ${objectFit}; transform: ${
+    `${frameCap} ${cropAspect ? `aspect-ratio: ${cropAspect};` : ""} object-fit: ${pictureFit}; transform: ${
       isCropping && cropViewTransform ? `${cropViewTransform} ` : ""
     }${transformStr};${isCropping && cropViewTransition ? ` transition: ${cropViewTransition};` : ""}`
   );
@@ -396,6 +405,7 @@
   {#if effectiveCheckLayer !== "none" && !imgFailed}
     <CheckLayerOverlay
       {matStyle}
+      {stableStyle}
       {effectiveCheckLayer}
       {zoneMask}
       {getSourcePixelData}
@@ -477,11 +487,13 @@
   }
 
   /* The photo as shot, exactly over the developed one: same box, nothing of its own. */
-  .photo-mat.before-layer {
+  .photo-mat.before-layer,
+  :global(.photo-mat.clip-overlay) {
     position: absolute;
     z-index: 6;
     pointer-events: none;
     background: transparent;
+    box-shadow: none;
   }
   .before-chip {
     position: absolute;

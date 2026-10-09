@@ -39,6 +39,8 @@
     onDragStart = () => {},
     scrollTop = 0,
     onScroll = () => {},
+    /** The top bar floats over the grid: the first row starts below it and the rows scroll under it. */
+    underRail = false,
     /** @type {Map<number, {id: string, text: string}[]>} row (-1 = above the first) → paragraphs anchored there */
     gridProseByRow = new Map(),
     onSaveProse = () => {},
@@ -54,6 +56,20 @@
   const safeViewW = $derived(viewW > 0 ? viewW : 1200);
   const safeViewH = $derived(viewH > 0 ? viewH : 700);
 
+  // How tall that bar is (a theme token, so read where it is defined): the grid keeps this much
+  // room above its first row, and every position below is measured from the end of it.
+  let inset = $state(0);
+  $effect(() => {
+    if (!underRail || typeof document === "undefined") {
+      inset = 0;
+      return;
+    }
+    const px = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--titlebar-height"));
+    inset = Number.isFinite(px) ? px : 42;
+  });
+  /** Where the scroll is, counted from the end of the bar. */
+  const scrolled = $derived(Math.max(0, top - inset));
+
   const BUFFER_ROWS = 3;
   const gap = $derived(Math.round(16 * marginScale));
   const cellW = $derived.by(() => {
@@ -66,11 +82,11 @@
   const virtual = $derived(layout !== "masonry");
 
   const firstRow = $derived(
-    virtual ? Math.max(0, Math.floor(top / rowPitch) - BUFFER_ROWS) : 0,
+    virtual ? Math.max(0, Math.floor(scrolled / rowPitch) - BUFFER_ROWS) : 0,
   );
   const lastRow = $derived(
     virtual
-      ? Math.min(totalRows - 1, Math.ceil((top + safeViewH) / rowPitch) + BUFFER_ROWS)
+      ? Math.min(totalRows - 1, Math.ceil((scrolled + safeViewH) / rowPitch) + BUFFER_ROWS)
       : totalRows - 1,
   );
   const start = $derived(virtual ? firstRow * cols : 0);
@@ -205,7 +221,7 @@
 
   // Parent-driven scroll restore (per-folder memory).
   $effect(() => {
-    const limit = virtual ? Math.max(0, totalRows * rowPitch + 64 - safeViewH) : Infinity;
+    const limit = virtual ? Math.max(0, totalRows * rowPitch + 64 + inset - safeViewH) : Infinity;
     const target = Math.max(0, Math.min(scrollTop, limit));
     if (gridElement && (Math.abs(gridElement.scrollTop - target) > 2 || top !== target)) {
       isProgrammaticScroll = true;
@@ -239,11 +255,12 @@
       // selection changes should pull a manually scrolled grid back to a cell.
       if ((initial && scrollTop > 0) || !virtual || !frames.length || focusedIndex < 0) return;
       const row = Math.floor(focusedIndex / cols);
-      const y0 = row * rowPitch;
+      const y0 = inset + row * rowPitch;
       const y1 = y0 + rowH + gap;
       const viewportHeight = safeViewH;
       const st = element.scrollTop;
-      const target = y0 < st ? y0 : y1 > st + viewportHeight ? y1 - viewportHeight : null;
+      // The top `inset` of the viewport is under the bar: a row there is not visible.
+      const target = y0 < st + inset ? y0 - inset : y1 > st + viewportHeight ? y1 - viewportHeight : null;
       if (target === null) return;
       isProgrammaticScroll = true;
       top = target;
@@ -285,12 +302,13 @@
   bind:clientHeight={viewH}
   bind:this={gridElement}
   onscroll={handleScroll}
+  style="scroll-padding-top: {inset}px"
 >
   <div
     class="photo-grid"
     class:masonry={layout === "masonry"}
     style="--cols: {cols}; --gap: {gap}px; --cellw: {cellW}px; --cellW: {cellW}px; padding-top: {gap / 2 +
-      padTop}px; padding-bottom: {64 + padBottom}px"
+      padTop + inset}px; padding-bottom: {64 + padBottom}px"
   >
     {#snippet cell(/** @type {PhotoFrame} */ f, /** @type {number} */ i)}
       <PhotoCell

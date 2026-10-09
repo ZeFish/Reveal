@@ -111,58 +111,58 @@
   style="grid-template-columns: {showDockedPanel ? '1fr 22rem' : '1fr'};"
   onmousedown={onStartWindowDrag}
 >
-  <DevelopView
-    {picked}
-    imgUrl={imgUrl ?? undefined}
-    useCanvas={developState.useCanvas}
-    canvasVersion={developState.canvasVersion}
-    showClipping={developState.showClipping}
-    checkLayer={developState.checkLayer}
-    bind:zoneMask={developState.zoneMaskPreview}
-    onSelectCheckLayer={devController.toggleCheckLayer}
-    caption={developState.caption}
-    showCaption={developState.showCaption}
-    recipe={developState.recipe}
-    renderAspect={developState.renderAspect}
-    bind:canvasEl={developState.canvasEl}
-    bind:imgFailed={developState.imgFailed}
-    bind:histogram={developState.histogram}
-    bind:scopes={developState.scopes}
-    {status}
-    inflight={developState.inflight}
-    pendingPx={developState.pendingPx}
-    {zoomMode}
-    {panning}
-    developPhotoPercent={developState.developPhotoPercent}
-    {sourceOffline}
-    showBefore={developState.showBefore}
-    {beforeUrl}
-    {onPhotoPointerDown}
-    {onPhotoPointerMove}
-    {onPhotoPointerUp}
-    showCropOverlay={showDockedPanel && developState.dockedActiveTab === "crop"}
-    {onCropChange}
-  />
-  {#if photoPath && !developState.dockedActiveTab?.startsWith("crop")}
-    <!-- Centred under the photo, not under the whole window: the docked panel takes the
-         right-hand 22rem. -->
-    <div class="marks-slot" style="right: {showDockedPanel ? '22rem' : '0'};">
-      <PhotoMarks
-        rating={currentRating}
-        {inStory}
-        readOnly={photoPath.startsWith("apple-photos://")}
-        {onRate}
-        {onToggleStory}
-        comparing={developState.showBefore}
-        {onCompareDown}
-        {onCompareUp}
-        checkLayer={developState.checkLayer !== "none" ? developState.checkLayer : developState.showClipping ? "clipping" : "none"}
-        onToggleCheckLayer={() => devController.toggleCheckLayer()}
-        showCaption={developState.showCaption}
-        onToggleCaption={devController.dockedToggleCaptionOverlay}
-      />
-    </div>
-  {/if}
+  <div class="stage">
+    <DevelopView
+      {picked}
+      imgUrl={imgUrl ?? undefined}
+      useCanvas={developState.useCanvas}
+      canvasVersion={developState.canvasVersion}
+      showClipping={developState.showClipping}
+      checkLayer={developState.checkLayer}
+      bind:zoneMask={developState.zoneMaskPreview}
+      onSelectCheckLayer={devController.toggleCheckLayer}
+      caption={developState.caption}
+      showCaption={developState.showCaption}
+      recipe={developState.recipe}
+      renderAspect={developState.renderAspect}
+      bind:canvasEl={developState.canvasEl}
+      bind:imgFailed={developState.imgFailed}
+      bind:histogram={developState.histogram}
+      bind:scopes={developState.scopes}
+      {status}
+      inflight={developState.inflight}
+      pendingPx={developState.pendingPx}
+      {zoomMode}
+      {panning}
+      developPhotoPercent={developState.developPhotoPercent}
+      {sourceOffline}
+      showBefore={developState.showBefore}
+      {beforeUrl}
+      {onPhotoPointerDown}
+      {onPhotoPointerMove}
+      {onPhotoPointerUp}
+      showCropOverlay={showDockedPanel && developState.dockedActiveTab === "crop"}
+      {onCropChange}
+    />
+    {#if photoPath && !developState.dockedActiveTab?.startsWith("crop")}
+      <div class="marks-slot">
+        <PhotoMarks
+          rating={currentRating}
+          {inStory}
+          readOnly={photoPath.startsWith("apple-photos://")}
+          {onRate}
+          {onToggleStory}
+          comparing={developState.showBefore}
+          {onCompareDown}
+          {onCompareUp}
+          checkLayer={developState.checkLayer !== "none" ? developState.checkLayer : developState.showClipping ? "clipping" : "none"}
+          onToggleCheckLayer={() => devController.toggleCheckLayer()}
+          showCaption={developState.showCaption}
+          onToggleCaption={devController.dockedToggleCaptionOverlay}
+        />
+      </div>
+    {/if}
+  </div>
   {#if showDockedPanel}
     <div class="docked-panel-frame pane">
       <DevelopPanel
@@ -232,14 +232,32 @@
     border-radius: var(--window-radius);
   }
 
+  .stage {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+  }
+
   .marks-slot {
     position: absolute;
     left: 0;
+    right: 0;
     bottom: 12px;
     z-index: 8;
     display: flex;
     justify-content: center;
     pointer-events: none;
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+  }
+
+  .stage:hover .marks-slot,
+  .stage:focus-within .marks-slot {
+    opacity: 1;
   }
 
   .docked-panel-frame {

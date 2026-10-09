@@ -17,8 +17,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
-use reveal_decode::{DecoderRegistry, Primaries, RawDecoder};
-use serde::{Deserialize, Serialize};
+use reveal_decode::{DecoderRegistry, RawDecoder};
 use spektrafilm_core::params::RuntimeParams;
 use spektrafilm_core::profile;
 use spektrafilm_gpu::ComputeBackend;
@@ -40,582 +39,20 @@ pub use rapid::develop_rapid;
 pub use rapid::RapidEngine;
 pub use spektra::SpektraEngine;
 
+pub mod color;
+pub use color::*;
+pub mod gates;
+pub(crate) use gates::Gates;
+pub mod output;
+pub use output::*;
+pub mod parked;
+pub use parked::*;
+pub mod recipe;
+pub use recipe::*;
+pub mod transform;
+pub use transform::*;
+
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-
-/// The reference recipe stocks — same defaults the Swift app hardcoded.
-pub const DEFAULT_FILM: &str = "kodak_gold_200";
-pub const DEFAULT_PAPER: &str = "kodak_portra_endura";
-
-fn default_engine() -> String {
-    "spektra".into()
-}
-
-/// A develop recipe — the full user-facing parameter surface. This struct
-/// IS the persisted `reveal:EngineSettings` schema (serde JSON), so field
-/// names are the contract with the sidecars.
-///
-/// Scale conventions: 1.0 = the spektrafilm reference behavior, 0 = off.
-#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
-#[serde(default)]
-pub struct Recipe {
-    #[serde(default = "default_engine")]
-    pub engine: String,
-
-    pub film: String,
-    pub paper: String,
-    /// Manual exposure compensation, EV. Applies on top of auto-exposure
-    /// when that is on (spektrafilm semantics).
-    pub exposure_ev: f32,
-    /// Center-weighted auto exposure (the Python reference's default).
-    pub auto_exposure: bool,
-    /// Enlarger print exposure, EV (0 = the auto-normalized print).
-    pub print_exposure_ev: f32,
-    /// Local contrast prepared for the film, 0 (off) to 1 (the full recipe): see `film_prep`.
-    #[serde(default)]
-    pub film_prep: f32,
-    /// Enlarger filter shifts around the paper's calibrated neutral.
-    pub y_shift: f32,
-    pub m_shift: f32,
-    pub film_format_mm: f32,
-    /// Grain intensity: scales the physical particle area (0 = off).
-    pub grain: f32,
-    /// Halation + in-emulsion scatter strength (0 = off).
-    pub halation: f32,
-    /// Halation spatial scale (bigger = wider glow).
-    pub halation_size: f32,
-    /// Print-stage diffusion (Black Pro-Mist) strength; 0 = off.
-    #[serde(default = "default_diffusion")]
-    pub diffusion: f32,
-    /// Scanner unsharp-mask amount scale.
-    pub sharpen: f32,
-    /// Scanner glare (stochastic; harness turns it off for determinism).
-    pub glare: bool,
-    /// Glare bloom strength, applied to both film and print stages.
-    #[serde(default = "default_glare_percent")]
-    pub glare_percent: f32,
-    /// Glare bloom character: 0 = smooth, 1 = rough/textured.
-    #[serde(default = "default_glare_roughness")]
-    pub glare_roughness: f32,
-    /// Glare bloom radius.
-    #[serde(default = "default_glare_blur")]
-    pub glare_blur: f32,
-    /// B&W development time, minutes (push/pull processing). 0 = auto (the
-    /// profile's floor-middle family entry). The pipeline snaps whatever
-    /// value is given to the nearest entry in the film's own family, so any
-    /// in-range value is safe — ignored entirely by colour profiles.
-    #[serde(default)]
-    pub development_time_min: f32,
-    /// Global density-curve contrast adjustment (0 = neutral), applied to
-    /// both film and print stages as `1.0 + density_gamma`.
-    #[serde(default)]
-    pub density_gamma: f32,
-
-    /// Pre-flash: a small fogging exposure onto the print before the main
-    /// exposure, lifting shadow density to compress contrast — a classic
-    /// darkroom technique for a high-contrast negative. 0 = off
-    /// (spektrafilm-rs's own default). Precomputed once at pipeline
-    /// construction (`compute_preflash_raw`), not re-derived on a cache hit —
-    /// same trap as the Y/M filters and development_time before it, so this
-    /// must be part of `pipeline_for`'s rebuild key in spektra.rs.
-    #[serde(default)]
-    pub preflash_exposure: f32,
-    #[serde(default)]
-    pub preflash_y_shift: f32,
-    #[serde(default)]
-    pub preflash_m_shift: f32,
-
-    /// DIR-couplers: inter-layer dye color interaction during development —
-    /// real film chemistry, not a stylistic filter. spektrafilm-rs defaults
-    /// this ON; `dir_couplers_active` is the opt-OUT, everything else here
-    /// only matters while it's on.
-    #[serde(default = "default_true")]
-    pub dir_couplers_active: bool,
-    #[serde(default = "default_dir_couplers_amount")]
-    pub dir_couplers_amount: f32,
-    #[serde(default = "default_dir_couplers_diffusion_size")]
-    pub dir_couplers_diffusion_size: f32,
-    #[serde(default = "default_dir_couplers_diffusion_tail")]
-    pub dir_couplers_diffusion_tail: f32,
-    #[serde(default = "default_dir_couplers_tail_weight")]
-    pub dir_couplers_tail_weight: f32,
-
-    // Tonal controls (Chantier 5)
-    pub whites: f32,
-    pub highlights: f32,
-    pub midtones: f32,
-    pub shadows: f32,
-    pub rolloff: f32,
-
-    // Rapid Engine digital controls
-    pub contrast: f32,
-    pub saturation: f32,
-    pub temperature: f32,
-    pub tint: f32,
-    /// Old recipes only: the LogC switch that the encoding menu replaced. Read through
-    /// `Recipe::encoding`, never written again.
-    #[serde(default)]
-    pub use_logc: bool,
-    /// The tone, in percent, where the Shadows mask has fallen to nothing (and the Highlights
-    /// mask begins): 50 splits the tones into three parts that never overlap, 100 stretches
-    /// each mask across the whole range. See `rapid.rs::zone_weights`.
-    #[serde(default = "default_zone_reach")]
-    pub zone_reach: f32,
-    /// The format the LUT stacks work in; see `encoding.rs`.
-    #[serde(default)]
-    pub lut_encoding: LutEncoding,
-    #[serde(default = "default_agx_look")]
-    pub agx_look: String,
-    pub hsl_hue: Vec<f32>,
-    pub hsl_sat: Vec<f32>,
-    pub hsl_lum: Vec<f32>,
-    pub shadows_tint: [f32; 3],
-    pub midtones_tint: [f32; 3],
-    pub highlights_tint: [f32; 3],
-
-    /// The three tonal zones. Each is a luminosity mask carrying a full set of
-    /// the same adjustments as the global ones, in the same units, applied on
-    /// top of the global result (see `Layers` in rapid.rs). A zone left at its
-    /// defaults costs nothing.
-    #[serde(default)]
-    pub zone_shadows: ZoneAdjustments,
-    #[serde(default)]
-    pub zone_midtones: ZoneAdjustments,
-    #[serde(default)]
-    pub zone_highlights: ZoneAdjustments,
-
-    // Expose all RapidRaw sliders
-    pub brightness: f32,
-    pub blacks: f32,
-    pub vibrance: f32,
-    pub clarity: f32,
-    pub dehaze: f32,
-    pub structure: f32,
-    pub vignette_amount: f32,
-    #[serde(default = "default_vignette_midpoint")]
-    pub vignette_midpoint: f32,
-    #[serde(default = "default_vignette_roundness")]
-    pub vignette_roundness: f32,
-    #[serde(default = "default_vignette_feather")]
-    pub vignette_feather: f32,
-    pub grain_amount: f32,
-    #[serde(default = "default_grain_roughness")]
-    pub grain_roughness: f32,
-    /// Strength of the highlight desaturation rolloff in AgX tonemapping
-    /// (0 = blown highlights keep full saturation, 1 = fully neutral).
-    #[serde(default = "default_highlight_desat")]
-    pub highlight_desat: f32,
-
-    /// Display-referred tone curves, as control points in 0..1 (x = input,
-    /// y = output). `curve_luma` moves all three channels together; the per
-    /// channel ones run after it. Two points at the corners = identity, and
-    /// the renderer skips the stage entirely in that case, so the default
-    /// costs nothing. Serde defaults keep every sidecar written before
-    /// curves existed loading unchanged.
-    #[serde(default = "default_curve")]
-    pub curve_luma: Vec<[f32; 2]>,
-    #[serde(default = "default_curve")]
-    pub curve_r: Vec<[f32; 2]>,
-    #[serde(default = "default_curve")]
-    pub curve_g: Vec<[f32; 2]>,
-    #[serde(default = "default_curve")]
-    pub curve_b: Vec<[f32; 2]>,
-
-    // User `.cube` LUTs applied to the raw scene-linear input in Rapid engine only,
-    /// before exposure and tone controls — a creative pre-grade for digital RAW.
-    /// Spektra ignores these. Stacked in order.
-    #[serde(default)]
-    pub rapid_pre_luts: Vec<LutLayer>,
-    /// User `.cube` LUTs applied after Rapid tone mapping (display-encoded), as a
-    /// finishing pass. Spektra ignores these. Stacked in order.
-    #[serde(default)]
-    pub rapid_post_luts: Vec<LutLayer>,
-
-    // Crop & Orientation controls
-    #[serde(default)]
-    pub crop_x: f32,
-    #[serde(default)]
-    pub crop_y: f32,
-    #[serde(default = "default_crop_dim")]
-    pub crop_w: f32,
-    #[serde(default = "default_crop_dim")]
-    pub crop_h: f32,
-    #[serde(default = "default_crop_aspect")]
-    pub crop_aspect: String,
-    #[serde(default)]
-    pub crop_angle: f32,
-    #[serde(default)]
-    pub flip_h: bool,
-    #[serde(default)]
-    pub flip_v: bool,
-    #[serde(default = "default_true")]
-    pub apply_crop: bool,
-
-    // Deprecated: kept for backward compatibility during migration.
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub pre_luts: Vec<LutLayer>,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub post_luts: Vec<LutLayer>,
-}
-
-fn default_crop_dim() -> f32 {
-    1.0
-}
-
-fn default_crop_aspect() -> String {
-    "original".to_string()
-}
-
-fn default_zone_reach() -> f32 {
-    50.0
-}
-
-fn default_agx_look() -> String {
-    "base".to_string()
-}
-
-fn default_diffusion() -> f32 {
-    0.75
-}
-
-// Match spektrafilm-rs's `GlareParams` defaults so leaving these sliders
-// untouched reproduces the engine's existing look exactly.
-fn default_glare_percent() -> f32 {
-    0.03
-}
-fn default_glare_roughness() -> f32 {
-    0.7
-}
-fn default_glare_blur() -> f32 {
-    0.5
-}
-
-fn default_vignette_midpoint() -> f32 {
-    0.5
-}
-fn default_vignette_roundness() -> f32 {
-    0.5
-}
-fn default_vignette_feather() -> f32 {
-    0.5
-}
-fn default_grain_roughness() -> f32 {
-    0.12
-}
-fn default_curve() -> Vec<[f32; 2]> {
-    crate::curves::IDENTITY.to_vec()
-}
-
-fn default_highlight_desat() -> f32 {
-    0.4
-}
-fn default_true() -> bool {
-    true
-}
-// spektrafilm-rs's own DirCouplersParams::default() values — kept identical
-// so a fresh recipe (before anyone touches these sliders) renders exactly
-// as it always has, DIR-couplers included, since Reveal never zeroed it out.
-fn default_dir_couplers_amount() -> f32 {
-    1.0
-}
-fn default_dir_couplers_diffusion_size() -> f32 {
-    20.0
-}
-fn default_dir_couplers_diffusion_tail() -> f32 {
-    200.0
-}
-fn default_dir_couplers_tail_weight() -> f32 {
-    0.06
-}
-
-/// One layer of a LUT stack: a `.cube` file (by name, resolved against the
-/// user's LUTs folder) blended in at `opacity` (0 = no effect, 1 = full).
-#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
-pub struct LutLayer {
-    pub name: String,
-    #[serde(default = "default_lut_opacity")]
-    pub opacity: f32,
-}
-
-fn default_lut_opacity() -> f32 {
-    1.0
-}
-
-/// A tonal zone (shadows, midtones or highlights): a luminosity mask carrying
-/// the same adjustments as the global ones — same fields, same units. Applied on
-/// top of the global result and blended by `zone_weights`. Image-level stages
-/// (input encoding, AgX look, vignette, grain, LUT stacks) stay global.
-#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, Default)]
-pub struct ZoneAdjustments {
-    #[serde(default)]
-    pub exposure_ev: f32,
-    #[serde(default)]
-    pub contrast: f32,
-    #[serde(default)]
-    pub brightness: f32,
-    #[serde(default)]
-    pub temperature: f32,
-    #[serde(default)]
-    pub tint: f32,
-    #[serde(default)]
-    pub saturation: f32,
-    #[serde(default)]
-    pub vibrance: f32,
-    #[serde(default)]
-    pub whites: f32,
-    #[serde(default)]
-    pub highlights: f32,
-    #[serde(default)]
-    pub midtones: f32,
-    #[serde(default)]
-    pub shadows: f32,
-    #[serde(default)]
-    pub blacks: f32,
-    #[serde(default)]
-    pub clarity: f32,
-    #[serde(default)]
-    pub structure: f32,
-    #[serde(default)]
-    pub dehaze: f32,
-    #[serde(default)]
-    pub hsl_hue: Vec<f32>,
-    #[serde(default)]
-    pub hsl_sat: Vec<f32>,
-    #[serde(default)]
-    pub hsl_lum: Vec<f32>,
-    #[serde(default)]
-    pub curve_luma: Vec<[f32; 2]>,
-    #[serde(default)]
-    pub curve_r: Vec<[f32; 2]>,
-    #[serde(default)]
-    pub curve_g: Vec<[f32; 2]>,
-    #[serde(default)]
-    pub curve_b: Vec<[f32; 2]>,
-}
-
-impl ZoneAdjustments {
-    pub fn is_active(&self) -> bool {
-        self.exposure_ev != 0.0
-            || self.contrast != 0.0
-            || self.brightness != 0.0
-            || self.temperature != 0.0
-            || self.tint != 0.0
-            || self.saturation != 0.0
-            || self.vibrance != 0.0
-            || self.whites != 0.0
-            || self.highlights != 0.0
-            || self.midtones != 0.0
-            || self.shadows != 0.0
-            || self.blacks != 0.0
-            || self.clarity != 0.0
-            || self.structure != 0.0
-            || self.dehaze != 0.0
-            || self.hsl_hue.iter().any(|&v| v != 0.0)
-            || self.hsl_sat.iter().any(|&v| v != 0.0)
-            || self.hsl_lum.iter().any(|&v| v != 0.0)
-            || !self.curve_luma.is_empty()
-            || !self.curve_r.is_empty()
-            || !self.curve_g.is_empty()
-            || !self.curve_b.is_empty()
-    }
-}
-
-impl Recipe {
-    /// The format the LUT stacks work in. A recipe saved before the menu carries only the
-    /// LogC switch: it reads as LogC3.
-    pub fn encoding(&self) -> LutEncoding {
-        match (self.lut_encoding, self.use_logc) {
-            (LutEncoding::Display, true) => LutEncoding::LogC3,
-            (chosen, _) => chosen,
-        }
-    }
-}
-
-impl Default for Recipe {
-    fn default() -> Self {
-        Self {
-            engine: default_engine(),
-            film: DEFAULT_FILM.into(),
-            paper: DEFAULT_PAPER.into(),
-            exposure_ev: 0.0,
-            auto_exposure: true,
-            print_exposure_ev: 0.0,
-            film_prep: 0.0,
-            y_shift: 0.0,
-            m_shift: 0.0,
-            film_format_mm: 35.0,
-            grain: 1.0,
-            halation: 1.0,
-            halation_size: 1.0,
-            diffusion: 0.75,
-            sharpen: 1.0,
-            glare: true,
-            glare_percent: default_glare_percent(),
-            glare_roughness: default_glare_roughness(),
-            glare_blur: default_glare_blur(),
-            development_time_min: 0.0,
-            density_gamma: 0.0,
-            preflash_exposure: 0.0,
-            preflash_y_shift: 0.0,
-            preflash_m_shift: 0.0,
-            dir_couplers_active: true,
-            dir_couplers_amount: default_dir_couplers_amount(),
-            dir_couplers_diffusion_size: default_dir_couplers_diffusion_size(),
-            dir_couplers_diffusion_tail: default_dir_couplers_diffusion_tail(),
-            dir_couplers_tail_weight: default_dir_couplers_tail_weight(),
-            whites: 0.0,
-            highlights: 0.0,
-            midtones: 0.0,
-            shadows: 0.0,
-            rolloff: 0.0,
-            contrast: 0.0,
-            saturation: 0.0,
-            temperature: 0.0,
-            tint: 0.0,
-            use_logc: false,
-            lut_encoding: LutEncoding::Display,
-            zone_reach: 50.0,
-            agx_look: "base".to_string(),
-            hsl_hue: vec![0.0; 8],
-            hsl_sat: vec![0.0; 8],
-            hsl_lum: vec![0.0; 8],
-            shadows_tint: [0.0, 0.0, 0.0],
-            midtones_tint: [0.0, 0.0, 0.0],
-            highlights_tint: [0.0, 0.0, 0.0],
-            zone_shadows: ZoneAdjustments::default(),
-            zone_midtones: ZoneAdjustments::default(),
-            zone_highlights: ZoneAdjustments::default(),
-            brightness: 0.0,
-            blacks: 0.0,
-            vibrance: 0.0,
-            clarity: 0.0,
-            dehaze: 0.0,
-            structure: 0.0,
-            vignette_amount: 0.0,
-            vignette_midpoint: 0.5,
-            vignette_roundness: 0.5,
-            vignette_feather: 0.5,
-            grain_amount: 0.0,
-            grain_roughness: default_grain_roughness(),
-            highlight_desat: default_highlight_desat(),
-            curve_luma: default_curve(),
-            curve_r: default_curve(),
-            curve_g: default_curve(),
-            curve_b: default_curve(),
-            rapid_pre_luts: Vec::new(),
-            rapid_post_luts: Vec::new(),
-            crop_x: 0.0,
-            crop_y: 0.0,
-            crop_w: 1.0,
-            crop_h: 1.0,
-            crop_aspect: "original".to_string(),
-            crop_angle: 0.0,
-            flip_h: false,
-            flip_v: false,
-            apply_crop: true,
-            pre_luts: Vec::new(),
-            post_luts: Vec::new(),
-        }
-    }
-}
-
-/// A film or paper stock available to the recipe pickers.
-#[derive(Clone, Debug, Serialize)]
-pub struct ProfileEntry {
-    pub name: String,
-    pub label: String,
-    /// "filming" or "printing" (profile `info.stage`).
-    pub stage: String,
-    /// "positive" or "negative" (profile `info.film_type`).
-    pub film_type: String,
-    /// True for a "bw" `info.channel_model` profile.
-    pub is_bw: bool,
-    /// True when the profile holds a family of density curves, one per
-    /// development time (Double-X, print film 2302): the only stocks for which
-    /// spektrafilm-rs's `resolve_for_render` has anything to select, so the only
-    /// ones the "Duration" slider does anything for. A bw profile with a single
-    /// curve (Tri-X) and every colour profile ignore it.
-    pub has_development_times: bool,
-}
-
-pub struct RenderOutput {
-    pub jpeg: Vec<u8>,
-    pub width: u32,
-    pub height: u32,
-    /// Pipeline time only, milliseconds.
-    pub render_ms: u128,
-    /// RAW decode time (0 on decode-cache hit), milliseconds.
-    pub decode_ms: u128,
-}
-
-pub struct RenderRgbaOutput {
-    pub rgba: Vec<u8>,
-    pub width: u32,
-    pub height: u32,
-    pub render_ms: u128,
-    pub decode_ms: u128,
-}
-
-/// The engine: one GPU backend for the process lifetime, plus the caches
-/// described in the module header. All methods take `&self`; internal
-/// mutability is Mutex'd, so renders serialize (one GPU, one photo at a
-/// time — latest-wins scheduling lives in the caller).
-/// Keeps threads that want the SAME decoded frame from each decoding it.
-///
-/// The decode-cache lock is deliberately released before the work: holding it
-/// would serialise every render behind every other one, and a background
-/// prefetch would block the photo you are looking at for its whole duration.
-/// What that release used to cost was a duplicate decode whenever two threads
-/// raced — dismissed, reasonably, as cheaper than the stall.
-///
-/// It is cheaper, for two. It is not for six: flipping grid → dev → grid → dev
-/// has `openPhoto`, `warmSelection` and `prefetchNeighbours` all asking for the
-/// same uncached file, on a blocking pool wide enough to run every request at
-/// once. Measured 2026-09-22, that pinned six cores inside LibRaw's
-/// `copy_bayer`, all but one decode thrown away, and it kept running long after
-/// the navigation had stopped.
-///
-/// So the gate is per photo, never global — different photos still decode in
-/// parallel — and every caller re-checks the cache through it, because the
-/// thread ahead has just filled it.
-#[derive(Default)]
-struct DecodeGates(Mutex<Vec<((PathBuf, bool), Arc<Mutex<()>>)>>);
-
-impl DecodeGates {
-    /// Run `decode` only if `lookup` still comes up empty once this thread
-    /// holds the gate. Returns the frame and whether THIS call produced it.
-    fn once<L, D>(&self, key: &(PathBuf, bool), lookup: L, decode: D) -> Result<(Arc<ImageBuf>, bool)>
-    where
-        L: Fn() -> Option<Arc<ImageBuf>>,
-        D: FnOnce() -> Result<Arc<ImageBuf>>,
-    {
-        if let Some(img) = lookup() {
-            return Ok((img, false));
-        }
-        let gate = self.gate(key);
-        let _held = gate.lock().unwrap_or_else(|e| e.into_inner());
-        // Whoever held the gate before us has published their result.
-        if let Some(img) = lookup() {
-            return Ok((img, false));
-        }
-        Ok((decode()?, true))
-    }
-
-    /// The gate for one photo, created on first ask and shared thereafter.
-    fn gate(&self, key: &(PathBuf, bool)) -> Arc<Mutex<()>> {
-        let mut gates = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        // Drop gates nobody is queued on, so this list tracks decodes in
-        // flight rather than every photo ever opened.
-        gates.retain(|(_, g)| Arc::strong_count(g) > 1);
-        if let Some((_, g)) = gates.iter().find(|(k, _)| k == key) {
-            return g.clone();
-        }
-        let g = Arc::new(Mutex::new(()));
-        gates.push((key.clone(), g.clone()));
-        g
-    }
-}
 
 pub struct Engine {
     data_dir: PathBuf,
@@ -638,7 +75,9 @@ pub struct Engine {
     preview_input: Mutex<Vec<((PathBuf, u32), Arc<ImageBuf>)>>,
     /// One gate per photo being decoded, so threads that want the SAME frame
     /// queue behind one decode instead of each running their own.
-    decode_gates: DecodeGates,
+    decode_gates: Gates<(PathBuf, bool)>,
+    /// One gate per downscaled preview input so concurrent renders don't downscale the same photo.
+    preview_gates: Gates<(PathBuf, u32)>,
     /// Where a decoded frame may be parked so it survives a restart. Both
     /// caches above die with the process, so reopening the photo you were
     /// editing meant paying the full read and decode again — measured on a
@@ -681,7 +120,8 @@ impl Engine {
             decoder: DecoderRegistry,
             decoded: Mutex::new(Vec::new()),
             preview_input: Mutex::new(Vec::new()),
-            decode_gates: DecodeGates::default(),
+            decode_gates: Gates::default(),
+            preview_gates: Gates::default(),
             working_dir: Mutex::new(None),
             registry,
         })
@@ -798,7 +238,9 @@ impl Engine {
     /// `develop_rgb8`. Rapid now owns its LUT application internally so ordering stays
     /// engine-specific.
     fn develop(&self, path: &Path, recipe: &Recipe, max_px: u32) -> Result<(ImageBuf, u128, u128)> {
+        let t_pipe = std::time::Instant::now();
         let (input, decode_ms) = self.pipeline_input(path, max_px)?;
+        let pipeline_ms = t_pipe.elapsed().as_millis();
 
         let t = std::time::Instant::now();
 
@@ -818,6 +260,14 @@ impl Engine {
         }
 
         let render_ms = t.elapsed().as_millis();
+
+        eprintln!(
+            "[perf] develop {}: pipeline_input {} ms (decode {} ms), render {} ms",
+            path.display(),
+            pipeline_ms,
+            decode_ms,
+            render_ms
+        );
 
         Ok((result, decode_ms, render_ms))
     }
@@ -844,8 +294,19 @@ impl Engine {
         recipe: &Recipe,
         max_px: u32,
     ) -> Result<RenderRgbaOutput> {
+        let t0 = std::time::Instant::now();
         let (result, decode_ms, render_ms) = self.develop(path, recipe, max_px)?;
+        let dev_ms = t0.elapsed().as_millis();
+        let t_q = std::time::Instant::now();
         let rgba = quantize_rgba8(&result);
+        let quantize_ms = t_q.elapsed().as_millis();
+        eprintln!(
+            "[perf] develop_rgba8 {}: total {} ms (develop {} ms, quantize {} ms)",
+            path.display(),
+            t0.elapsed().as_millis(),
+            dev_ms,
+            quantize_ms
+        );
         Ok(RenderRgbaOutput {
             rgba,
             width: result.width,
@@ -906,26 +367,99 @@ impl Engine {
     /// The (possibly downscaled) ProPhoto pipeline input for a photo,
     /// through both caches. Returns (input, decode_ms — 0 on cache hit).
     fn pipeline_input(&self, path: &Path, max_px: u32) -> Result<(Arc<ImageBuf>, u128)> {
+        let t0 = std::time::Instant::now();
+        let pkey = (path.to_path_buf(), max_px);
+        if max_px != 0 {
+            if let Some(img) = self.cached_preview_input(&pkey) {
+                return Ok((img, 0));
+            }
+        }
         // A frame parked on disk by `park_working` beats everything below it:
         // no network, no decode, just a local read of exactly the buffer the
         // pipeline wants.
         if let Some(img) = self.unpark_working(path, max_px) {
-            eprintln!("[perf] pipeline_input {}: parked frame read from disk", path.display());
-            let key = (path.to_path_buf(), max_px);
-            self.store_preview_input(key, img.clone());
+            eprintln!("[perf] pipeline_input {}: parked frame read from disk in {} ms", path.display(), t0.elapsed().as_millis());
+            self.store_preview_input(pkey, img.clone());
             return Ok((img, 0));
         }
-        // Previews (max_px > 0) take the fast half-res decode; the export path
-        // (max_px == 0) takes the full-quality decode.
-        let fast = max_px != 0;
-        let key = (path.to_path_buf(), fast);
 
+        if max_px != 0 {
+            let (img, is_new) = self.preview_gates.once(
+                &pkey,
+                || self.cached_preview_input(&pkey),
+                || {
+                    let fast = true;
+                    let key = (path.to_path_buf(), fast);
+                    let (full, _) = self.decode_once(key, || {
+                        let t_dec = std::time::Instant::now();
+                        let linear = self
+                            .decoder
+                            .decode_linear(path, fast)
+                            .with_context(|| format!("decoding {}", path.display()))?;
+                        let dec_ms = t_dec.elapsed().as_millis();
+                        let t_pro = std::time::Instant::now();
+                        let data = to_prophoto(linear.data, linear.primaries);
+                        let pro_ms = t_pro.elapsed().as_millis();
+                        eprintln!(
+                            "[perf] decode closure {}: decode_linear {} ms, to_prophoto {} ms ({}x{})",
+                            path.display(),
+                            dec_ms,
+                            pro_ms,
+                            linear.width,
+                            linear.height
+                        );
+                        Ok(Arc::new(ImageBuf::from_data(
+                            linear.width,
+                            linear.height,
+                            data,
+                        )))
+                    })?;
+
+                    if full.width.max(full.height) <= max_px {
+                        self.store_preview_input(pkey.clone(), full.clone());
+                        return Ok(full);
+                    }
+
+                    let t_down = std::time::Instant::now();
+                    let small = Arc::new(downscale(&full, max_px));
+                    let down_ms = t_down.elapsed().as_millis();
+                    eprintln!(
+                        "[perf] pipeline_input {}: downscale from {}x{} to {}x{} took {} ms",
+                        path.display(),
+                        full.width,
+                        full.height,
+                        small.width,
+                        small.height,
+                        down_ms
+                    );
+                    self.store_preview_input(pkey.clone(), small.clone());
+                    Ok(small)
+                },
+            )?;
+            return Ok((img, if is_new { t0.elapsed().as_millis() } else { 0 }));
+        }
+
+        // Full-res decode path (export path, max_px == 0)
+        let fast = false;
+        let key = (path.to_path_buf(), fast);
         let (full, decode_ms) = self.decode_once(key, || {
+            let t_dec = std::time::Instant::now();
             let linear = self
                 .decoder
                 .decode_linear(path, fast)
                 .with_context(|| format!("decoding {}", path.display()))?;
+            let dec_ms = t_dec.elapsed().as_millis();
+            let t_pro = std::time::Instant::now();
             let data = to_prophoto(linear.data, linear.primaries);
+            let pro_ms = t_pro.elapsed().as_millis();
+            eprintln!(
+                "[perf] decode closure {}: decode_linear {} ms, to_prophoto {} ms ({}x{})",
+                path.display(),
+                dec_ms,
+                pro_ms,
+                linear.width,
+                linear.height
+            );
             Ok(Arc::new(ImageBuf::from_data(
                 linear.width,
                 linear.height,
@@ -933,17 +467,7 @@ impl Engine {
             )))
         })?;
 
-        if max_px == 0 || full.width.max(full.height) <= max_px {
-            return Ok((full, decode_ms));
-        }
-
-        let key = (path.to_path_buf(), max_px);
-        if let Some(img) = self.cached_preview_input(&key) {
-            return Ok((img, decode_ms));
-        }
-        let small = Arc::new(downscale(&full, max_px));
-        self.store_preview_input(key, small.clone());
-        Ok((small, decode_ms))
+        Ok((full, decode_ms))
     }
 
     /// Decode a photo at most once, however many threads ask at the same time.
@@ -1089,65 +613,6 @@ impl Engine {
     }
 }
 
-/// Whether a parked file is whole, judged the way `parse_parked` judges it,
-/// without reading the 35 MB payload: the header states the dimensions, so
-/// the file's own length is the check. A park interrupted mid-write fails
-/// here and gets rewritten, rather than being trusted and then refused on
-/// every read for the rest of its life.
-fn parked_file_is_complete(dest: &Path) -> bool {
-    use std::io::Read;
-    let Ok(meta) = std::fs::metadata(dest) else {
-        return false;
-    };
-    let Ok(mut f) = std::fs::File::open(dest) else {
-        return false;
-    };
-    let mut head = [0u8; 8];
-    if f.read_exact(&mut head).is_err() {
-        return false;
-    }
-    let width = u32::from_le_bytes(head[0..4].try_into().unwrap()) as u64;
-    let height = u32::from_le_bytes(head[4..8].try_into().unwrap()) as u64;
-    match width.checked_mul(height).and_then(|p| p.checked_mul(3 * 4)) {
-        Some(pixels) => meta.len() == 8 + pixels,
-        None => false,
-    }
-}
-
-/// Read a parked frame back from its bytes.
-///
-/// The header carries the dimensions so a park interrupted mid-write, or
-/// copied half-way, is REFUSED rather than fed to the pipeline as a short
-/// buffer — that reads as garbage pixels, not as an error.
-fn parse_parked(bytes: &[u8]) -> Option<ImageBuf> {
-    if bytes.len() < 8 {
-        return None;
-    }
-    let width = u32::from_le_bytes(bytes[0..4].try_into().ok()?);
-    let height = u32::from_le_bytes(bytes[4..8].try_into().ok()?);
-    let pixels = &bytes[8..];
-    let expected = (width as usize).checked_mul(height as usize)?.checked_mul(3)?;
-    if pixels.len() != expected * 4 {
-        return None;
-    }
-    let data: Vec<f32> = pixels
-        .chunks_exact(4)
-        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-        .collect();
-    Some(ImageBuf::from_data(width, height, data))
-}
-
-/// Parked-frame filename: the photo and the size it was parked at.
-fn working_name(path: &Path, max_px: u32) -> String {
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    path.hash(&mut h);
-    // "-eb": the frame has the camera's exposure bias applied (reveal-decode
-    // `raw_exposure_gain`). Frames parked by an older build do not, and must not
-    // be served as if they did.
-    format!("{:016x}-{max_px}-eb.buf", h.finish())
-}
-
 /// How much decoded, ProPhoto-f32 image data to keep around. Sized so a
 /// handful of frames from a high-megapixel body fit: stepping back to the
 /// previous photo is the common move in a cull, and it used to re-decode.
@@ -1160,7 +625,7 @@ const PREVIEW_INPUT_CACHE_ENTRIES: usize = 8;
 /// Recipe → spektrafilm RuntimeParams. Upstream defaults everywhere else —
 /// notably `print_exposure_compensation` + `normalize_print_exposure` stay
 /// ON (the image-adaptive print normalization the Python reference has).
-fn runtime_params(recipe: &Recipe) -> RuntimeParams {
+pub(crate) fn runtime_params(recipe: &Recipe) -> RuntimeParams {
     let mut p = RuntimeParams::default();
 
     // Input contract: scene-linear ProPhoto (the Python loader's space);
@@ -1224,266 +689,6 @@ fn runtime_params(recipe: &Recipe) -> RuntimeParams {
     p.film_render.dir_couplers.diffusion_tail_weight = f64::from(recipe.dir_couplers_tail_weight);
 
     p
-}
-
-/// Decoder primaries → linear ProPhoto RGB (the pipeline's working space,
-/// same as the Python loader's output). Matrices computed with
-/// colour-science `matrix_RGB_to_RGB(…, "ProPhoto RGB", CAT02)` — the exact
-/// conversion `load_and_process_raw_file` applies. Inputs may hold
-/// out-of-gamut negatives; the clamp happens here, AFTER the gamut widens,
-/// where almost nothing real is negative anymore.
-const SRGB_TO_PROPHOTO: [[f32; 3]; 3] = [
-    [0.5288241004, 0.3340609866, 0.1373616909],
-    [0.0975294148, 0.8790074094, 0.0233981175],
-    [0.0163599018, 0.1066124933, 0.8772485185],
-];
-const ACES_TO_PROPHOTO: [[f32; 3]; 3] = [
-    [1.2393803418, -0.1639678228, -0.0752333838],
-    [0.0036113619, 1.0896136492, -0.0932657921],
-    [-0.0020596793, -0.0022515883, 1.0045855773],
-];
-
-fn to_prophoto(mut data: Vec<f32>, primaries: Primaries) -> Vec<f32> {
-    let m = match primaries {
-        Primaries::SRgbLinear => &SRGB_TO_PROPHOTO,
-        Primaries::Aces2065_1 => &ACES_TO_PROPHOTO,
-    };
-    for px in data.chunks_exact_mut(3) {
-        let (r, g, b) = (px[0], px[1], px[2]);
-        px[0] = (m[0][0] * r + m[0][1] * g + m[0][2] * b).max(0.0);
-        px[1] = (m[1][0] * r + m[1][1] * g + m[1][2] * b).max(0.0);
-        px[2] = (m[2][0] * r + m[2][1] * g + m[2][2] * b).max(0.0);
-    }
-    data
-}
-
-/// Box-filter downscale in linear light so the long edge is `max_px`.
-fn downscale(img: &ImageBuf, max_px: u32) -> ImageBuf {
-    use rayon::prelude::*;
-    let (w, h) = (img.width as usize, img.height as usize);
-    let scale = max_px as f64 / img.width.max(img.height) as f64;
-    let nw = ((img.width as f64 * scale).round() as usize).max(1);
-    let nh = ((img.height as f64 * scale).round() as usize).max(1);
-
-    let data: Vec<_> = (0..nh)
-        .into_par_iter()
-        .flat_map_iter(|oy| {
-            let y0 = oy * h / nh;
-            let y1 = (((oy + 1) * h) / nh).max(y0 + 1).min(h);
-            let src = &img.data;
-            (0..nw).flat_map(move |ox| {
-                let x0 = ox * w / nw;
-                let x1 = (((ox + 1) * w) / nw).max(x0 + 1).min(w);
-                let mut acc = [0.0f64; 3];
-                let mut n = 0.0f64;
-                for y in y0..y1 {
-                    for x in x0..x1 {
-                        let i = (y * w + x) * 3;
-                        acc[0] += f64::from(src[i]);
-                        acc[1] += f64::from(src[i + 1]);
-                        acc[2] += f64::from(src[i + 2]);
-                        n += 1.0;
-                    }
-                }
-                [
-                    spektrafilm_math::precision::from_f32((acc[0] / n) as f32),
-                    spektrafilm_math::precision::from_f32((acc[1] / n) as f32),
-                    spektrafilm_math::precision::from_f32((acc[2] / n) as f32),
-                ]
-            })
-        })
-        .collect();
-
-    ImageBuf::from_data(nw as u32, nh as u32, data)
-}
-
-/// Below this the picture is not turned at all (a slider resting at 0 must cost nothing and
-/// change nothing).
-const STRAIGHTEN_EPSILON_DEG: f32 = 0.01;
-
-/// Apply straighten (`crop_angle`), crop coordinates (normalized 0..1) and flip_h / flip_v to
-/// an ImageBuf.
-///
-/// The geometry is Lightroom's, and the one the Crop tab draws: the picture is turned by
-/// `crop_angle` degrees (clockwise, positive) about the centre of the whole frame; the crop
-/// rectangle is axis-aligned in that turned frame, which keeps the size of the original; the
-/// flips come last, on the cropped result. So a source pixel `q` (from the centre) lands at
-/// `R(angle)·q` in the frame, and an output pixel reads the source at `R(-angle)` of its place.
-/// Where the turned picture does not reach (the corners of a crop pushed past it) the nearest
-/// edge pixel is repeated, rather than black — the Crop tab keeps the frame inside, so this only
-/// matters for a recipe edited by hand.
-pub fn crop_and_flip(img: &ImageBuf, recipe: &Recipe) -> ImageBuf {
-    let (src_w, src_h) = (img.width as usize, img.height as usize);
-    if src_w == 0 || src_h == 0 {
-        return img.clone();
-    }
-
-    let needs_crop = recipe.crop_w > 0.0
-        && recipe.crop_h > 0.0
-        && (recipe.crop_w < 0.999 || recipe.crop_h < 0.999 || recipe.crop_x > 0.001 || recipe.crop_y > 0.001);
-    let needs_flip = recipe.flip_h || recipe.flip_v;
-    let needs_turn = recipe.crop_angle.abs() >= STRAIGHTEN_EPSILON_DEG;
-
-    if !needs_crop && !needs_flip && !needs_turn {
-        return img.clone();
-    }
-
-    let cx = (recipe.crop_x.clamp(0.0, 1.0) * src_w as f32).floor() as usize;
-    let cy = (recipe.crop_y.clamp(0.0, 1.0) * src_h as f32).floor() as usize;
-    let cw = (recipe.crop_w.clamp(0.01, 1.0) * src_w as f32).round() as usize;
-    let ch = (recipe.crop_h.clamp(0.01, 1.0) * src_h as f32).round() as usize;
-
-    let x0 = cx.min(src_w.saturating_sub(1));
-    let y0 = cy.min(src_h.saturating_sub(1));
-    let x1 = (x0 + cw).min(src_w).max(x0 + 1);
-    let y1 = (y0 + ch).min(src_h).max(y0 + 1);
-    let out_w = x1 - x0;
-    let out_h = y1 - y0;
-
-    if needs_turn {
-        return turn_and_crop(img, recipe, (x0, y0, out_w, out_h));
-    }
-
-    let mut out_data = Vec::with_capacity(out_w * out_h * 3);
-    for out_y in 0..out_h {
-        let src_y = if recipe.flip_v { y1 - 1 - out_y } else { y0 + out_y };
-        for out_x in 0..out_w {
-            let src_x = if recipe.flip_h { x1 - 1 - out_x } else { x0 + out_x };
-            let idx = (src_y * src_w + src_x) * 3;
-            if idx + 2 < img.data.len() {
-                out_data.push(img.data[idx]);
-                out_data.push(img.data[idx + 1]);
-                out_data.push(img.data[idx + 2]);
-            } else {
-                out_data.extend_from_slice(&[0.0, 0.0, 0.0]);
-            }
-        }
-    }
-
-    ImageBuf::from_data(out_w as u32, out_h as u32, out_data)
-}
-
-/// The straightened path of [`crop_and_flip`]: `rect` is the crop in pixels of the (turned)
-/// frame — `(x, y, width, height)`.
-fn turn_and_crop(img: &ImageBuf, recipe: &Recipe, rect: (usize, usize, usize, usize)) -> ImageBuf {
-    use rayon::prelude::*;
-
-    let (src_w, src_h) = (img.width as usize, img.height as usize);
-    let (x0, y0, out_w, out_h) = rect;
-    let (half_w, half_h) = (src_w as f32 / 2.0, src_h as f32 / 2.0);
-    let theta = recipe.crop_angle.to_radians();
-    let (sin, cos) = theta.sin_cos();
-    let (flip_h, flip_v) = (recipe.flip_h, recipe.flip_v);
-
-    // One row per task: a 24-megapixel crop is a few thousand independent rows.
-    let rows: Vec<Vec<f32>> = (0..out_h)
-        .into_par_iter()
-        .map(|out_y| {
-            let frame_y = if flip_v { y0 + out_h - 1 - out_y } else { y0 + out_y };
-            let dy = frame_y as f32 + 0.5 - half_h;
-            let mut row = Vec::with_capacity(out_w * 3);
-            for out_x in 0..out_w {
-                let frame_x = if flip_h { x0 + out_w - 1 - out_x } else { x0 + out_x };
-                let dx = frame_x as f32 + 0.5 - half_w;
-                // R(-angle) of the frame point, back to a source pixel centre.
-                let sx = dx * cos + dy * sin + half_w - 0.5;
-                let sy = -dx * sin + dy * cos + half_h - 0.5;
-                row.extend_from_slice(&sample_bilinear(img, src_w, src_h, sx, sy));
-            }
-            row
-        })
-        .collect();
-
-    ImageBuf::from_data(out_w as u32, out_h as u32, rows.into_iter().flatten().collect())
-}
-
-/// Bilinear sample at pixel-centre coordinates `(x, y)`, repeating the edge outside the image.
-fn sample_bilinear(img: &ImageBuf, w: usize, h: usize, x: f32, y: f32) -> [f32; 3] {
-    let x = x.clamp(0.0, (w - 1) as f32);
-    let y = y.clamp(0.0, (h - 1) as f32);
-    let (ix, iy) = (x.floor() as usize, y.floor() as usize);
-    let (jx, jy) = ((ix + 1).min(w - 1), (iy + 1).min(h - 1));
-    let (fx, fy) = (x - ix as f32, y - iy as f32);
-    let at = |px: usize, py: usize| -> [f32; 3] {
-        let i = (py * w + px) * 3;
-        [img.data[i], img.data[i + 1], img.data[i + 2]]
-    };
-    let (a, b, c, d) = (at(ix, iy), at(jx, iy), at(ix, jy), at(jx, jy));
-    let mut out = [0.0; 3];
-    for k in 0..3 {
-        let top = a[k] + (b[k] - a[k]) * fx;
-        let bottom = c[k] + (d[k] - c[k]) * fx;
-        out[k] = top + (bottom - top) * fy;
-    }
-    out
-}
-
-/// Quantize a pipeline result (display-encoded sRGB, [0,1]) to 8-bit —
-/// `round_ties_even` stays numpy-identical with the reference tools.
-fn quantize_rgb8(img: &ImageBuf) -> Vec<u8> {
-    img.data
-        .iter()
-        .map(|&v| ((f64::from(v).clamp(0.0, 1.0) * 255.0).round_ties_even()) as u8)
-        .collect()
-}
-
-/// Quantize a pipeline result to 8-bit RGBA for direct HTML5 Canvas rendering.
-pub fn quantize_rgba8(img: &ImageBuf) -> Vec<u8> {
-    let mut out = Vec::with_capacity((img.width * img.height * 4) as usize);
-    for chunk in img.data.chunks_exact(3) {
-        out.push((f64::from(chunk[0]).clamp(0.0, 1.0) * 255.0).round_ties_even() as u8);
-        out.push((f64::from(chunk[1]).clamp(0.0, 1.0) * 255.0).round_ties_even() as u8);
-        out.push((f64::from(chunk[2]).clamp(0.0, 1.0) * 255.0).round_ties_even() as u8);
-        out.push(255);
-    }
-    out
-}
-
-/// Encode 8-bit interleaved RGB as JPEG.
-fn encode_jpeg(rgb8: &[u8], width: u32, height: u32, quality: u8) -> Result<Vec<u8>> {
-    use image::ImageEncoder;
-    let mut out = Vec::new();
-    image::codecs::jpeg::JpegEncoder::new_with_quality(
-        &mut std::io::Cursor::new(&mut out),
-        quality,
-    )
-    .write_image(rgb8, width, height, image::ExtendedColorType::Rgb8)
-    .context("encoding JPEG")?;
-    Ok(out)
-}
-
-/// The print's paper border. Pure #FFFFFF reads as a flat digital void beside a
-/// developed frame; a fine-art matte is a hair warm and carries a faint tooth.
-/// Both knobs are deliberately near the edge of perception — nudge `PAPER_TINT`
-/// warmer or `GRAIN_AMP` higher for a more textured stock, cooler/0 for clinical
-/// white.
-const PAPER_TINT: [u8; 3] = [253, 251, 248];
-const GRAIN_AMP: i16 = 3;
-
-/// Wrap `img` in the paper border, `border_frac` of the long edge on every side.
-pub fn paper_border(img: &image::RgbImage, border_frac: f32) -> image::RgbImage {
-    let (w, h) = img.dimensions();
-    let b = ((w.max(h) as f32) * border_frac).round() as u32;
-    let mut matte = paper_matte(w + 2 * b, h + 2 * b);
-    image::imageops::overlay(&mut matte, img, b as i64, b as i64);
-    matte
-}
-
-/// A sheet of paper: the warm-white base plus a stable per-pixel luminance
-/// grain (same delta on all channels, so the tooth is neutral, never coloured).
-/// The noise is a cheap position hash — deterministic, so re-exporting a frame
-/// is byte-stable and two prints of the same size share the same grain field.
-fn paper_matte(w: u32, h: u32) -> image::RgbImage {
-    let span = 2 * GRAIN_AMP as u32 + 1;
-    image::ImageBuffer::from_fn(w, h, |x, y| {
-        let mut n = x
-            .wrapping_mul(374_761_393)
-            .wrapping_add(y.wrapping_mul(668_265_263));
-        n = (n ^ (n >> 13)).wrapping_mul(1_274_126_177);
-        let noise = (n % span) as i16 - GRAIN_AMP;
-        let px = |c: u8| (c as i16 + noise).clamp(0, 255) as u8;
-        image::Rgb([px(PAPER_TINT[0]), px(PAPER_TINT[1]), px(PAPER_TINT[2])])
-    })
 }
 
 #[cfg(test)]
@@ -1590,300 +795,4 @@ mod perf_probe {
     }
 }
 
-#[cfg(test)]
-mod working_park_tests {
-    use super::*;
-
-    fn park_bytes(width: u32, height: u32) -> Vec<u8> {
-        let mut out = width.to_le_bytes().to_vec();
-        out.extend_from_slice(&height.to_le_bytes());
-        out.extend_from_slice(&vec![0u8; (width * height * 3 * 4) as usize]);
-        out
-    }
-
-    /// A whole park is recognised without reading its payload, so relaunching
-    /// into the photo you were editing stops deleting and rewriting the
-    /// identical 35 MB it just read.
-    #[test]
-    fn a_whole_park_needs_no_rewrite() {
-        let dir = std::env::temp_dir().join(format!("reveal-park-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let dest = dir.join("whole.buf");
-        std::fs::write(&dest, park_bytes(4, 3)).unwrap();
-        assert!(parked_file_is_complete(&dest));
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    /// A park cut short must NOT be trusted: left in place it would be
-    /// refused by `parse_parked` on every read for the rest of its life,
-    /// costing a full decode each time and never repairing itself.
-    #[test]
-    fn a_park_cut_short_is_rewritten() {
-        let dir = std::env::temp_dir().join(format!("reveal-park-cut-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-
-        let mut cut = park_bytes(4, 3);
-        cut.truncate(cut.len() - 40);
-        let short = dir.join("short.buf");
-        std::fs::write(&short, &cut).unwrap();
-        assert!(!parked_file_is_complete(&short));
-
-        let headerless = dir.join("headerless.buf");
-        std::fs::write(&headerless, [1u8, 2, 3]).unwrap();
-        assert!(!parked_file_is_complete(&headerless));
-
-        assert!(!parked_file_is_complete(&dir.join("absent.buf")));
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    /// A park is keyed by the photo AND the size it was parked at. Serving one
-    /// photo's buffer for another, or a 2048 buffer to a request for something
-    /// else, would hand the pipeline pixels from the wrong image.
-    #[test]
-    fn a_parked_frame_is_keyed_by_photo_and_size() {
-        let a = Path::new("/nas/2026/A.RAF");
-        let b = Path::new("/nas/2026/B.RAF");
-        assert_ne!(working_name(a, 2048), working_name(b, 2048));
-        assert_ne!(working_name(a, 2048), working_name(a, 768));
-        assert_eq!(working_name(a, 2048), working_name(a, 2048));
-    }
-
-    /// The reason the header carries dimensions: a park interrupted mid-write,
-    /// or copied half-way, must be refused rather than fed to the pipeline as
-    /// a short buffer — that reads as garbage pixels, not as an error.
-    #[test]
-    fn a_truncated_park_is_refused() {
-        // A well-formed 2x2 RGB frame: 8 bytes of header, then 12 floats.
-        let mut whole = Vec::new();
-        whole.extend_from_slice(&2u32.to_le_bytes());
-        whole.extend_from_slice(&2u32.to_le_bytes());
-        for i in 0..12 {
-            whole.extend_from_slice(&(i as f32).to_le_bytes());
-        }
-        assert_eq!(whole.len(), 56);
-
-        let loaded = super::parse_parked(&whole).expect("a whole park loads");
-        assert_eq!((loaded.width, loaded.height), (2, 2));
-        assert_eq!(loaded.data.len(), 12);
-        assert_eq!(loaded.data[11], 11.0, "pixels survive the round trip");
-
-        assert!(super::parse_parked(&whole[..40]).is_none(), "cut mid-pixels");
-        assert!(super::parse_parked(&whole[..4]).is_none(), "cut inside the header");
-        assert!(super::parse_parked(&[]).is_none(), "empty");
-        // Claims 4000x3000 but carries two pixels.
-        let mut lying = Vec::new();
-        lying.extend_from_slice(&4000u32.to_le_bytes());
-        lying.extend_from_slice(&3000u32.to_le_bytes());
-        lying.extend_from_slice(&[0u8; 24]);
-        assert!(super::parse_parked(&lying).is_none(), "header must match the body");
-    }
-}
-
-#[cfg(test)]
-mod decode_gate_tests {
-    use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::time::Duration;
-
-    fn frame() -> Arc<ImageBuf> {
-        Arc::new(ImageBuf::from_data(1, 1, vec![0.5, 0.5, 0.5]))
-    }
-
-    /// The whole point: six threads wanting the same uncached photo must cost
-    /// ONE decode. Before the gate they cost six, which is what pinned six
-    /// cores inside LibRaw when flipping grid → dev → grid → dev.
-    #[test]
-    fn concurrent_asks_for_one_photo_decode_it_once() {
-        let gates = DecodeGates::default();
-        let cache: Mutex<Option<Arc<ImageBuf>>> = Mutex::new(None);
-        let decodes = AtomicUsize::new(0);
-        let key = (PathBuf::from("/nas/2026/A.RAF"), true);
-
-        std::thread::scope(|scope| {
-            for _ in 0..6 {
-                scope.spawn(|| {
-                    let (_img, _) = gates
-                        .once(
-                            &key,
-                            || cache.lock().unwrap().clone(),
-                            || {
-                                decodes.fetch_add(1, Ordering::SeqCst);
-                                // Stand in for LibRaw: long enough that every
-                                // other thread is certainly already waiting.
-                                std::thread::sleep(Duration::from_millis(50));
-                                let img = frame();
-                                *cache.lock().unwrap() = Some(img.clone());
-                                Ok(img)
-                            },
-                        )
-                        .unwrap();
-                });
-            }
-        });
-
-        assert_eq!(decodes.load(Ordering::SeqCst), 1);
-    }
-
-    /// And it must not have bought that by serialising the library: two
-    /// different photos have to decode at the same time, or a prefetch would
-    /// again block the photo on screen.
-    #[test]
-    fn two_photos_do_not_wait_for_each_other() {
-        let gates = DecodeGates::default();
-        let inside = AtomicUsize::new(0);
-        let overlapped = AtomicUsize::new(0);
-        // Shared by reference so `move` on the closure only moves the borrows.
-        let (gates, inside, overlapped) = (&gates, &inside, &overlapped);
-
-        std::thread::scope(|scope| {
-            for name in ["/nas/A.RAF", "/nas/B.RAF"] {
-                scope.spawn(move || {
-                    let key = (PathBuf::from(name), true);
-                    gates
-                        .once(
-                            &key,
-                            || None,
-                            || {
-                                inside.fetch_add(1, Ordering::SeqCst);
-                                std::thread::sleep(Duration::from_millis(80));
-                                // Both threads sleep 80ms; if the gate were
-                                // global, the second would enter only after
-                                // the first had left and seen 1 here.
-                                overlapped
-                                    .fetch_max(inside.load(Ordering::SeqCst), Ordering::SeqCst);
-                                inside.fetch_sub(1, Ordering::SeqCst);
-                                Ok(frame())
-                            },
-                        )
-                        .unwrap();
-                });
-            }
-        });
-
-        assert_eq!(overlapped.load(Ordering::SeqCst), 2);
-    }
-
-    /// The gate list tracks decodes in flight, not every photo ever opened —
-    /// otherwise a long cull would grow it without bound.
-    #[test]
-    fn finished_gates_are_swept() {
-        let gates = DecodeGates::default();
-        for i in 0..50 {
-            let key = (PathBuf::from(format!("/nas/{i}.RAF")), true);
-            gates.once(&key, || None, || Ok(frame())).unwrap();
-        }
-        assert!(gates.0.lock().unwrap().len() <= 2);
-    }
-
-    #[test]
-    fn crop_and_flip_reduces_dimensions_and_inverts() {
-        let input = ImageBuf::from_data(100, 100, vec![1.0f32; 100 * 100 * 3]);
-        let mut recipe = Recipe::default();
-        recipe.crop_x = 0.25;
-        recipe.crop_y = 0.25;
-        recipe.crop_w = 0.5;
-        recipe.crop_h = 0.5;
-        recipe.flip_h = true;
-
-        let cropped = crop_and_flip(&input, &recipe);
-        assert_eq!(cropped.width, 50);
-        assert_eq!(cropped.height, 50);
-        assert_eq!(cropped.data.len(), 50 * 50 * 3);
-    }
-
-    // ── straighten ──
-
-    /// An N×N image, grey 0 everywhere except one white pixel at (px, py).
-    fn dot(n: usize, px: usize, py: usize) -> ImageBuf {
-        let mut data = vec![0.0f32; n * n * 3];
-        let i = (py * n + px) * 3;
-        data[i..i + 3].copy_from_slice(&[1.0, 1.0, 1.0]);
-        ImageBuf::from_data(n as u32, n as u32, data)
-    }
-
-    fn white_at(img: &ImageBuf) -> Option<(usize, usize)> {
-        let w = img.width as usize;
-        img.data.chunks_exact(3).position(|p| p[0] > 0.5).map(|i| (i % w, i / w))
-    }
-
-    #[test]
-    fn straighten_zero_changes_nothing() {
-        let input = dot(9, 2, 3);
-        let out = crop_and_flip(&input, &Recipe::default());
-        assert_eq!(out.data, input.data);
-    }
-
-    #[test]
-    fn a_quarter_turn_is_clockwise() {
-        // Top-left goes to top-right when the picture is turned clockwise.
-        let mut recipe = Recipe::default();
-        recipe.crop_angle = 90.0;
-        let out = crop_and_flip(&dot(9, 0, 0), &recipe);
-        assert_eq!((out.width, out.height), (9, 9));
-        assert_eq!(white_at(&out), Some((8, 0)));
-    }
-
-    #[test]
-    fn a_negative_angle_turns_the_other_way() {
-        let mut recipe = Recipe::default();
-        recipe.crop_angle = -90.0;
-        let out = crop_and_flip(&dot(9, 0, 0), &recipe);
-        assert_eq!(white_at(&out), Some((0, 8)));
-    }
-
-    #[test]
-    fn straightening_keeps_the_size_of_the_frame_it_was_cropped_from() {
-        let input = ImageBuf::from_data(40, 30, vec![0.5f32; 40 * 30 * 3]);
-        let mut recipe = Recipe::default();
-        recipe.crop_angle = 7.0;
-        recipe.crop_x = 0.25;
-        recipe.crop_y = 0.25;
-        recipe.crop_w = 0.5;
-        recipe.crop_h = 0.5;
-        let out = crop_and_flip(&input, &recipe);
-        assert_eq!((out.width, out.height), (20, 15));
-    }
-
-    #[test]
-    fn a_turned_flat_picture_stays_flat_with_no_black_corners() {
-        // The whole frame, turned: the corners the picture does not reach repeat its edge.
-        let input = ImageBuf::from_data(32, 24, vec![0.5f32; 32 * 24 * 3]);
-        let mut recipe = Recipe::default();
-        recipe.crop_angle = 20.0;
-        let out = crop_and_flip(&input, &recipe);
-        assert!(out.data.iter().all(|v| (v - 0.5).abs() < 1e-4));
-    }
-
-    #[test]
-    fn a_small_turn_moves_a_pixel_by_the_expected_amount() {
-        // 5° clockwise about the centre of a 101-pixel frame: the point 40 px right of the
-        // centre lands at (50 + 40·cos5°, 50 + 40·sin5°) ≈ (89.85, 53.49). Bilinear sampling
-        // spreads a lone pixel over its neighbours, so find it by its centre of gravity.
-        let mut recipe = Recipe::default();
-        recipe.crop_angle = 5.0;
-        let out = crop_and_flip(&dot(101, 90, 50), &recipe);
-        let w = out.width as usize;
-        let (mut sum, mut gx, mut gy) = (0.0f32, 0.0f32, 0.0f32);
-        for (i, p) in out.data.chunks_exact(3).enumerate() {
-            sum += p[0];
-            gx += p[0] * (i % w) as f32;
-            gy += p[0] * (i / w) as f32;
-        }
-        assert!(sum > 0.5, "the dot survives");
-        assert!((gx / sum - 89.85).abs() < 0.5, "x = {}", gx / sum);
-        assert!((gy / sum - 53.49).abs() < 0.5, "y = {}", gy / sum);
-    }
-
-    #[test]
-    fn the_flip_comes_after_the_turn_and_the_crop() {
-        let mut turned = Recipe::default();
-        turned.crop_angle = 90.0;
-        let plain = crop_and_flip(&dot(9, 0, 0), &turned);
-        let mut mirrored = turned.clone();
-        mirrored.flip_h = true;
-        let flipped = crop_and_flip(&dot(9, 0, 0), &mirrored);
-        let (x, y) = white_at(&plain).unwrap();
-        assert_eq!(white_at(&flipped), Some((8 - x, y)));
-    }
-}
 

@@ -27,7 +27,7 @@
 </script>
 
 <div class="frow" class:disabled title={hint || undefined}>
-  <span class="din frow-label" title={label}>{label}</span>
+  <span class="din frow-label">{label}</span>
   <select
     class="panel-select"
     {value}
@@ -56,21 +56,21 @@
     cursor: not-allowed;
   }
   .frow-label {
-    width: 6.2rem;
+    width: 7.0rem;
     flex-shrink: 0;
     font-size: 0.76rem;
     color: var(--color-foreground);
     text-align: left;
     white-space: nowrap;
+    overflow: hidden;
     text-overflow: ellipsis;
+    font-family: var(--font-interface);
   }
   .panel-select {
     flex: 1;
     min-width: 0;
-    height: 24px;
-    font-size: 0.74rem;
-    background: var(--color-surface);
-    box-shadow: var(--shadow-border);
+    font-size: var(--scale-d2);
+    box-shadow: none;
     border-radius: var(--radius);
     color: var(--color-foreground);
     padding: 0 var(--space-d3);

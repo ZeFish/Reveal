@@ -50,7 +50,7 @@
     align-items: center;
     gap: 0;
     /* Native traffic lights overlay the window top-left — start past them. */
-    padding: 0 var(--space) 0 var(--window-controls-offset-sidebar);
+    padding: 0 var(--space) 9px var(--window-controls-offset-sidebar);
   }
   /* circle.circle — a ring with a centred dot, accent when focus is on. */
   .focus-glyph {

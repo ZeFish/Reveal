@@ -149,9 +149,48 @@ export function appendFrames(rows) {
 
 /**
  * Re-publish the photo list after mutating a frame in place.
+ * Optionally accepts a set or array of paths (or frame objects) whose identities
+ * should be updated so Svelte 5 reactive snippets and components re-render them.
+ * @param {Set<string> | string[] | any[] | any} [mutated]
  */
-export function refreshFrames() {
-  frames = [...frames];
+export function refreshFrames(mutated) {
+  if (mutated) {
+    let paths;
+    if (mutated instanceof Set) {
+      paths = mutated;
+    } else if (Array.isArray(mutated)) {
+      paths = new Set(mutated.map((x) => (typeof x === "string" ? x : x?.path)).filter(Boolean));
+    }
+    if (paths && paths.size > 0) {
+      frames = frames.map((f) => (paths.has(f.path) ? { ...f } : f));
+      return;
+    }
+  }
+  // When no specific paths are supplied, shallow-clone all frames so ANY in-place
+  // mutation is guaranteed to trigger Svelte 5 snippet/component prop reactivity.
+  frames = frames.map((f) => ({ ...f }));
+}
+
+/**
+ * Update one or more frames immutably by path.
+ * Guarantees that Svelte 5 snippets and cell components re-render the updated photos.
+ * @param {string | string[] | Set<string>} paths
+ * @param {Record<string, any> | ((frame: any) => Record<string, any> | void)} patch
+ */
+export function patchFrames(paths, patch) {
+  const targetPaths = paths instanceof Set ? paths : new Set(Array.isArray(paths) ? paths : [paths]);
+  if (!targetPaths.size) return;
+  frames = frames.map((f) => {
+    if (!targetPaths.has(f.path)) return f;
+    const cloned = { ...f };
+    if (typeof patch === "function") {
+      const res = patch(cloned);
+      if (res && typeof res === "object") Object.assign(cloned, res);
+    } else {
+      Object.assign(cloned, patch);
+    }
+    return cloned;
+  });
 }
 
 /**

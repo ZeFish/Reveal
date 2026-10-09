@@ -22,38 +22,46 @@ export function nextZoomMode(current, reverse = false) {
 
 /**
  * Manages pointer presence events for focus-follows-mouse behavior.
+ * Centralized for all Reveal windows (main, dev-panel, palettes).
+ *
  * @param {{
  *   invoke: (cmd: string, args?: any) => Promise<any>,
+ *   windowId?: string,
  *   onPresenceChange?: (inside: boolean) => void,
  * }} opts
  * @returns {() => void} cleanup function
  */
-export function setupWindowPresence({ invoke, onPresenceChange = () => {} }) {
+export function setupWindowPresence({ invoke, windowId = "main", onPresenceChange = () => {} }) {
   if (typeof window === "undefined") return () => {};
 
   let pointerInside = false;
 
   /** @param {boolean} inside */
   const setPresence = (inside) => {
+    if (pointerInside === inside) return;
     pointerInside = inside;
     onPresenceChange(inside);
-    invoke("set_focus_window_presence", { windowId: "main", inside }).catch(() => {});
+    invoke("set_focus_window_presence", { windowId, inside }).catch(() => {});
   };
 
   const onFocus = () => {
-    if (pointerInside) setPresence(true);
+    setPresence(true);
   };
   const onBlur = () => {
-    pointerInside = false;
     setPresence(false);
   };
   const onPointerEnter = () => setPresence(true);
-  const onPointerLeave = () => {
-    pointerInside = false;
-    setPresence(false);
-  };
+  const onPointerLeave = () => setPresence(false);
   const onPointerMove = () => {
     if (!pointerInside) setPresence(true);
+  };
+
+  /** @param {MouseEvent} e */
+  const onMouseOut = (e) => {
+    // When pointer moves outside the document / window bounds completely
+    if (!e.relatedTarget && !/** @type {any} */ (e).toElement) {
+      setPresence(false);
+    }
   };
 
   /** @param {DragEvent} e */
@@ -64,7 +72,9 @@ export function setupWindowPresence({ invoke, onPresenceChange = () => {} }) {
   window.addEventListener("pointerenter", onPointerEnter);
   window.addEventListener("pointerleave", onPointerLeave);
   window.addEventListener("pointermove", onPointerMove);
+  window.addEventListener("mouseout", onMouseOut);
   document.addEventListener("mouseleave", onPointerLeave);
+  document.documentElement?.addEventListener("mouseleave", onPointerLeave);
   window.addEventListener("focus", onFocus);
   window.addEventListener("blur", onBlur);
   window.addEventListener("dragover", preventDragOver, false);
@@ -74,7 +84,9 @@ export function setupWindowPresence({ invoke, onPresenceChange = () => {} }) {
     window.removeEventListener("pointerenter", onPointerEnter);
     window.removeEventListener("pointerleave", onPointerLeave);
     window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("mouseout", onMouseOut);
     document.removeEventListener("mouseleave", onPointerLeave);
+    document.documentElement?.removeEventListener("mouseleave", onPointerLeave);
     window.removeEventListener("focus", onFocus);
     window.removeEventListener("blur", onBlur);
     window.removeEventListener("dragover", preventDragOver, false);

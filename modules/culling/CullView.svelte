@@ -40,6 +40,7 @@
     onAddLibraryFolder = () => {},
     gridProseByRow = new Map(),
     onSaveProse = () => {},
+    underRail = false,
   } = $props();
 </script>
 
@@ -67,11 +68,12 @@
     onDragStart={onPhotoDragStart}
     {gridProseByRow}
     {onSaveProse}
+    {underRail}
   />
 {:else if !loading}
   <div class="empty">
     <hgroup>
-      <h1>REVEAL</h1>
+      <h1 class="text-muted m2">REVEAL</h1>
       {#if applePhotosActive}
         <p>No photos in this view. Try another album or load more photos.</p>
       {:else if !hasRoot}
@@ -89,7 +91,7 @@
         <p>
           {filtered || (curDir && minRating)
             ? "no photos match this filter"
-            : "index your library or open a folder"}
+            : "Looks like an empty place"}
         </p>
       {/if}
       {#if !isTauri}<p><em>Open the Tauri app</em></p>{/if}

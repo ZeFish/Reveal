@@ -467,6 +467,8 @@
             >
               <Icon name="x" size="var(--icon-sm)" />
             </button>
+          {:else}
+            <span class="story-slot"></span>
           {/if}
         </div>
       {/each}
@@ -618,6 +620,9 @@
   .tree > :global(*) {
     flex-shrink: 0;
   }
+  .lib-row, .dir-row {
+    position: relative;
+  }
   .lib-row {
     box-sizing: border-box;
     display: flex;
@@ -625,26 +630,36 @@
     gap: var(--space-d2);
     width: 100%;
     margin: 0;
-    padding-block: var(--space-d3);
+    padding: var(--space-d3) var(--sb-pad);
     cursor: pointer;
     user-select: none;
     font-size: 11px;
     font-weight: 600;
   }
+  .lead {
+    flex: 0 0 var(--sb-lead);
+    width: var(--sb-lead);
+  }
   .lib-label {
+    flex: 1 1 auto;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     letter-spacing: -0.01em;
   }
   .dir-spacer {
-    flex: 1;
+    display: none;
+  }
+  .dir-count:empty {
+    display: none;
   }
   .dir-count {
     font-variant-numeric: tabular-nums;
     color: var(--color-muted);
     font-size: 10px;
-    margin-right: var(--space-d4);
+    flex: 0 0 auto;
+    text-align: right;
   }
   .add-btn {
     all: unset;
@@ -652,7 +667,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 14px;
+    flex: 0 0 16px;
+    width: 16px;
     height: 14px;
     border-radius: var(--radius-sm);
     color: var(--color-muted);
@@ -660,6 +676,25 @@
   .add-btn:hover {
     color: var(--color-foreground);
     background: var(--color-hover);
+  }
+  /* On the All Library row the button takes no column: it replaces the count, at the far right,
+     while the row is hovered or has focus. */
+  .lib-row .add-btn {
+    position: absolute;
+    right: var(--sb-pad);
+    top: 50%;
+    transform: translateY(-50%);
+    opacity: 0;
+  }
+  .lib-row:hover .add-btn,
+  .lib-row:focus-within .add-btn {
+    opacity: 1;
+  }
+  .lib-row:hover .dir-count,
+  .lib-row:hover .indexing,
+  .lib-row:focus-within .dir-count,
+  .lib-row:focus-within .indexing {
+    opacity: 0;
   }
   .indexing {
     display: inline-flex;
@@ -678,7 +713,7 @@
     gap: var(--space-d2);
     width: 100%;
     margin: 0;
-    padding-block: var(--space-d4);
+    padding: var(--space-d4) var(--sb-pad);
     cursor: pointer;
     user-select: none;
     font-size: 11px;
@@ -692,14 +727,16 @@
     color: var(--color-on-accent);
   }
   .disc {
-    width: 12px;
-    height: 12px;
+    flex: 0 0 var(--sb-lead);
+    width: var(--sb-lead);
+    height: 14px;
     display: flex;
     align-items: center;
     justify-content: center;
     color: var(--color-muted);
   }
   .dir-name {
+    flex: 1 1 auto;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -713,8 +750,12 @@
     font-size: 11px;
   }
   .story-slot {
-    width: 8px;
-    height: 8px;
+    position: absolute;
+    left: 1px;
+    top: 50%;
+    width: 6px;
+    height: 6px;
+    transform: translateY(-50%);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -729,7 +770,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--space-d2) calc(var(--space-d4) * 3);
+    padding: var(--space-d2) var(--sb-pad);
     margin-top: var(--space-d4);
   }
   .section-title {
@@ -745,13 +786,21 @@
     display: none;
     align-items: center;
     justify-content: center;
-    width: 14px;
+    position: absolute;
+    right: var(--sb-pad);
+    top: 50%;
+    transform: translateY(-50%);
+    width: 16px;
     height: 14px;
     border-radius: var(--radius-sm);
     color: var(--color-muted);
   }
+  /* Deleting a collection replaces its count while the row is hovered. */
   .virtual-row:hover .del-col-btn {
     display: flex;
+  }
+  .virtual-row:hover .dir-count {
+    opacity: 0;
   }
   .del-col-btn:hover {
     color: var(--color-destructive);

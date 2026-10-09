@@ -9,7 +9,7 @@ export const cullingState = $state({
   marginScale: 1,
   cellAspect: 1.5,
   fillCells: true,
-  sortDesc: false,
+  sortDesc: true,
   /** @type {"uniform" | "masonry"} */
   layout: "uniform",
   minRating: 0,

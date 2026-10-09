@@ -114,7 +114,6 @@ main {
    raised look and read as the text they are. */
 :is(
     .group-header,
-    .frow-label,
     .section-toggle,
     .lib-toggle,
     .section-main,
@@ -147,6 +146,16 @@ main {
    into a second line to make room (the framework's buttons may, on a page). */
 button {
   white-space: nowrap;
+}
+
+/* Control row labels share interface typography and left alignment. */
+.frow-label {
+  font-family: var(--font-interface);
+  text-align: left;
+}
+
+.reset-label {
+  text-align: left;
 }
 
 /* 3. Small utility buttons at the end of a row (add, reindex, close). */

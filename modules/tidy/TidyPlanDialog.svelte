@@ -242,6 +242,9 @@
   .body { display: flex; flex-direction: column; gap: var(--space-d2); padding-block: var(--space-d2); }
   .body > :global(*) { margin: 0; }
   .summary { padding: 0; list-style: none; display: grid; gap: var(--space-d4); }
+  /* The framework draws a bullet on every list item, even in a list that has none; this summary
+     is a column of facts, not bullets. */
+  .summary li::before { content: none; }
   .summary .lead { font-size: 1.1em; }
   h3 { margin-block-start: var(--space-d2); }
   .groups { max-height: 18rem; overflow-y: auto; }

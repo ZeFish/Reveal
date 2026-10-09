@@ -224,14 +224,16 @@
 
 <style>
   .dir-row {
+    position: relative;
     box-sizing: border-box;
     display: flex;
     align-items: center;
     gap: var(--space-d2);
     width: 100%;
     margin: 0;
-    padding: var(--space-d4) calc(var(--space-d4) * 3);
-    padding-left: calc(var(--depth, 0) * var(--space-d4));
+    padding-block: var(--space-d4);
+    padding-right: var(--sb-pad);
+    padding-left: calc(var(--sb-pad) + var(--depth, 0) * var(--sb-indent));
     cursor: pointer;
     user-select: none;
     font-size: 11px;
@@ -248,8 +250,10 @@
     opacity: 0.4;
   }
   .disc {
-    width: 12px;
-    height: 12px;
+    flex: 0 0 var(--sb-lead);
+    width: var(--sb-lead);
+    min-width: 0;
+    height: 14px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -270,7 +274,7 @@
     /* The name takes the room it needs and gives way (ellipsis) only when the row is full. As
        `flex: 1` it split the free space 50/50 with the spacer, so a name was cut at half the row
        with empty space beside it. */
-    flex: 0 1 auto;
+    flex: 1 1 auto;
     min-width: 0;
   }
   .dir-rename {
@@ -280,18 +284,30 @@
     padding: 1px 4px;
     font-size: 11px;
   }
+  /* The spacer is gone: the name takes the free space itself, so there is no empty element and
+     no extra gap eating the room a long name needs. (The element stays in the markup.) */
   .dir-spacer {
-    flex: 1;
+    display: none;
+  }
+  .dir-count:empty {
+    display: none;
   }
   .dir-count {
     font-variant-numeric: tabular-nums;
     color: var(--color-muted);
     font-size: 10px;
-    margin-right: var(--space-d4);
+    flex: 0 0 auto;
+    text-align: right;
   }
+  /* A story dot is a mark on the row, not a column of it: it sits in the left gutter, on one
+     rail for every row, and takes no width from the name or the count. */
   .story-slot {
-    width: 8px;
-    height: 8px;
+    position: absolute;
+    left: 1px;
+    top: 50%;
+    width: 6px;
+    height: 6px;
+    transform: translateY(-50%);
     display: flex;
     align-items: center;
     justify-content: center;

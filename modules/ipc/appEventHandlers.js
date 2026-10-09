@@ -226,7 +226,7 @@ export function createAppEventHandlers(deps) {
       const frame = deps.library.frames.find((/** @type {any} */ f) => f.path === path);
       if (!frame || !version || frame.previewVersion === version) return;
       frame.previewVersion = version;
-      deps.refreshLoadedFrames([...deps.library.frames]);
+      deps.refreshLoadedFrames(deps.library.frames.map((/** @type {any} */ f) => (f.path === path ? { ...f } : f)));
     },
 
     // A photo's develop settings have just been taken off its folder (the switch to "None", paid
@@ -237,7 +237,7 @@ export function createAppEventHandlers(deps) {
       const frame = deps.library.frames.find((/** @type {any} */ f) => f.path === path);
       if (!frame) return;
       frame.previewVersion = Date.now();
-      deps.refreshLoadedFrames([...deps.library.frames]);
+      deps.refreshLoadedFrames(deps.library.frames.map((/** @type {any} */ f) => (f.path === path ? { ...f } : f)));
     },
 
     onImportStarted: () => {
