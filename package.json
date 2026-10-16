@@ -19,8 +19,8 @@
   },
   "dependencies": {
     "@stnd/fonts": "^0.7.0",
-    "@stnd/styles": "^0.23.0",
-    "@stnd/ui": "^0.13.0",
+    "@stnd/styles": "^0.24.0",
+    "@stnd/ui": "^0.14.0",
     "@tauri-apps/api": "^2.12.1",
     "@tauri-apps/plugin-process": "^2.4.0",
     "@tauri-apps/plugin-updater": "^2.13.1"
