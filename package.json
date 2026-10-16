@@ -18,7 +18,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@stnd/fonts": "^0.7.0",
+    "@stnd/fonts": "^0.8.0",
     "@stnd/styles": "^0.24.0",
     "@stnd/ui": "^0.14.0",
     "@tauri-apps/api": "^2.12.1",
