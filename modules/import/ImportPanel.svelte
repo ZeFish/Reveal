@@ -163,9 +163,20 @@
     background: transparent !important;
     background-color: transparent !important;
     background-image: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+    border: none !important;
     overflow: hidden !important;
     font-family: var(--font-interface, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif);
     color: #e5e5e5;
+  }
+
+  :global(html::before),
+  :global(html::after),
+  :global(body::before),
+  :global(body::after) {
+    display: none !important;
+    content: none !important;
   }
 
   .panel-wrapper {

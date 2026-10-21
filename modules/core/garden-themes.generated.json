@@ -53,6 +53,19 @@
       ]
     },
     {
+      "id": "avelo",
+      "label": "àVélo",
+      "darkBackground": "#121615",
+      "darkAccent": "#30d3ae",
+      "fontHeader": "Cal Sans",
+      "fontText": "Cargo Diatype",
+      "fontPackages": [
+        "calsans",
+        "cargo-diatype",
+        "monolisa"
+      ]
+    },
+    {
       "id": "blueprint",
       "label": "Blueprint",
       "darkBackground": "#1a4d7a",
@@ -89,6 +102,19 @@
       "fontPackages": [
         "oktah",
         "quicksand"
+      ]
+    },
+    {
+      "id": "candy",
+      "label": "Candy",
+      "darkBackground": "#270c12",
+      "darkAccent": "#ff5fb5",
+      "fontHeader": "Wonder",
+      "fontText": "Quicksand",
+      "fontPackages": [
+        "maple",
+        "quicksand",
+        "wonder"
       ]
     },
     {
@@ -197,8 +223,8 @@
       "id": "frank",
       "label": "Frank",
       "darkBackground": "#040301",
-      "darkAccent": "#0d6594",
-      "fontHeader": "Inter",
+      "darkAccent": "#AD8301",
+      "fontHeader": null,
       "fontText": "Cargo Diatype",
       "fontPackages": [
         "cargo-diatype",
@@ -251,7 +277,7 @@
       "label": "International",
       "darkBackground": "#111111",
       "darkAccent": "#db6057",
-      "fontHeader": "Inter",
+      "fontHeader": null,
       "fontText": "Cargo Diatype",
       "fontPackages": [
         "cargo-diatype",
@@ -316,6 +342,20 @@
       "fontPackages": [
         "fern",
         "monaspace-xenon"
+      ]
+    },
+    {
+      "id": "pulp",
+      "label": "Pulp",
+      "darkBackground": "#130b08",
+      "darkAccent": "#ffbe00",
+      "fontHeader": "Herbus Apex",
+      "fontText": "Century Expanded",
+      "fontPackages": [
+        "century-expanded",
+        "courier-prime",
+        "herbus",
+        "newsreader"
       ]
     },
     {
