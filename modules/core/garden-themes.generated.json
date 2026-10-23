@@ -286,8 +286,17 @@
       ]
     },
     {
-      "id": "kernel",
-      "label": "Kernel",
+      "id": "macos",
+      "label": "macOS",
+      "darkBackground": "#1e1e1e",
+      "darkAccent": "#0a84ff",
+      "fontHeader": "-apple-system",
+      "fontText": "-apple-system",
+      "fontPackages": []
+    },
+    {
+      "id": "maker",
+      "label": "Maker",
       "darkBackground": "#231e1a",
       "darkAccent": "#8b7ec8",
       "fontHeader": "Fraunces",
@@ -296,15 +305,6 @@
         "fraunces",
         "monolisa"
       ]
-    },
-    {
-      "id": "macos",
-      "label": "macOS",
-      "darkBackground": "#1e1e1e",
-      "darkAccent": "#0a84ff",
-      "fontHeader": "-apple-system",
-      "fontText": "-apple-system",
-      "fontPackages": []
     },
     {
       "id": "manifeste",

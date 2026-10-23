@@ -29,14 +29,14 @@ describe("settingsState", () => {
   });
 
   it("updates individual preferences reactively", () => {
-    settingsState.update({ app_theme: "kernel", ai_cull_target: 30 });
-    expect(settingsState.preferences.app_theme).toBe("kernel");
+    settingsState.update({ app_theme: "maker", ai_cull_target: 30 });
+    expect(settingsState.preferences.app_theme).toBe("maker");
     expect(settingsState.preferences.ai_cull_target).toBe(30);
     expect(settingsState.preferences.date_folders).toBe("%Y/%Y-%m-%d");
   });
 
   it("resets preferences to defaults", () => {
-    settingsState.update({ app_theme: "kernel" });
+    settingsState.update({ app_theme: "maker" });
     settingsState.reset();
     expect(settingsState.preferences.app_theme).toBe("macos");
   });
